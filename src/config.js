@@ -27,6 +27,9 @@ const DEFAULTS = {
   WORKING_DIR        : process.cwd(),
   PARALLEL_TOOL_CALLS    : true,
   MAX_PARALLEL_TOOL_CALLS: 4,
+  // Audio (Items 3 & 4): async, sequentially-queued speech by default.
+  AUDIO_ASYNC            : true,
+  AUDIO_SEQUENTIAL       : true,
   SESSION_DIR: process.env.FORGE_SESSION_DIR
     ? path.resolve(process.env.FORGE_SESSION_DIR)
     : path.join(os.homedir(), '.deepseek-agent', 'session'),
@@ -149,6 +152,8 @@ function validateConfigValue(key, value) {
     STRICT_SANDBOX    : v => typeof v === 'boolean',
     PARALLEL_TOOL_CALLS    : v => typeof v === 'boolean',
     MAX_PARALLEL_TOOL_CALLS: v => Number.isInteger(v) && v >= 1 && v <= 32,
+    AUDIO_ASYNC            : v => typeof v === 'boolean',
+    AUDIO_SEQUENTIAL       : v => typeof v === 'boolean',
   };
 
   if (rules[key]) {

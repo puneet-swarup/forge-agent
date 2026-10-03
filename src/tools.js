@@ -18,6 +18,7 @@ const { startProcess, stopProcess, getProcessStatus, listProcesses, getProcessLo
 const { takeScreenshot } = require('./screenshot');
 const { readClipboard, writeClipboard } = require('./clipboard');
 const { speak, raiseAlarm } = require('./audio');
+const { speakAsync, alarmAsync } = require('./audio-queue');
 const { loadAllPlugins } = require('./plugin-loader');
 const logger        = require('./logger');
 const ToolCache = require('./tool-cache');
@@ -1269,7 +1270,7 @@ const TOOLS = {
 
   // ── Call User ─────────────────────────────────────────────────────────
   call_user: {
-    description: 'Uses text-to-speech to speak a configurable sentence out loud. If no message is provided, it defaults to calling the user by their login name to notify them a task is complete. Cross-platform: SAPI (Windows), say (macOS), spd-say/espeak (Linux), with terminal bell fallback.',
+    description: 'Queues a text-to-speech sentence (non-blocking). Speech is played asynchronously by a queue so it never stalls your work, and utterances from multiple instances play sequentially, each prefixed with its session name. If no message is provided, it defaults to calling the user by their login name. Cross-platform: SAPI (Windows), say (macOS), spd-say/espeak (Linux), with terminal bell fallback. Set FORGE_AUDIO_SYNC=1 for blocking playback.',
     parameters: {
       message: { type: 'string', required: false, description: 'The exact sentence to speak. If omitted, it will say "[Name], the task is complete."' },
     },
@@ -1280,8 +1281,9 @@ const TOOLS = {
         text = user + ', the task is complete.';
       }
       try {
-        const backend = speak(text);
-        return '[call_user] Spoke via ' + backend + ': ' + text;
+        // Async by default (Item 4): enqueue and return immediately so the
+        // agent keeps working. Set FORGE_AUDIO_SYNC=1 to block instead.
+        return speakAsync(text);
       } catch (err) {
         return '[call_user] Text-to-speech failed: ' + err.message + ' | message: ' + text;
       }
@@ -1290,15 +1292,14 @@ const TOOLS = {
 
   // ── Raise Alarm ───────────────────────────────────────────────────────
   raise_alarm: {
-    description: 'Plays a continuous beeping alarm sound to alert the user. Useful for indicating a task is complete or requires immediate attention. Cross-platform: SoundPlayer/beep (Windows), afplay (macOS), paplay/aplay/canberra (Linux), with terminal bell fallback.',
+    description: 'Queues an alarm (non-blocking) that plays asynchronously via the same sequential audio queue as call_user, so alarms from multiple instances never overlap. Useful for indicating a task is complete or requires immediate attention. Cross-platform: SoundPlayer/beep (Windows), afplay (macOS), paplay/aplay/canberra (Linux), with terminal bell fallback. Set FORGE_AUDIO_SYNC=1 for blocking playback.',
     parameters: {
       duration: { type: 'number', required: false, description: 'Duration of the alarm in seconds (default is 5).' },
     },
     async execute({ duration = 5 } = {}) {
       try {
-        const backend = raiseAlarm(duration);
-        if (backend === 'disabled') return '[raise_alarm] Audio is disabled (FORGE_NO_AUDIO).';
-        return '[raise_alarm] Alarm played via ' + backend + ' for ' + duration + 's.';
+        // Async by default (Item 4): enqueue and return immediately.
+        return alarmAsync(duration);
       } catch (err) {
         return '[raise_alarm] Alarm failed: ' + err.message;
       }

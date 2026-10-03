@@ -145,6 +145,8 @@ function parseArgs(argv) {
     role        : null,
     parallelTools: null,
     maxParallel: null,
+    audioSync: null,
+    audioAsync: null,
     };
 
     let i = 0;
@@ -163,6 +165,8 @@ function parseArgs(argv) {
       case '--no-sponsor-nudge': opts.noSponsorNudge = true; break;
       case '--launch-assets': opts.launchAssets = true; break;
       case '--headless':    opts.headless    = true;    break;
+      case '--audio-sync':   opts.audioSync = true;   break;
+      case '--audio-async':  opts.audioAsync = true;  break;
       case '--parallel-tools':   opts.parallelTools = true;  break;
       case '--no-parallel-tools': opts.parallelTools = false; break;
       case '--save-log':    opts.saveLog     = true;    break;
@@ -430,6 +434,8 @@ ${c('1;36', 'CONFIGURATION')}
 ${c('1;36', 'DEBUGGING')}
       --debug            Verbose output with raw AI responses
       --headless         Run browser invisibly (no window)
+      --audio-sync       Speak/alarm synchronously (blocking; default: off)
+      --audio-async      Speak/alarm asynchronously via queue (default)
       --parallel-tools   Run independent tool calls concurrently (default: on)
       --no-parallel-tools  Force strictly sequential tool execution
       --max-parallel=<N> Max concurrent tool calls (default: 4)
@@ -558,6 +564,10 @@ function applyFlagsToConfig(args, config) {
 
   // Planning
   if (args.plan !== undefined && args.plan !== false) config.PLANNING_MODE = true;
+
+  // Audio async/sequential (Items 3 & 4)
+  if (args.audioSync === true)  process.env.FORGE_AUDIO_SYNC = '1';
+  if (args.audioAsync === true) delete process.env.FORGE_AUDIO_SYNC;
 
   // Parallel tool groups (Item 5)
   if (args.parallelTools === true)  config.PARALLEL_TOOL_CALLS = true;
