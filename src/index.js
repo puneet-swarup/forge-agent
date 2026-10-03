@@ -35,16 +35,20 @@ process.stderr.on('error', err => { if (err.code === 'EPIPE') process.exit(0); }
   const sessionName = getVal(['--session', '-s']);
   const roleName    = getVal(['--role']);
 
+  const registry = require('./session-registry');
+  const wantsAuto = sessionName === 'auto'
+    || argv.includes('--new-session')
+    || argv.includes('--random-session');
+
   if (explicitDir) {
     process.env.FORGE_SESSION_DIR  = path.resolve(explicitDir);
     process.env.FORGE_SESSION_NAME = path.basename(process.env.FORGE_SESSION_DIR);
+  } else if (wantsAuto) {
+    const generated = registry.generateSessionName();
+    process.env.FORGE_SESSION_NAME = generated;
+    process.env.FORGE_SESSION_DIR  = registry.sessionDirFor(generated);
   } else if (sessionName) {
-    process.env.FORGE_SESSION_DIR = path.join(
-      require('os').homedir(),
-      '.deepseek-agent',
-      'sessions',
-      sessionName
-    );
+    process.env.FORGE_SESSION_DIR  = registry.sessionDirFor(sessionName);
     process.env.FORGE_SESSION_NAME = sessionName;
   }
 
@@ -147,6 +151,9 @@ function parseArgs(argv) {
     maxParallel: null,
     audioSync: null,
     audioAsync: null,
+    listInstances: null,
+    newSession: null,
+    json: null,
     };
 
     let i = 0;
@@ -165,6 +172,11 @@ function parseArgs(argv) {
       case '--no-sponsor-nudge': opts.noSponsorNudge = true; break;
       case '--launch-assets': opts.launchAssets = true; break;
       case '--headless':    opts.headless    = true;    break;
+      case '--instances':
+      case '--ps':
+      case 'ps':            opts.listInstances = true; break;
+      case '--new-session': opts.newSession = true;   break;
+      case '--json':        opts.json = true;         break;
       case '--audio-sync':   opts.audioSync = true;   break;
       case '--audio-async':  opts.audioAsync = true;  break;
       case '--parallel-tools':   opts.parallelTools = true;  break;
@@ -374,6 +386,10 @@ ${c('1;36', 'MEMORY & SESSIONS')}
       --history-search=<term>  Search past tasks
       --session <name>   Named session (own browser profile, own login).
                          Enables running multiple agents side-by-side.
+      --session auto     Auto-generate a unique human-readable session name
+                         (e.g. brave-otter-9f3a) with its own profile.
+      --new-session      Alias for --session auto.
+      ps, --instances    List all running instances (use --json for JSON).
       --session-dir <p>  Explicit session directory (advanced).
       --role <name>      Role label. Defaults to session name.
 	  --session <name>   Named session (own browser profile, own login).
@@ -640,6 +656,25 @@ async function startInteractiveMode(agent, config) {
 
 async function main() {
   const args = parseArgs(process.argv);
+
+  // ── Instance listing (Item 6) ──────────────────────────────────────────────
+  if (args.listInstances) {
+    try {
+      const registry = require('./session-registry');
+      const instances = registry.listInstances({ prune: true });
+      if (args.json) {
+        console.log(JSON.stringify(instances, null, 2));
+      } else {
+        console.log('');
+        console.log(registry.formatInstanceTable(instances, process.stdout.isTTY !== false));
+        console.log('');
+      }
+    } catch (e) {
+      console.error('Could not list instances: ' + e.message);
+      process.exit(1);
+    }
+    process.exit(0);
+  }
 
   // ── Shell Completions ──────────────────────────────────────────────────────
   if (args.completionBash || args.completionZsh || args.completionFish || args.completionInstall) {
@@ -1496,6 +1531,7 @@ async function main() {
   // ── Graceful shutdown handler ──────────────────────────────────────────────
   const shutdown = async (code = 0) => {
     logger.info('\nShutting down...');
+    try { require('./session-registry').removeHeartbeat(); } catch (_) {}
     try { await agent.shutdown(); } catch {}
     process.exit(code);
   };
@@ -1536,6 +1572,14 @@ async function main() {
   // ── Launch browser ─────────────────────────────────────────────────────────
   try {
     await agent.init();
+    try {
+      require('./session-registry').writeHeartbeat({
+        model: config.MODEL,
+        profile: config.ACTIVE_PROFILE,
+        status: 'running',
+        startedAt: Date.now(),
+      });
+    } catch (_) {}
   } catch (err) {
     displayError(Errors.browserLaunchFailed(err));
     if (config.DEBUG) console.error(err.stack);
