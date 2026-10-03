@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Forge Agent — Control</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">⚒</span>
+      <span>Forge Agent <span class="muted">Control</span></span>
+    </div>
+    <div class="topbar-actions">
+      <span id="conn" class="conn conn--off" title="connection status">●</span>
+      <button id="refreshBtn" class="btn btn--ghost" title="Refresh instances">⟳</button>
+      <button id="newBtn" class="btn btn--primary">+ New Instance</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <!-- LEFT: instance list -->
+    <aside class="pane pane--instances">
+      <div class="pane-head">
+        <h2>Instances</h2>
+        <span id="instCount" class="badge">0</span>
+      </div>
+      <input id="instFilter" class="filter" type="text" placeholder="Filter by name / role…" />
+      <ul id="instanceList" class="instance-list"></ul>
+      <div class="pane-foot">
+        <span class="muted small">Click an instance to focus it.</span>
+      </div>
+    </aside>
+
+    <!-- CENTER: chat / activity -->
+    <section class="pane pane--chat">
+      <div class="pane-head pane-head--chat">
+        <div class="chat-title">
+          <h2 id="chatName">No instance selected</h2>
+          <span id="chatMeta" class="muted small"></span>
+        </div>
+        <div class="chat-actions">
+          <button id="clearBtn" class="btn btn--ghost" title="Clear view">Clear</button>
+          <button id="stopBtn" class="btn btn--danger" title="Stop instance" disabled>Stop</button>
+        </div>
+      </div>
+      <div id="transcript" class="transcript">
+        <div class="empty">
+          <p>Select an instance on the left, or create a new one.</p>
+        </div>
+      </div>
+      <form id="inputForm" class="inputbar">
+        <textarea id="inputBox" rows="2" placeholder="Type a task for the selected instance… (Enter to send, Shift+Enter for newline)" disabled></textarea>
+        <button id="sendBtn" class="btn btn--primary" type="submit" disabled>Send</button>
+      </form>
+    </section>
+
+    <!-- RIGHT: errors / log -->
+    <aside class="pane pane--log">
+      <div class="pane-head">
+        <h2>Log / Errors</h2>
+        <label class="toggle small"><input id="logErrorsOnly" type="checkbox" /> errors only</label>
+      </div>
+      <div id="logPane" class="log-pane"></div>
+    </aside>
+  </main>
+
+  <!-- New instance modal -->
+  <div id="modal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h3>New Instance</h3>
+        <button id="modalClose" class="btn btn--ghost">✕</button>
+      </div>
+      <div class="modal-body">
+        <label>Task <span class="muted small">(optional — automation starts immediately)</span>
+          <textarea id="mTask" rows="3" placeholder="e.g. build a REST API with Express"></textarea>
+        </label>
+        <div class="grid2">
+          <label>Session name <input id="mSession" type="text" placeholder="auto (unique)" /></label>
+          <label>Role <input id="mRole" type="text" placeholder="optional" /></label>
+        </div>
+        <div class="grid2">
+          <label>Model
+            <select id="mModel">
+              <option value="">default</option>
+              <option value="deepseek">deepseek</option>
+              <option value="gemini">gemini</option>
+            </select>
+          </label>
+          <label>Profile
+            <select id="mProfile">
+              <option value="">default</option>
+              <option value="backend">backend</option>
+              <option value="frontend">frontend</option>
+              <option value="data-science">data-science</option>
+              <option value="devops">devops</option>
+            </select>
+          </label>
+        </div>
+        <label class="toggle"><input id="mHeadless" type="checkbox" /> Run headless (no Chromium window)</label>
+      </div>
+      <div class="modal-foot">
+        <span id="mError" class="error small"></span>
+        <button id="modalCancel" class="btn btn--ghost">Cancel</button>
+        <button id="modalStart" class="btn btn--primary">Start Instance</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

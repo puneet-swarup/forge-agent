@@ -11,6 +11,7 @@ const { executeTool, cache }       = require('./tools');
 const { parseResponse,
         formatToolResult }         = require('./parser');
 const { executeBatch }             = require('./parallel-executor');
+const eventLog                     = require('./event-log');
 const { PermissionStore, isReadOnly, getCategory, CATEGORY_LABELS } = require('./permission-store');
 const { showPermissionMenu } = require('./permission-menu');
 const { ConversationManager }      = require('./prompt');
@@ -145,6 +146,7 @@ class DeepSeekAgent {
       const dirListing = this._getWorkingDirListing();
 
       // ── 2. Build and send first message ───────────────────────────────────
+      eventLog.emit('task', { task, model: config.MODEL, profile: config.ACTIVE_PROFILE });
       logger.header(task, {
         model  : config.MODEL    || 'deepseek',
         profile: config.ACTIVE_PROFILE || 'default',
@@ -204,6 +206,11 @@ class DeepSeekAgent {
 
       while (true) {
         logger.stepLine(step, progress.elapsedMs, progress);
+        eventLog.emit('step', { step, elapsedMs: progress.elapsedMs });
+        eventLog.emit('step', { step, elapsedMs: progress.elapsedMs });
+        eventLog.emit('step', { step, elapsedMs: progress.elapsedMs });
+        eventLog.emit('step', { step, elapsedMs: progress.elapsedMs });
+        eventLog.emit('step', { step, elapsedMs: progress.elapsedMs });
 
         // Safety circuit breaker
         if (step > 10000) {
@@ -222,6 +229,7 @@ class DeepSeekAgent {
           rawResponse = await this.browser.waitForResponse();
         } catch (err) {
           logger.warn(`Response failed: ${err.message}`);
+          eventLog.emit('error', { message: err.message });
           progress.recordError(err.message);
 
           if (this._emptyStreak === undefined) this._emptyStreak = 0;
@@ -407,6 +415,7 @@ class DeepSeekAgent {
           }
 
           logger.toolCall(parsed.name, parsed.args);
+          eventLog.emit('tool_call', { name: parsed.name, args: parsed.args });
           progress.recordToolCall(parsed.name, parsed.args);
 
           let result;
@@ -415,10 +424,12 @@ class DeepSeekAgent {
           try {
             result  = await executeTool(parsed.name, parsed.args);
             logger.toolResult(result, false, parsed.name);
+            eventLog.emit('tool_result', { name: parsed.name, result: String(result).slice(0, 4000), isError: false });
           } catch (err) {
             result  = err.message || String(err);
             isError = true;
             logger.toolResult(result, true, parsed.name);
+            eventLog.emit('tool_result', { name: parsed.name, result: String(result).slice(0, 4000), isError: true });
           }
 
           if (parsed.name === 'show_info' && !isError) {
@@ -860,6 +871,14 @@ class DeepSeekAgent {
   }
 
   _recordHistory(task, status, startTime, progress, result, templateName = null) {
+    // Emit a terminal event for the control UI (never throws).
+    try {
+      if (status === 'completed') {
+        eventLog.emit('final', { content: String(result || '').slice(0, 8000) });
+      } else {
+        eventLog.emit('status', { status, content: String(result || '').slice(0, 2000) });
+      }
+    } catch (_) {}
     try {
       this.history.addEntry({
         task,

@@ -154,6 +154,8 @@ function parseArgs(argv) {
     listInstances: null,
     newSession: null,
     json: null,
+    ui: null,
+    uiPort: null,
     };
 
     let i = 0;
@@ -172,6 +174,8 @@ function parseArgs(argv) {
       case '--no-sponsor-nudge': opts.noSponsorNudge = true; break;
       case '--launch-assets': opts.launchAssets = true; break;
       case '--headless':    opts.headless    = true;    break;
+      case '--ui':          opts.ui = true;         break;
+      case '--ui-port':     opts.uiPort = args[++i]; break;
       case '--instances':
       case '--ps':
       case 'ps':            opts.listInstances = true; break;
@@ -390,6 +394,8 @@ ${c('1;36', 'MEMORY & SESSIONS')}
                          (e.g. brave-otter-9f3a) with its own profile.
       --new-session      Alias for --session auto.
       ps, --instances    List all running instances (use --json for JSON).
+      --ui               Launch the browser-based control dashboard.
+      --ui-port <n>      Port for the control dashboard (default: 7331).
       --session-dir <p>  Explicit session directory (advanced).
       --role <name>      Role label. Defaults to session name.
 	  --session <name>   Named session (own browser profile, own login).
@@ -656,6 +662,26 @@ async function startInteractiveMode(agent, config) {
 
 async function main() {
   const args = parseArgs(process.argv);
+
+  // ── Control UI server (Item 2) ────────────────────────────────────────────
+  if (args.ui) {
+    try {
+      const { startServer } = require('./control-server');
+      const port = args.uiPort || (args.ui === true ? 7331 : parseInt(args.ui, 10)) || 7331;
+      startServer({ port }).then(({ url }) => {
+        logger.banner();
+        console.log('\n  \uD83C\uDFD9  Forge Agent control UI running at \x1b[36m' + url + '\x1b[0m');
+        console.log('     Press Ctrl+C to stop.\n');
+      }).catch(err => {
+        console.error('Failed to start control UI: ' + err.message);
+        process.exit(1);
+      });
+    } catch (e) {
+      console.error('Could not start control UI: ' + e.message);
+      process.exit(1);
+    }
+    return; // keep process alive
+  }
 
   // ── Instance listing (Item 6) ──────────────────────────────────────────────
   if (args.listInstances) {
@@ -1528,6 +1554,17 @@ async function main() {
   const DeepSeekAgent = require('./agent');
   const agent = new DeepSeekAgent({ saveLog: args.saveLog });
 
+  // Register this instance immediately (status: starting) so the control UI
+  // and `forge-agent ps` see it before the browser finishes launching.
+  try {
+    require('./session-registry').writeHeartbeat({
+      model: config.MODEL,
+      profile: config.ACTIVE_PROFILE,
+      status: 'starting',
+      startedAt: Date.now(),
+    });
+  } catch (_) {}
+
   // ── Graceful shutdown handler ──────────────────────────────────────────────
   const shutdown = async (code = 0) => {
     logger.info('\nShutting down...');
@@ -1573,12 +1610,7 @@ async function main() {
   try {
     await agent.init();
     try {
-      require('./session-registry').writeHeartbeat({
-        model: config.MODEL,
-        profile: config.ACTIVE_PROFILE,
-        status: 'running',
-        startedAt: Date.now(),
-      });
+      require('./session-registry').updateHeartbeat('running');
     } catch (_) {}
   } catch (err) {
     displayError(Errors.browserLaunchFailed(err));
