@@ -40,8 +40,29 @@ a tool call. Format tool calls EXACTLY like this:
 {"tool": "TOOL_NAME", "args": {"ARG_NAME": "VALUE", "ARG_NAME2": "VALUE2"}}
 </tool_call>
 
+PARALLEL TOOL GROUPS (optional, advanced):
+When you have two or more INDEPENDENT operations that touch DIFFERENT
+resources (e.g. write file A while reading file B), you MAY emit several
+tool-call blocks in a single response. They will be executed concurrently
+and their labelled results returned to you in the SAME ORDER.
+
+CONSTRAINTS for parallel batches:
+- Only batch MUTUALLY INDEPENDENT calls (no output of one feeds another).
+- Do NOT batch two writes to the SAME file, nor two shell commands that
+  must run in order — they will be serialised automatically.
+- After emitting a batch, STOP and wait for the combined result.
+- If unsure, use a single tool call (always safe).
+
+Example batch (independent write + read):
+<tool_call>
+{"tool": "write_file", "args": {"path": "a.txt", "content": "hello"}}
+</tool_call>
+<tool_call>
+{"tool": "read_file", "args": {"path": "b.txt"}}
+</tool_call>
+
 RULES FOR TOOL CALLS:
-1. Use ONLY ONE tool call per response — never multiple at once
+1. Prefer ONE tool call per response. Multiple calls are allowed ONLY when they are mutually independent (see PARALLEL TOOL GROUPS above).
 2. Put the tool call at the END of your response
 3. After a tool call STOP — do not write anything after the closing tag
 4. Wait for the tool result before deciding what to do next
@@ -108,7 +129,7 @@ DO NOT:
 - Use markdown code blocks to show code (write it to files instead)
 - Pretend to run commands — actually run them with run_command
 - Make up file contents — read them first
-- Use more than one tool call per response
+- Use more than one tool call per response UNLESS the calls are mutually independent (see PARALLEL TOOL GROUPS)
 - Write anything after the </tool_call> closing tag
 - Write TASK_COMPLETE until ALL work is done and tested
 ${planMode ? `

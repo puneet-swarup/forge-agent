@@ -10,6 +10,7 @@ const DeepSeekBrowser              = require('./browser');
 const { executeTool, cache }       = require('./tools');
 const { parseResponse,
         formatToolResult }         = require('./parser');
+const { executeBatch }             = require('./parallel-executor');
 const { PermissionStore, isReadOnly, getCategory, CATEGORY_LABELS } = require('./permission-store');
 const { showPermissionMenu } = require('./permission-menu');
 const { ConversationManager }      = require('./prompt');
@@ -297,6 +298,16 @@ class DeepSeekAgent {
 
         // Parse the response
         const parsed = parseResponse(rawResponse);
+
+        // ── Case 0: Tool batch (parallel groups, Item 5) ────────────────────
+        if (parsed.type === 'tool_batch') {
+          _consecutiveUnrecognised = 0;
+          const calls = Array.isArray(parsed.calls) ? parsed.calls : [];
+          const _outcome = await this._runToolBatch(calls, progress);
+          if (_outcome && _outcome.stop) { this._running = false; return _outcome.content || ''; }
+          step++;
+          continue;
+        }
 
         // ── Case 1: Tool call ──────────────────────────────────────────────
         if (parsed.type === 'tool_call') {
@@ -670,6 +681,95 @@ class DeepSeekAgent {
         resolve(['c','s','n','q'].includes(choice) ? choice : 'c');
       });
     });
+  }
+
+  async _runToolBatch(calls, progress) {
+    if (!Array.isArray(calls) || calls.length === 0) {
+      const emptyMsg = this.conversation.addToolResult('SYSTEM', 'Empty tool batch received. Please emit one or more tool calls.', true);
+      await this.browser.sendMessage(emptyMsg);
+      return { stop: false };
+    }
+
+    for (const c of calls) {
+      if (!c || !c.name || isReadOnly(c.name)) continue;
+      const category = getCategory(c.name);
+      if (this.permissionStore.isPreApproved(category)) continue;
+      const detail = c.args?.path
+        ? c.name + ' -> ' + c.args.path
+        : c.args?.command
+          ? c.name + ' -> ' + String(c.args.command).slice(0, 80)
+          : c.name;
+      const decision = await showPermissionMenu({
+        label: CATEGORY_LABELS[category] || category,
+        detail,
+      });
+      if (decision === 'stop') {
+        logger.info('Task stopped by user (permission denied).');
+        return { stop: true, content: '' };
+      }
+      if (decision === 'deny') {
+        logger.warn('Permission denied for ' + c.name + ' - informing AI');
+        const denialMsg = this.conversation.addToolResult(
+          c.name,
+          'Permission denied by user for a tool in the batch. Do not retry the exact same action - try a different approach or continue with other parts of the task.',
+          true
+        );
+        await this.browser.sendMessage(denialMsg);
+        return { stop: false, denied: true };
+      }
+      this.permissionStore.record(category, decision === 'once' ? null : decision);
+    }
+
+    for (const c of calls) {
+      logger.toolCall(c.name, c.args);
+      progress.recordToolCall(c.name, c.args);
+    }
+
+    let results;
+    try {
+      results = await executeBatch(calls, {
+        executeTool,
+        cwd: config.WORKING_DIR || process.cwd(),
+        maxParallel: config.PARALLEL_TOOL_CALLS === false ? 1 : (config.MAX_PARALLEL_TOOL_CALLS || 4),
+      });
+    } catch (err) {
+      logger.warn('Batch execution failed: ' + err.message);
+      const recovery = this.conversation.addToolResult('SYSTEM', 'Batch execution failed: ' + err.message + '. Please retry with individual tool calls.', true);
+      await this.browser.sendMessage(recovery);
+      return { stop: false };
+    }
+
+    const parts = [];
+    let anyError = false;
+    for (const r of results) {
+      logger.toolResult(r.result, r.isError, r.name);
+      progress.recordToolResult(r.name, r.result, r.isError);
+      if (r.isError) anyError = true;
+      const status = r.isError ? 'ERROR' : 'SUCCESS';
+      parts.push('[TOOL RESULT: ' + r.name + ' | ' + status + ']\n' + String(r.result) + '\n[END TOOL RESULT]');
+    }
+
+    const combined =
+      '[TOOL RESULT: BATCH | ' + (anyError ? 'PARTIAL ERROR' : 'SUCCESS') + ']\n' +
+      'You issued ' + calls.length + ' tool call(s) in one turn. Results are labelled and in the SAME ORDER you requested:\n\n' +
+      parts.join('\n\n') +
+      '\n\nContinue with the next step, or provide your final response if the task is complete.';
+
+    this.conversation.messages.push({ role: 'user', content: combined });
+
+    const estimatedTokens = this.conversation.messages
+      .reduce((sum, m) => sum + Math.ceil(
+        (typeof m.content === 'string' ? m.content : JSON.stringify(m.content)).length / 4
+      ), 0);
+    logger.contextMeter(estimatedTokens, 80000);
+
+    if (this.conversation.shouldCompress(config.CONTEXT_COMPRESSION_THRESHOLD)) {
+      logger.dim('Compressing context...');
+      this.conversation.compress({ keepRecent: config.CONTEXT_KEEP_RECENT });
+    }
+
+    await this.browser.sendMessage(combined);
+    return { stop: false };
   }
 
   _buildProjectContextString() {

@@ -25,6 +25,8 @@ const DEFAULTS = {
 
   // Agent behaviour
   WORKING_DIR        : process.cwd(),
+  PARALLEL_TOOL_CALLS    : true,
+  MAX_PARALLEL_TOOL_CALLS: 4,
   SESSION_DIR: process.env.FORGE_SESSION_DIR
     ? path.resolve(process.env.FORGE_SESSION_DIR)
     : path.join(os.homedir(), '.deepseek-agent', 'session'),
@@ -145,6 +147,8 @@ function validateConfigValue(key, value) {
     PLANNING_MODE     : v => typeof v === 'boolean',
     SHOW_THINKING     : v => typeof v === 'boolean',
     STRICT_SANDBOX    : v => typeof v === 'boolean',
+    PARALLEL_TOOL_CALLS    : v => typeof v === 'boolean',
+    MAX_PARALLEL_TOOL_CALLS: v => Number.isInteger(v) && v >= 1 && v <= 32,
   };
 
   if (rules[key]) {

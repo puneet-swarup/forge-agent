@@ -143,6 +143,8 @@ function parseArgs(argv) {
 	session     : null,
     sessionDir  : null,
     role        : null,
+    parallelTools: null,
+    maxParallel: null,
     };
 
     let i = 0;
@@ -161,6 +163,8 @@ function parseArgs(argv) {
       case '--no-sponsor-nudge': opts.noSponsorNudge = true; break;
       case '--launch-assets': opts.launchAssets = true; break;
       case '--headless':    opts.headless    = true;    break;
+      case '--parallel-tools':   opts.parallelTools = true;  break;
+      case '--no-parallel-tools': opts.parallelTools = false; break;
       case '--save-log':    opts.saveLog     = true;    break;
       case '--calibrate':   opts.calibrate   = true;    break;
       case '--plan':        opts.plan        = true;    break;
@@ -204,6 +208,7 @@ function parseArgs(argv) {
       case '--copy':        opts.copy        = true;    break;
       case '--timeout':     opts.timeout     = args[++i]; break;
       case '--tool-timeout': opts.toolTimeout = args[++i]; break;
+      case '--max-parallel': opts.maxParallel = args[++i]; break;
       case '-v':
       case '--version':     opts.version     = true;    break;
       case '-h':
@@ -298,6 +303,8 @@ function parseArgs(argv) {
           opts.sessionDir = a.split('=')[1];
         } else if (a && a.startsWith('--role=')) {
           opts.role = a.split('=')[1];
+        } else if (a && a.startsWith('--max-parallel=')) {
+          opts.maxParallel = a.split('=')[1];
         } else if (a && a.startsWith('--test-model=')) {
           opts.testModel = a.split('=')[1];
         } else if (a && a.startsWith('--session=')) {
@@ -423,6 +430,9 @@ ${c('1;36', 'CONFIGURATION')}
 ${c('1;36', 'DEBUGGING')}
       --debug            Verbose output with raw AI responses
       --headless         Run browser invisibly (no window)
+      --parallel-tools   Run independent tool calls concurrently (default: on)
+      --no-parallel-tools  Force strictly sequential tool execution
+      --max-parallel=<N> Max concurrent tool calls (default: 4)
       --save-log         Save full conversation to disk
       --calibrate        Auto-detect browser selectors
       --test-model       Test current model selectors
@@ -548,6 +558,14 @@ function applyFlagsToConfig(args, config) {
 
   // Planning
   if (args.plan !== undefined && args.plan !== false) config.PLANNING_MODE = true;
+
+  // Parallel tool groups (Item 5)
+  if (args.parallelTools === true)  config.PARALLEL_TOOL_CALLS = true;
+  if (args.parallelTools === false) config.PARALLEL_TOOL_CALLS = false;
+  if (args.maxParallel != null && args.maxParallel !== '') {
+    const n = parseInt(args.maxParallel, 10);
+    if (Number.isInteger(n) && n >= 1) config.MAX_PARALLEL_TOOL_CALLS = n;
+  }
   if (args.think !== undefined && args.think !== false) config.SHOW_THINKING = true;
 
   // Security

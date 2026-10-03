@@ -19,6 +19,13 @@ function parseResponse(rawText) {
   if (!text) return { type: 'empty' };
 
   // ── Strategy 1: <tool_call> XML tags ─────────────────────────────────────
+  const _xmlAll = [...text.matchAll(/<tool_call>\s*([\s\S]*?)\s*<\/tool_call>/gi)];
+  if (_xmlAll.length > 0) {
+    const _xc = [];
+    for (const _m of _xmlAll) { const _p = _parseToolJSON(_m[1], text); if (_p) _xc.push({ name: _p.name, args: _p.args }); }
+    const _xb = _buildBatch(_xc, text);
+    if (_xb) return _xb;
+  }
   const xmlMatch = text.match(/<tool_call>\s*([\s\S]*?)\s*<\/tool_call>/i);
   if (xmlMatch) {
     const result = _parseToolJSON(xmlMatch[1], text);
@@ -28,9 +35,14 @@ function parseResponse(rawText) {
   // ── Strategy 2: backtick code block tagged tool_call or json ─────────────
   const codeBlockRe = /```(?:tool_call|json)?\s*\n?([\s\S]*?)\n?\s*```/gi;
   let cbMatch;
+  const _cbCalls = [];
   while ((cbMatch = codeBlockRe.exec(text)) !== null) {
-    const result = _parseToolJSON(cbMatch[1].trim(), text);
-    if (result) return result;
+    const _cp = _parseToolJSON(cbMatch[1].trim(), text);
+    if (_cp) _cbCalls.push({ name: _cp.name, args: _cp.args });
+  }
+  if (_cbCalls.length > 0) {
+    const _cbBatch = _buildBatch(_cbCalls, text);
+    if (_cbBatch) return _cbBatch;
   }
 
   // ── Strategy 3: function‑call style: tool_name("arg") or tool_name(key="value", ...)
@@ -59,6 +71,40 @@ function parseResponse(rawText) {
   return { type: 'text', content: text };
 }
 
+function _buildBatch(calls, rawText) {
+  const valid = (calls || []).filter(c => c && typeof c.name === 'string' && c.name.trim());
+  if (valid.length === 0) return null;
+  if (valid.length === 1) {
+    return { type: 'tool_call', name: valid[0].name, args: valid[0].args || {}, rawText };
+  }
+  return {
+    type: 'tool_batch',
+    calls: valid.map(c => ({ name: c.name, args: c.args || {} })),
+    rawText,
+  };
+}
+
+function _parseBatchJSON(obj, rawText) {
+  if (!obj || typeof obj !== 'object') return null;
+  const arr = obj.tool_calls || obj.tools || obj.calls || obj.actions;
+  if (!Array.isArray(arr)) return null;
+  const calls = [];
+  for (const item of arr) {
+    if (!item || typeof item !== 'object') continue;
+    const name = item.tool || item.name || item.function;
+    if (!name || typeof name !== 'string') continue;
+    let args = item.args || item.arguments || item.parameters || item.input || item.params || null;
+    if (!args || typeof args !== 'object' || Array.isArray(args)) {
+      args = { ...item };
+      delete args.tool; delete args.name; delete args.function;
+      delete args.args; delete args.arguments; delete args.parameters;
+      delete args.input; delete args.params;
+    }
+    calls.push({ name: name.trim(), args: args || {} });
+  }
+  return _buildBatch(calls, rawText);
+}
+
 // ─────────────────────────────────────────────
 //  Core JSON parser — handles both "tool" and "name" key styles
 //  and attempts repair of broken JSON
@@ -73,6 +119,9 @@ function _parseToolJSON(jsonStr, rawText) {
   let parsed = _tryJSONParse(clean);
   if (!parsed) parsed = _tryJSONParse(_repairJSON(clean));
   if (!parsed) return _regexExtractToolCall(clean, rawText);
+
+  const _batch = _parseBatchJSON(parsed, rawText);
+  if (_batch) return _batch;
 
   const toolName = parsed.tool || parsed.name || parsed.function;
   if (!toolName || typeof toolName !== 'string') return null;
