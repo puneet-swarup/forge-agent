@@ -14,6 +14,7 @@ const TOOL_CATEGORIES = {
   stop_process: 'shell_exec', install_package: 'shell_exec',
   set_env_var: 'env_write', delete_env_var: 'env_write',
   write_clipboard: 'system_write',
+  spawn_agent: 'spawn_agent', kill_agent: 'spawn_agent',
 };
 
 const READ_ONLY_TOOLS = new Set([
@@ -30,6 +31,7 @@ const CATEGORY_LABELS = {
   file_write: 'write files', file_delete: 'delete files',
   shell_exec: 'run shell commands', env_write: 'modify .env files',
   system_write: 'write to clipboard',
+  spawn_agent: 'spawn/stop agent processes',
 };
 
 function isReadOnly(toolName) { return READ_ONLY_TOOLS.has(toolName); }
