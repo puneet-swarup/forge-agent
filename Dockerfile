@@ -2,7 +2,11 @@
 FROM node:20-slim AS deps
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci --omit=dev
+# --ignore-scripts: the package's postinstall (node src/postinstall.js) would
+# try to download Chromium during the build, but src/ is not copied into this
+# stage and STAGE 2 installs the browser explicitly. Skipping lifecycle scripts
+# here avoids the "Cannot find module /app/src/postinstall.js" build failure.
+RUN npm ci --omit=dev --ignore-scripts
 
 # STAGE 2 — playwright (download Chromium)
 FROM node:20-slim AS playwright
