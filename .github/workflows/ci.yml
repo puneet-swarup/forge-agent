@@ -1,6 +1,7 @@
 # .github/workflows/ci.yml
 # Runs on every push and pull request.
-# Tests across Node 18, 20, and 22 on Ubuntu.
+# Tests across the supported LTS lines (Node 20 and 22) on Ubuntu.
+# Node 18 is EOL (Apr 2025) and is no longer tested.
 
 name: CI
 
@@ -18,7 +19,7 @@ jobs:
     strategy:
       fail-fast: false           # run all matrix jobs even if one fails
       matrix:
-        node-version: [18, 20, 22]
+        node-version: [20, 22]
 
     steps:
       # ── Checkout ───────────────────────────────────────────────────────────

@@ -9,7 +9,7 @@ automation to code, test, and ship software — completely free.
 
 [![npm version](https://img.shields.io/npm/v/@puneet-swarup/forge-agent)](https://www.npmjs.com/package/@puneet-swarup/forge-agent)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-1300%2B%20passing-brightgreen)](#)
+[![Tests](https://img.shields.io/badge/tests-1597%20passing-brightgreen)](#)
 [![Docker](https://img.shields.io/badge/docker-ghcr.io%2Fpuneet--swarup%2Fforge--agent-blue)](https://github.com/puneet-swarup/forge-agent/pkgs/container/forge-agent)
 
 ---

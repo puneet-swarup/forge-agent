@@ -57,7 +57,10 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          platforms: linux/amd64,linux/arm64
+          # amd64 only by default. Add linux/arm64 back once the arm64 build is
+          # verified green under QEMU (it was failing at apt install; the
+          # Dockerfile now uses arch-portable package names).
+          platforms: linux/amd64
 
       - name: Test Docker image
         if: github.event_name == 'pull_request'

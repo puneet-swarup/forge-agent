@@ -41,7 +41,7 @@ Forge automates the typing, the scraping, and the tool calls.
 
 ### 2.1 Requirements
 
-- Node.js 18, 20 or 22
+- Node.js 20 or 22 (LTS). Node 18 is EOL and no longer supported.
 - A machine that can open a browser (headless is supported)
 - A free account on at least one of DeepSeek / ChatGPT / Gemini
 
