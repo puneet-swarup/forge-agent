@@ -69,6 +69,6 @@ test:
 		sh -c "npm ci && npm test"
 
 pull:
-	docker pull ghcr.io/omar-azam/forge-agent:latest
-	docker tag ghcr.io/omar-azam/forge-agent:latest $(FULL_IMAGE)
+	docker pull ghcr.io/puneet-swarup/forge-agent:latest
+	docker tag ghcr.io/puneet-swarup/forge-agent:latest $(FULL_IMAGE)
 	@echo "✓ Pulled and tagged as $(FULL_IMAGE)"

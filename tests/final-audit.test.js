@@ -59,8 +59,8 @@ describe('Final Audit — System Integrity', () => {
     expect(pkg.version).toMatch(/^\d+\.\d+\.\d+$/);
   });
 
-  test('package.json name is "@omar-azam/forge-agent"', () => {
-    expect(pkg.name).toBe('@omar-azam/forge-agent');
+  test('package.json name is "@puneet-swarup/forge-agent"', () => {
+    expect(pkg.name).toBe('@puneet-swarup/forge-agent');
   });
 
   test('package.json bin has "forge-agent" key', () => {

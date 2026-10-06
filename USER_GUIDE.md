@@ -47,7 +47,7 @@ Forge automates the typing, the scraping, and the tool calls.
 
 ### 2.2 Install
 
-    npm install -g @omar-azam/forge-agent
+    npm install -g @puneet-swarup/forge-agent
 
 Or from a clone of the repo:
 

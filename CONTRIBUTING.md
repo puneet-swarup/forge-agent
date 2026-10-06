@@ -3,7 +3,7 @@
 Thank you for considering contributing to Forge Agent! We welcome contributions from everyone. This document provides guidelines for contributing to the project.
 
 ## Ways to Contribute
-- 🐛 **Report bugs:** Use the Bug Report template on GitHub for `@omar-azam/forge-agent`.
+- 🐛 **Report bugs:** Use the Bug Report template on GitHub for `@puneet-swarup/forge-agent`.
 - 💡 **Suggest features:** Use the Feature Request template.
 - 📝 **Improve documentation:** Fix typos, clarify sections, or add new examples.
 - 🔧 **Fix bugs:** Check the issues list for "bug" labels.

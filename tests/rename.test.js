@@ -13,7 +13,7 @@ describe('Package and Command Rename Verification', () => {
   const changelog = fs.readFileSync(path.join(__dirname, '../CHANGELOG.md'), 'utf8');
 
   test('package.json name is correct', () => {
-    expect(pkg.name).toBe('@omar-azam/forge-agent');
+    expect(pkg.name).toBe('@puneet-swarup/forge-agent');
   });
 
   test('package.json bin has forge-agent', () => {
@@ -33,11 +33,11 @@ describe('Package and Command Rename Verification', () => {
   });
 
   test('package.json repository URL is correct', () => {
-    expect(pkg.repository.url).toContain('github.com/Omar-Azam/forge-agent');
+    expect(pkg.repository.url).toContain('github.com/puneet-swarup/forge-agent');
   });
 
   test('README.md contains correct install command', () => {
-    expect(readme).toContain('npm install -g @omar-azam/forge-agent');
+    expect(readme).toContain('npm install -g @puneet-swarup/forge-agent');
   });
 
   test('README.md contains forge-agent --interactive', () => {
@@ -72,7 +72,7 @@ describe('Package and Command Rename Verification', () => {
   });
 
   test('launch.json package is correct', () => {
-    expect(launch.package).toBe('@omar-azam/forge-agent');
+    expect(launch.package).toBe('@puneet-swarup/forge-agent');
   });
 
   test('CONTRIBUTING.md contains forge-agent', () => {
@@ -80,7 +80,7 @@ describe('Package and Command Rename Verification', () => {
   });
 
   test('CONTRIBUTING.md contains scoped package name', () => {
-    expect(contributing).toContain('@omar-azam/forge-agent');
+    expect(contributing).toContain('@puneet-swarup/forge-agent');
   });
 
   test('CHANGELOG.md contains scoped package name', () => {

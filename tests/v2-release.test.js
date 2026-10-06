@@ -14,9 +14,9 @@ describe('v2.0.0 Release Verification', () => {
     expect(major).toBeGreaterThanOrEqual(2);
   });
 
-  test('package.json name is "@omar-azam/forge-agent"', () => {
+  test('package.json name is "@puneet-swarup/forge-agent"', () => {
     const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
-    expect(pkg.name).toBe('@omar-azam/forge-agent');
+    expect(pkg.name).toBe('@puneet-swarup/forge-agent');
   });
 
   test('package.json bin.forge-agent exists', () => {
@@ -47,7 +47,7 @@ describe('v2.0.0 Release Verification', () => {
   test('README.md contains key identifiers', () => {
     const content = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
     expect(content.toLowerCase()).toContain('forge-agent');
-    expect(content).toContain('npm install -g @omar-azam/forge-agent');
+    expect(content).toContain('npm install -g @puneet-swarup/forge-agent');
     expect(content).toContain('37+');
   });
 

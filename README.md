@@ -7,10 +7,10 @@ automation to code, test, and ship software — completely free.
 
 > **This repository is a fork of [Omar-Azam/forge-agent](https://github.com/Omar-Azam/forge-agent)**, substantially extended with session context, TODO automation, a multi-agent supervisor, and a full test/CI suite. Original project is MIT licensed.
 
-[![npm version](https://img.shields.io/npm/v/@omar-azam/forge-agent)](https://www.npmjs.com/package/@omar-azam/forge-agent)
+[![npm version](https://img.shields.io/npm/v/@puneet-swarup/forge-agent)](https://www.npmjs.com/package/@puneet-swarup/forge-agent)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-1300%2B%20passing-brightgreen)](#)
-[![Docker](https://img.shields.io/badge/docker-ghcr.io%2Fomar--azam%2Fforge--agent-blue)](https://github.com/puneet-swarup/forge-agent/pkgs/container/forge-agent)
+[![Docker](https://img.shields.io/badge/docker-ghcr.io%2Fpuneet--swarup%2Fforge--agent-blue)](https://github.com/puneet-swarup/forge-agent/pkgs/container/forge-agent)
 
 ---
 
@@ -36,10 +36,10 @@ Forge Agent is free and open source. If it saves you time:
 
 ```bash
 # npm (recommended)
-npm install -g @omar-azam/forge-agent
+npm install -g @puneet-swarup/forge-agent
 
 # Docker (no Node.js required)
-docker pull ghcr.io/omar-azam/forge-agent:latest
+docker pull ghcr.io/puneet-swarup/forge-agent:latest
 ```
 
 ---
@@ -169,11 +169,11 @@ share files, never the browser.
 ```bash
 # Single task
 docker run --rm -v "$(pwd):/workspace" --network host \
-  ghcr.io/omar-azam/forge-agent "build a REST API"
+  ghcr.io/puneet-swarup/forge-agent "build a REST API"
 
 # Interactive
 docker run --rm -it -v "$(pwd):/workspace" --network host \
-  ghcr.io/omar-azam/forge-agent --interactive
+  ghcr.io/puneet-swarup/forge-agent --interactive
 
 # With Make
 make run TASK="build a REST API"

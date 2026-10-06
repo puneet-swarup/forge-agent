@@ -213,7 +213,9 @@ function generateManPage() {
       'Directory for custom tool plugins.',
       '.RE',
       '.SH AUTHOR',
-      'Omar Azam (https://github.com/Omar-Azam)',
+      'Puneet Swarup (https://github.com/puneet-swarup)',
+      '.br',
+      'Based on the original forge-agent by Omar Azam (https://github.com/Omar-Azam).',
       '.SH SEE ALSO',
       '\\fBgit\\fR(1), \\fBnpm\\fR(1), \\fBnpx\\fR(1)'
     ].join('\n');

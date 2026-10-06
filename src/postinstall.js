@@ -35,7 +35,7 @@ try {
   console.log('    fa "your task"');
   console.log('');
   console.log('  Documentation:');
-  console.log('    https://github.com/Omar-Azam/forge-agent');
+  console.log('    https://github.com/puneet-swarup/forge-agent');
   console.log('');
 } catch (err) {
   console.warn('');

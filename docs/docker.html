@@ -62,9 +62,9 @@
         <p>Forge Agent provides first-class Docker support, allowing you to run the agent in an isolated environment without needing to install Node.js or Playwright on your host machine.</p>
 
         <h2 id="quick-start">Quick Start</h2>
-        <pre><code>docker pull ghcr.io/omar-azam/forge-agent:latest
+        <pre><code>docker pull ghcr.io/puneet-swarup/forge-agent:latest
 docker run --rm -v "$(pwd):/workspace" --network host \
-  ghcr.io/omar-azam/forge-agent "build a REST API"</code></pre>
+  ghcr.io/puneet-swarup/forge-agent "build a REST API"</code></pre>
 
         <h2 id="why-docker">Why Use Docker?</h2>
         <ul>
@@ -77,8 +77,8 @@ docker run --rm -v "$(pwd):/workspace" --network host \
         <h2 id="installation">Installation Options</h2>
 
         <h3>Option 1: Pull from GitHub Container Registry</h3>
-        <pre><code>docker pull ghcr.io/omar-azam/forge-agent:latest
-docker tag ghcr.io/omar-azam/forge-agent:latest forge-agent:latest</code></pre>
+        <pre><code>docker pull ghcr.io/puneet-swarup/forge-agent:latest
+docker tag ghcr.io/puneet-swarup/forge-agent:latest forge-agent:latest</code></pre>
 
         <h3>Option 2: Build Locally</h3>
         <pre><code>git clone https://github.com/puneet-swarup/forge-agent
@@ -149,19 +149,19 @@ docker run --rm -it \
 
         <h3>GitHub Actions</h3>
         <pre><code>- name: Run Forge Agent
-  uses: docker://ghcr.io/omar-azam/forge-agent:latest
+  uses: docker://ghcr.io/puneet-swarup/forge-agent:latest
   with:
     args: --format=json --output=result.json "generate API documentation"</code></pre>
 
         <h3>GitLab CI</h3>
         <pre><code>forge-task:
-  image: ghcr.io/omar-azam/forge-agent:latest
+  image: ghcr.io/puneet-swarup/forge-agent:latest
   script:
     - forge-agent "run all tests and fix failures"</code></pre>
 
         <h2 id="custom-images">Building Your Own Image</h2>
         <p>You can extend the Forge Agent image to include your own tools and configurations:</p>
-        <pre><code>FROM ghcr.io/omar-azam/forge-agent:latest
+        <pre><code>FROM ghcr.io/puneet-swarup/forge-agent:latest
 COPY my-plugin.js /root/.deepseek-agent/tools/</code></pre>
 
         <h2 id="troubleshooting">Troubleshooting</h2>
@@ -184,7 +184,7 @@ COPY my-plugin.js /root/.deepseek-agent/tools/</code></pre>
   <footer class="site-footer">
     <p>Forge Agent v1.4.0 — MIT License</p>
     <p>
-      <a href="https://www.npmjs.com/package/@omar-azam/forge-agent">npm</a> ·
+      <a href="https://www.npmjs.com/package/@puneet-swarup/forge-agent">npm</a> ·
       <a href="https://github.com/puneet-swarup/forge-agent">GitHub</a> ·
       <a href="cli-reference.html">CLI Reference</a>
     </p>

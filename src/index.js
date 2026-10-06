@@ -482,7 +482,7 @@ ${c('1;36', 'LAUNCH')}
                          hacker-news | twitter | linkedin | dev-to
 
 ${c('1;36', 'MORE INFO')}
-  Docs:    https://github.com/Omar-Azam/forge-agent
+  Docs:    https://github.com/puneet-swarup/forge-agent
   Config:  ~/.deepseek-agent/config.json
   Memory:  ~/.deepseek-agent/memory.json
   History: ~/.deepseek-agent/history.json

@@ -48,7 +48,7 @@ I've been working on this for 48 days and have written over 1150 tests to keep i
 
 I'd love to hear your thoughts on the browser-automation approach vs. direct APIs, and any feedback on the toolset!
 
-GitHub: https://github.com/Omar-Azam/forge-agent`;
+GitHub: https://github.com/puneet-swarup/forge-agent`;
 }
 
 const TWITTER_THREAD = [
@@ -88,10 +88,10 @@ Cross-platform: Linux, macOS, Windows.`,
   
   `6/ Want to try it? It's live on npm! 🚀
 
-npm install -g @omar-azam/forge-agent
+npm install -g @puneet-swarup/forge-agent
 
 Star the repo on GitHub:
-https://github.com/Omar-Azam/forge-agent`,
+https://github.com/puneet-swarup/forge-agent`,
   
   `7/ Forge Agent is 100% open source (MIT). 💙
 
@@ -117,12 +117,12 @@ Key Stats:
 🔒 Built-in Security Sandbox
 
 How to get started:
-npm install -g @omar-azam/forge-agent
+npm install -g @puneet-swarup/forge-agent
 forge-agent "build a REST API with Express"
 
 Forge Agent is fully open source (MIT). I'm looking for feedback, contributors, and new tool ideas!
 
-Check it out on GitHub: https://github.com/Omar-Azam/forge-agent
+Check it out on GitHub: https://github.com/puneet-swarup/forge-agent
 
 #OpenSource #AITools #NodeJS #DeveloperTools #Automation #AI`;
 
@@ -157,7 +157,7 @@ The core loop is simple but powerful:
 
 Installation is easy:
 \`\`\`bash
-npm install -g @omar-azam/forge-agent
+npm install -g @puneet-swarup/forge-agent
 forge-agent --setup
 \`\`\`
 
@@ -185,7 +185,7 @@ Our 2026 roadmap includes:
 
 Forge Agent is 100% open source. We'd love your help building more tools and improving the parser.
 
-GitHub: [https://github.com/Omar-Azam/forge-agent](https://github.com/Omar-Azam/forge-agent)`;
+GitHub: [https://github.com/puneet-swarup/forge-agent](https://github.com/puneet-swarup/forge-agent)`;
 
 function generateLaunchKit() {
   return {
@@ -204,7 +204,7 @@ function generateLaunchKit() {
     hackerNews: {
       title: HACKER_NEWS_TITLE,
       body: generateHackerNewsPost(),
-      url: 'https://github.com/Omar-Azam/forge-agent',
+      url: 'https://github.com/puneet-swarup/forge-agent',
     },
     twitter: {
       thread: TWITTER_THREAD,

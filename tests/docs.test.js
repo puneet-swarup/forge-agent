@@ -71,7 +71,7 @@ describe('Documentation Site', () => {
   test('index.html has landing page content', () => {
     const content = fs.readFileSync(path.join(DOCS_DIR, 'index.html'), 'utf8');
     expect(content).toContain('Forge Agent');
-    expect(content).toContain('npm install -g @omar-azam/forge-agent');
+    expect(content).toContain('npm install -g @puneet-swarup/forge-agent');
   });
 
   test('tools.html documents key tools', () => {

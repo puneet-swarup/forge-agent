@@ -1,7 +1,7 @@
 {
   "project": "Forge Agent",
   "version": "2.0.0",
-  "package": "@omar-azam/forge-agent",
+  "package": "@puneet-swarup/forge-agent",
   "launchDate": "2026-06-12T09:00:00Z",
   "stats": {
     "daysOfDevelopment": 50,
@@ -15,11 +15,11 @@
     "linesOfCode": "~10000"
   },
   "links": {
-    "npm": "https://www.npmjs.com/package/@omar-azam/forge-agent",
-    "github": "https://github.com/Omar-Azam/forge-agent",
-    "docs": "https://omar-azam.github.io/forge-agent",
-    "docker": "https://ghcr.io/omar-azam/forge-agent",
-    "sponsor": "https://github.com/sponsors/Omar-Azam"
+    "npm": "https://www.npmjs.com/package/@puneet-swarup/forge-agent",
+    "github": "https://github.com/puneet-swarup/forge-agent",
+    "docs": "https://puneet-swarup.github.io/forge-agent",
+    "docker": "https://ghcr.io/puneet-swarup/forge-agent",
+    "sponsor": "https://github.com/sponsors/puneet-swarup"
   },
   "platforms": {
     "productHunt": "https://www.producthunt.com/posts/forge-agent",

@@ -27,7 +27,7 @@ describe('Blog and Launch Metadata', () => {
     const content = fs.readFileSync(filePath, 'utf8');
     expect(content).toContain('Introducing Forge Agent');
     expect(content).toContain('API Key');
-    expect(content).toContain('npm install -g @omar-azam/forge-agent');
+    expect(content).toContain('npm install -g @puneet-swarup/forge-agent');
   });
 
   test('Roadmap blog post exists and has content', () => {
@@ -44,7 +44,7 @@ describe('Blog and Launch Metadata', () => {
     expect(fs.existsSync(filePath)).toBe(true);
     const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
     expect(data.project).toBe('Forge Agent');
-    expect(data.package).toBe('@omar-azam/forge-agent');
+    expect(data.package).toBe('@puneet-swarup/forge-agent');
     expect(data.stats.daysOfDevelopment).toBe(50);
   });
 

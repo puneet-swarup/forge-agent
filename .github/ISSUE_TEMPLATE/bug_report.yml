@@ -94,5 +94,5 @@ body:
           required: true
         - label: I ran forge-agent --debug and included the output
           required: false
-        - label: I am using the latest version of @omar-azam/forge-agent
+        - label: I am using the latest version of @puneet-swarup/forge-agent
           required: false

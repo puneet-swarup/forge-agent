@@ -8,6 +8,9 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ## [Unreleased]
 
+### Changed
+- **Rebranded to this fork** - package name is now @puneet-swarup/forge-agent; repo, docs, Docker, and sponsor links point to puneet-swarup; a fork-attribution note credits the original Omar-Azam/forge-agent (MIT). Historical entries below are unchanged.
+
 ### Added
 - **Named sessions & instance registry** — `--session <name>` (own Chromium profile), `--session auto`/`--new-session`, `--session-dir <path>`, `--role`, and `ps`/`--instances`.
 - **Session context (Phase 1)** — `src/session-context.js` writes a durable, gitignored `SESSION_CONTEXT.md` (goal/decisions/progress/git-state) that survives context compaction. Auto-created at session start, updated after tool batches, removed at session end. `/context` slash command; `/clear` re-seeds from it. Config: `SESSION_CONTEXT_GITIGNORE`.

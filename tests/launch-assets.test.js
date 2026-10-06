@@ -38,7 +38,7 @@ describe('Launch Assets Generator', () => {
     const post = generateHackerNewsPost();
     expect(typeof post).toBe('string');
     expect(post).toContain('Forge Agent');
-    expect(post).toContain('https://github.com/Omar-Azam/forge-agent');
+    expect(post).toContain('https://github.com/puneet-swarup/forge-agent');
   });
 
   test('TWITTER_THREAD has exactly 7 valid tweets', () => {

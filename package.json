@@ -1,5 +1,5 @@
 {
-  "name": "@omar-azam/forge-agent",
+  "name": "@puneet-swarup/forge-agent",
   "version": "2.0.2",
   "description": "Forge Agent — Autonomous AI coding via browser automation. No API key needed.",
   "main": "src/index.js",
@@ -65,9 +65,9 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Omar-Azam/forge-agent"
+    "url": "https://github.com/puneet-swarup/forge-agent"
   },
-  "homepage": "https://github.com/Omar-Azam/forge-agent#readme",
+  "homepage": "https://github.com/puneet-swarup/forge-agent#readme",
   "publishConfig": {
     "access": "public"
   }

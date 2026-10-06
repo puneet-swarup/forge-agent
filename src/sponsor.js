@@ -6,7 +6,7 @@ const path = require('path');
 const os = require('os');
 
 const SPONSOR_URLS = {
-  github:        'https://github.com/sponsors/Omar-Azam',
+  github:        'https://github.com/sponsors/puneet-swarup',
   openCollective: 'https://opencollective.com/forge-agent',
   kofi:          'https://ko-fi.com/forgeagent',
   buyMeACoffee:  'https://buymeacoffee.com/forgeagent',
@@ -123,7 +123,7 @@ class SponsorNudge {
       '   Forge Agent is free and open source. If it saves you',
       '   time, a small sponsorship helps keep it maintained.',
       '',
-      '   ☕ $5/mo  →  github.com/sponsors/Omar-Azam',
+      '   ☕ $5/mo  →  github.com/sponsors/puneet-swarup',
       '   ⭐ $10/mo →  ko-fi.com/forgeagent',
       '   🏢 Teams  →  forge-agent.dev/sponsor',
       '',
@@ -165,9 +165,9 @@ class SponsorNudge {
       '',
       'OTHER WAYS TO HELP (free!)',
       line,
-      '⭐ Repo star:      https://github.com/Omar-Azam/forge-agent',
+      '⭐ Repo star:      https://github.com/puneet-swarup/forge-agent',
       '📢 Share Forge Agent with your team or on social media',
-      '🐛 Report bugs:   https://github.com/Omar-Azam/forge-agent/issues',
+      '🐛 Report bugs:   https://github.com/puneet-swarup/forge-agent/issues',
       '📝 Improve docs:  Open a PR with documentation improvements',
       '🔌 Share plugins: Share your custom plugins in GitHub Discussions',
     ].join('\n');
