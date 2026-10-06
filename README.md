@@ -265,6 +265,8 @@ Run `forge-agent --setup` for guided configuration.
 
 Full documentation: [https://omar-azam.github.io/forge-agent](https://omar-azam.github.io/forge-agent)
 
+- [**Complete User Guide**](USER_GUIDE.md) - every feature with copy-paste examples
+- [**Testing Guide**](TESTING_PHASE1-4.md) - verify each feature by hand
 - [Getting Started](docs/getting-started.html)
 - [All Tools](docs/tools.html)
 - [CLI Reference](docs/cli-reference.html)
