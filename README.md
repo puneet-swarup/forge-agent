@@ -76,6 +76,9 @@ fa "add TypeScript to this project"
 | 🐳 Docker Ready | Official image, no local Node.js setup needed |
 | ⚡ Smart Caching | Skips repeated read-only tool calls |
 | 🗜 Context Compression | Auto-compresses long conversations |
+| 📝 Session Context | Durable, gitignored SESSION_CONTEXT.md survives compaction |
+| ✅ TODO Auto-Run | --auto works through FORGE_TODO.md unattended |
+| 🤖 Agent Supervisor | Spawn, monitor, and stop child agents |
 | 📊 Benchmarks | Measure and compare performance |
 
 ---
@@ -132,7 +135,29 @@ forge-agent --history         # Browse past tasks
 forge-agent --resume          # Pick and resume a past task
 forge-agent --resume=last     # Resume most recent task immediately
 forge-agent --rerun           # Re-run most recent task fresh
+forge-agent --auto            # run open FORGE_TODO.md items unattended
+forge-agent --resume-work     # force the resume path for pending work
 ```
+
+---
+
+## Session Context & TODO
+
+Forge keeps a durable, gitignored SESSION_CONTEXT.md at the project root
+recording the goal, decisions, progress and current git state of a run. It
+survives model context compaction, so it can be re-fed after the model forgets
+earlier turns. Created at session start, removed at session end.
+
+FORGE_TODO.md is a persistent, human-authored task list. --auto works through
+its open items top-to-bottom, ticking each [ ] to [x] on success, and halts on
+the first failure. Auto mode applies to FORGE_TODO.md only - a
+SESSION_CONTEXT.md is always advisory and never auto-acted on.
+
+Interactive commands: /context, /context clear, /context seed.
+
+Multi-Agent (Supervisor Mode): a supervisor can spawn_agent, list_agents, and
+kill_agent. Each child uses its own --session (own Chromium profile); children
+share files, never the browser.
 
 ---
 
@@ -186,7 +211,9 @@ forge-agent --new-plugin my_tool # generate a stub
 forge-agent [OPTIONS] [TASK]
 
 Core:      --interactive -i  --dir  --model  --profile  --plan  --think
-Sessions:  --resume  --rerun  --history  --no-memory
+Sessions:  --resume  --rerun  --history  --no-memory  --session  --session-dir
+TODO:      --auto  --resume-work
+Supervisor: spawn_agent  list_agents  kill_agent  (tools)
 Templates: --template  --list-templates  --save-template
 Output:    --format  --output  --no-tui  --compact
 Watch:     --watch  --watch-pattern  --watch-debounce

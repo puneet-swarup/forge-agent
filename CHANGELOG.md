@@ -9,6 +9,10 @@ Versioning: [Semantic Versioning](https://semver.org/)
 ## [Unreleased]
 
 ### Added
+- **Named sessions & instance registry** — `--session <name>` (own Chromium profile), `--session auto`/`--new-session`, `--session-dir <path>`, `--role`, and `ps`/`--instances`.
+- **Session context (Phase 1)** — `src/session-context.js` writes a durable, gitignored `SESSION_CONTEXT.md` (goal/decisions/progress/git-state) that survives context compaction. Auto-created at session start, updated after tool batches, removed at session end. `/context` slash command; `/clear` re-seeds from it. Config: `SESSION_CONTEXT_GITIGNORE`.
+- **TODO detection & auto-run (Phase 2/3)** — startup detection of `FORGE_TODO.md` / `SESSION_CONTEXT.md` with a resume prompt; `-a`/`--auto` runs open `FORGE_TODO.md` items unattended (TODO-only), ticking each done on success; `--resume-work`/`--continue`.
+- **Multi-agent supervisor (Phase 4)** — `src/agent-supervisor.js` plus `spawn_agent`, `list_agents`, `kill_agent` tools. Children run with their own session/profile and share files, never the browser.
 - **Cross-platform audio tools** — src/audio.js: platform-agnostic `call_user` (text-to-speech) and `raise_alarm` (audible alert) tools. Auto-selects the best backend per OS — SAPI/PowerShell (Windows), `say`/`afplay` (macOS), `spd-say`/`espeak-ng`/`espeak`/`paplay`/`aplay`/`canberra-gtk-play` (Linux) — with a universal terminal-bell fallback. Honours `FORGE_NO_AUDIO` for CI/headless hosts. Documented in README and docs/tools.html, with dedicated unit tests.
 
 ---
