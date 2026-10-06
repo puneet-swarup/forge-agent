@@ -8,6 +8,9 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ## [Unreleased]
 
+### Added
+- **Parallel TODO pool (`--parallel`)** — `src/worker-pool.js` runs open FORGE_TODO.md items across up to `--max-parallel` child agents at once (each its own session/profile), ticking each success. The biggest throughput win for independent work. New `--parallel` flag + help entry; unit + real-process integration tests.
+
 ### Performance
 - **Faster browser loop** — the adapter now installs a `MutationObserver` on the page and resolves `waitForResponse` the instant the DOM goes quiet, instead of polling every 800ms. The send path is event-driven too (no fixed 200/100/500ms sleeps; submits immediately and waits for the message to appear). Fallback to the old stability loop if the observer can't be installed. Measured ~4x faster on the mock-chat integration suite (28s -> 6.5s).
 

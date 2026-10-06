@@ -320,7 +320,20 @@ Inside `forge-agent -i`:
     /todo done 2              # tick item #2
     /todo clear-done          # remove completed items
 
-### 7.5 Resume work from a previous run
+### 7.5 Run TODO items in parallel
+
+For independent items, run several child agents at once (each gets its own
+session/profile):
+
+    forge-agent --parallel
+    forge-agent --parallel --max-parallel=4
+
+Up to `--max-parallel` items run concurrently (default 3). Each successful item
+is ticked in FORGE_TODO.md. Independent items make real progress in parallel;
+this is the biggest throughput win. (Items that touch the same files should NOT
+be run in parallel - keep those sequential with `--auto`.)
+
+### 7.6 Resume work from a previous run
 
 At startup, if a FORGE_TODO.md or SESSION_CONTEXT.md exists, Forge asks:
 

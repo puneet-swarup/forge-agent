@@ -156,6 +156,7 @@ function parseArgs(argv) {
     json: null,
     auto: null,
     resumeWork: null,
+    parallel: null,
     };
 
     let i = 0;
@@ -181,6 +182,7 @@ function parseArgs(argv) {
       case '--json':        opts.json = true;         break;
       case '-a':
       case '--auto':        opts.auto = true;         break;
+      case '--parallel':    opts.parallel = true;     break;
       case '--resume-work':
       case '--continue':    opts.resumeWork = true;   break;
       case '--audio-sync':   opts.audioSync = true;   break;
@@ -381,6 +383,8 @@ ${c('1;36', 'MEMORY & SESSIONS')}
       --role <name>      Role label. Defaults to session name.
   -a, --auto             Run open FORGE_TODO.md items unattended (no prompt).
       --resume-work      Auto-resume pending FORGE_TODO.md / SESSION_CONTEXT.md.
+      --parallel         Run open TODO items across parallel child agents.
+                         Cap concurrency with --max-parallel=<n> (default 3).
       --no-memory        Skip memory for this run
 
 ${c('1;36', 'TEMPLATES & EXAMPLES')}
@@ -641,6 +645,51 @@ async function runAutoTodoLoop(agent, config, args, logger) {
   logger.info(`\n✅ --auto finished. ${completed} item(s) completed.\n`);
   // Return so main() can shut down cleanly.
   return completed;
+}
+
+/**
+ * Run open FORGE_TODO.md items through a concurrency-capped pool of child
+ * agents. Each item runs in its own session/profile, so independent items make
+ * real progress in parallel. On completion, each successful item is ticked in
+ * the TODO file.
+ */
+async function runParallelTodoPool(agent, config, args, logger) {
+  const { readTodo, markTodoDone } = require('./todo-manager');
+  const { runPool } = require('./worker-pool');
+  const projectDir = config.WORKING_DIR || process.cwd();
+
+  const todo = readTodo(projectDir);
+  if (!todo || todo.open.length === 0) {
+    logger.warn('\n--parallel: no open FORGE_TODO.md items. Nothing to do.\n');
+    return 0;
+  }
+
+  const tasks = todo.open.map(i => i.text);
+  const maxParallel = parseInt(args.maxParallel, 10) || config.MAX_PARALLEL_TOOL_CALLS || 3;
+  logger.info(`\n--parallel: ${tasks.length} open item(s), up to ${maxParallel} at once.\n`);
+
+  const sessionPrefix = process.env.FORGE_SESSION_NAME || 'worker';
+  const { results } = await runPool(tasks, {
+    maxParallel,
+    cwd: projectDir,
+    sessionPrefix: sessionPrefix + '-auto',
+    quiet: false,
+    stopOnError: false,
+    onEvent: (e) => {
+      if (e.type === 'start')  logger.info(`  > [${e.index + 1}] ${e.task}`);
+      if (e.type === 'done')   logger.dim(`    done: ${e.task}`);
+      if (e.type === 'fail')   logger.warn(`    failed: ${e.task} (exit ${e.result.code})`);
+    },
+  });
+
+  // Tick the items that succeeded.
+  let ticked = 0;
+  for (const r of results) {
+    if (r.ok) { try { markTodoDone(projectDir, r.task); ticked++; } catch (_) {} }
+  }
+
+  logger.info(`\n--parallel finished. ${ticked} item(s) completed.\n`);
+  return ticked;
 }
 
 async function startInteractiveMode(agent, config) {
@@ -1602,7 +1651,7 @@ async function main() {
   }
 
   // ── Validate we have a task or interactive mode ────────────────────────────
-  if (!args.interactive && !args.task && !args.auto) {
+  if (!args.interactive && !args.task && !args.auto && !args.parallel) {
     logger.warn('No task provided. Switching to interactive mode...\n');
     args.interactive = true;
   }
@@ -1678,6 +1727,9 @@ async function main() {
 
     if (args.interactive) {
       await startInteractiveMode(agent, config);
+    } else if (args.parallel) {
+      // Phase 5: run open TODO items across a pool of child agents.
+      await runParallelTodoPool(agent, config, args, logger);
     } else if (autoNoExplicitTask) {
       await runAutoTodoLoop(agent, config, args, logger);
     } else {

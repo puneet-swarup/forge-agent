@@ -7,7 +7,7 @@ automation to code, test, and ship software — completely free.
 
 > **This repository is a fork of [Omar-Azam/forge-agent](https://github.com/Omar-Azam/forge-agent)**, substantially extended with session context, TODO automation, a multi-agent supervisor, and a full test/CI suite. Original project is MIT licensed.
 
-[![npm version](https://img.shields.io/npm/v/@puneet-swarup/forge-agent)](https://www.npmjs.com/package/@puneet-swarup/forge-agent)
+[![npm](https://img.shields.io/badge/npm-@puneet--swarup%2Fforge--agent-cb3837?logo=npm&style=flat)](https://www.npmjs.com/package/@puneet-swarup/forge-agent)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-1597%20passing-brightgreen)](#)
 [![Docker](https://img.shields.io/badge/docker-ghcr.io%2Fpuneet--swarup%2Fforge--agent-blue)](https://github.com/puneet-swarup/forge-agent/pkgs/container/forge-agent)
