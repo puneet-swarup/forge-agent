@@ -81,10 +81,6 @@ class DeepSeekAdapter extends BaseAdapter {
       const { el, isTextarea } = await this._findInput();
 
       await el.click({ force: true });
-      await this.page.waitForTimeout(200);
-
-      await this.page.keyboard.press('Control+a');
-      await this.page.waitForTimeout(100);
 
       if (isTextarea) {
         await el.fill(text);
@@ -98,20 +94,20 @@ class DeepSeekAdapter extends BaseAdapter {
         }, el, text);
       }
 
-      const sendDelayMs = this.config.SEND_DELAY || 1_500;
-      const startPoll = Date.now();
+      // Event-driven send: try the send button immediately (one fast pass),
+      // else press Enter. No fixed delay, no long poll of the button.
       let clicked = false;
-      while (Date.now() - startPoll < sendDelayMs) {
-        clicked = await this._clickSendButton();
-        if (clicked) break;
-        await this.page.waitForTimeout(50);
-      }
-
+      try { clicked = await this._clickSendButton(); } catch (_) { clicked = false; }
       if (!clicked) {
         await this.page.keyboard.press('Enter');
       }
 
-      await this.page.waitForTimeout(500);
+      // NOTE: we deliberately do NOT wait for the assistant node here. Doing so
+      // would consume the "new message" event that waitForResponse relies on for
+      // its appearance phase (a later count check would never see an increase).
+      // The send button click / Enter above is enough to submit; waitForResponse
+      // owns the appearance detection. A tiny yield lets the submit settle.
+      await this.page.waitForTimeout(50);
     }, 'send message to DeepSeek');
   }
 
@@ -129,52 +125,70 @@ class DeepSeekAdapter extends BaseAdapter {
       }
 
       // ── Phase 1: wait for a new message to appear ────────────────────────
-      const initialCount = await this._getMessageCount();
-      let appeared = false;
+      // Install the quiet watcher first so it observes the whole generation.
+      const watcherOk = await this._installQuietWatcher();
+      const appearDeadline = this.config.APPEAR_TIMEOUT || 120_000;
+      // Wait until some assistant text is present (non-empty). This is more
+      // robust than a count delta, because the reply node may already exist by
+      // the time we get here (fast send + fast first token).
+      const appeared = await this._waitForAnyAssistantText(appearDeadline);
 
-      while (Date.now() - start < (this.config.APPEAR_TIMEOUT || 120_000)) {
-        const count = await this._getMessageCount();
-        if (count > initialCount) { appeared = true; break; }
-        await this.page.waitForTimeout(this.config.GENERATION_POLL || 800);
-      }
-
-      if (!appeared) logger.warn('Response may have been delayed — continuing to wait...');
+      if (!appeared) logger.warn('Response may have been delayed - continuing to wait...');
 
       // ── Phase 2: wait for text to stabilise ──────────────────────────────
-      let lastText    = '';
-      let stableStart = null;
-      let lastIndicatorUpdate = 0;
+      let lastText = '';
+      if (watcherOk) {
+        // Fast path: MutationObserver tells us when the DOM goes quiet.
+        let lastIndicatorUpdate = 0;
+        while (Date.now() - start < timeout) {
+          const text = await this._extractLastMessage();
+          if (typeof this.thinkingTracker.update === 'function') {
+            this.thinkingTracker.update(text);
+          }
+          lastText = text;
 
-      while (Date.now() - start < timeout) {
-        const text = await this._extractLastMessage();
+          const quiet = await this._waitForDomQuiet(stableDelay, 250);
 
-        if (typeof this.thinkingTracker.update === 'function') {
-          this.thinkingTracker.update(text);
+          const now = Date.now();
+          if (now - lastIndicatorUpdate > 1_000) {
+            const elapsedMs = now - start;
+            logger.thinking(elapsedMs, text.length);
+            if (Math.round(elapsedMs / 1000) === 30) {
+              logger.clearThinking();
+              logger.dim('  Response is taking a while - this is normal for complex tasks or slow connections.');
+            }
+            lastIndicatorUpdate = now;
+          }
+
+          if (quiet && text.length > 0 && !await this._isGenerating()) break;
         }
-
-        if (text !== lastText) {
-          lastText    = text;
-          stableStart = null;
-        } else if (text.length > 0) {
-          if (!stableStart) stableStart = Date.now();
-          else if (Date.now() - stableStart >= stableDelay) {
-            if (!await this._isGenerating()) break;
+      } else {
+        // Fallback: text-stability loop (previous behaviour).
+        let stableStart = null;
+        let lastIndicatorUpdate = 0;
+        while (Date.now() - start < timeout) {
+          const text = await this._extractLastMessage();
+          if (typeof this.thinkingTracker.update === 'function') {
+            this.thinkingTracker.update(text);
+          }
+          if (text !== lastText) {
+            lastText    = text;
             stableStart = null;
+          } else if (text.length > 0) {
+            if (!stableStart) stableStart = Date.now();
+            else if (Date.now() - stableStart >= stableDelay) {
+              if (!await this._isGenerating()) break;
+              stableStart = null;
+            }
           }
-        }
-
-        const now = Date.now();
-        if (now - lastIndicatorUpdate > 1_000) {
-          const elapsedMs = now - start;
-          logger.thinking(elapsedMs, text.length);
-          if (Math.round(elapsedMs / 1000) === 30) {
-            logger.clearThinking();
-            logger.dim('  Response is taking a while — this is normal for complex tasks or slow connections.');
+          const now = Date.now();
+          if (now - lastIndicatorUpdate > 1_000) {
+            const elapsedMs = now - start;
+            logger.thinking(elapsedMs, text.length);
+            lastIndicatorUpdate = now;
           }
-          lastIndicatorUpdate = now;
+          await this.page.waitForTimeout(this.config.GENERATION_POLL || 800);
         }
-
-        await this.page.waitForTimeout(this.config.GENERATION_POLL || 800);
       }
 
       logger.clearThinking();
@@ -282,6 +296,125 @@ class DeepSeekAdapter extends BaseAdapter {
       }
       return document.querySelectorAll('[class*="message"]').length;
     });
+  }
+
+  /**
+   * Install a MutationObserver that records the timestamp of the last DOM
+   * change anywhere in the document, so waitForResponse can resolve the instant
+   * the page goes quiet instead of polling on a fixed interval.
+   * Idempotent; returns true if installed.
+   */
+  async _installQuietWatcher() {
+    try {
+      await this.page.evaluate(() => {
+        if (window.__forgeQuiet) return true;
+        const state = { last: Date.now(), count: 0 };
+        window.__forgeQuiet = state;
+        const obs = new MutationObserver(() => {
+          state.last = Date.now();
+          state.count++;
+        });
+        obs.observe(document.body || document.documentElement, {
+          childList: true, subtree: true, characterData: true,
+        });
+        window.__forgeQuietObs = obs;
+        return true;
+      });
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /**
+   * Wait until the DOM has been quiet (no mutations) for quietMs, or maxMs
+   * elapses. Uses a fast 50ms waitForFunction poll rather than the old 800ms
+   * loop. Returns true if it went quiet, false on timeout.
+   */
+  async _waitForDomQuiet(quietMs, maxMs) {
+    try {
+      await this.page.waitForFunction(
+        (args) => {
+          const s = window.__forgeQuiet;
+          if (!s) return true;
+          return (Date.now() - s.last) >= args.quietMs;
+        },
+        { quietMs },
+        { timeout: maxMs, polling: 50 },
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /**
+   * Wait until the assistant message count exceeds 'before', or timeout.
+   * Returns the new count.
+   */
+  async _waitForMessageCountIncrease(before, maxMs) {
+    try {
+      await this.page.waitForFunction(
+        (min) => {
+          const candidates = [
+            '[class*="assistant"][class*="message"]',
+            '[data-role="assistant"]',
+            '[class*="markdown-content"]',
+            '.ds-markdown',
+            '[class*="chat-message"]',
+            '[class*="message-bubble"]',
+          ];
+          let n = 0;
+          for (const sel of candidates) {
+            const els = document.querySelectorAll(sel);
+            if (els.length > 0) { n = els.length; break; }
+          }
+          if (n === 0) n = document.querySelectorAll('[class*="message"]').length;
+          return n > min;
+        },
+        before,
+        { timeout: maxMs, polling: 50 },
+      );
+    } catch (_) { /* timeout */ }
+    return await this._getMessageCount();
+  }
+
+  /**
+   * Wait until any assistant message has non-empty text, or timeout.
+   * Returns true if text appeared.
+   */
+  async _waitForAnyAssistantText(maxMs) {
+    try {
+      await this.page.waitForFunction(
+        () => {
+          const candidates = [
+            '[class*="assistant"][class*="message"]',
+            '[data-role="assistant"]',
+            '[class*="markdown-content"]',
+            '.ds-markdown',
+            '[class*="chat-message"]',
+            '[class*="message-bubble"]',
+          ];
+          let nodes = [];
+          for (const sel of candidates) {
+            const els = document.querySelectorAll(sel);
+            if (els.length > 0) { nodes = els; break; }
+          }
+          if (nodes.length === 0) {
+            nodes = document.querySelectorAll('[class*="message"]');
+          }
+          for (const n of nodes) {
+            if ((n.textContent || '').trim().length > 0) return true;
+          }
+          return false;
+        },
+        null,
+        { timeout: maxMs, polling: 50 },
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   /**

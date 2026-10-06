@@ -8,6 +8,9 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ## [Unreleased]
 
+### Performance
+- **Faster browser loop** — the adapter now installs a `MutationObserver` on the page and resolves `waitForResponse` the instant the DOM goes quiet, instead of polling every 800ms. The send path is event-driven too (no fixed 200/100/500ms sleeps; submits immediately and waits for the message to appear). Fallback to the old stability loop if the observer can't be installed. Measured ~4x faster on the mock-chat integration suite (28s -> 6.5s).
+
 ### Changed
 - **Rebranded to this fork** - package name is now @puneet-swarup/forge-agent; repo, docs, Docker, and sponsor links point to puneet-swarup; a fork-attribution note credits the original Omar-Azam/forge-agent (MIT). Historical entries below are unchanged.
 

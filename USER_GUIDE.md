@@ -436,6 +436,7 @@ Example:
 | SESSION_CONTEXT.md appears in git | add it to .gitignore (Forge does this automatically) |
 | command not found: forge-agent | use `npm link` or run `node src/index.js` |
 | speech announcements are late/out of order | fixed: drainer now kicks on every cue. `FORGE_AUDIO_LINGER_MS` tunes the keep-hot window (default 800). |
+| responses feel slow / laggy | the adapter now resolves on DOM-quiet via a MutationObserver (no 800ms polling). If a site misbehaves, lower `STABLE_DELAY` in config; the old stability loop is used as a fallback automatically. |
 
 ---
 

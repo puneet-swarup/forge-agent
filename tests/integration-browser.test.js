@@ -126,4 +126,38 @@ describe('browser integration (mock chat)', () => {
       : [parsed.name];
     expect(names).toContain('show_info');
   }, 30000);
+
+  itBrowser('uses the MutationObserver fast path and resolves quickly', async () => {
+    const { getAdapter } = require('../src/adapter-factory');
+    const config = {
+      DEEPSEEK_URL: server.url,
+      HEALTH_CHECK_TIMEOUT: 5000,
+      SEND_DELAY: 200,
+      GENERATION_POLL: 800,   // deliberately slow fallback poll
+      STABLE_DELAY: 200,
+      APPEAR_TIMEOUT: 8000,
+      RESPONSE_TIMEOUT: 15000,
+      ACTIVE_PROFILE: 'default',
+      PLANNING_MODE: false,
+      WORKING_DIR: process.cwd(),
+    };
+    const adapter = getAdapter('deepseek', page, config);
+
+    await adapter.sendMessage('speed test');
+
+    // The quiet watcher must be installed after waitForResponse starts.
+    const t0 = Date.now();
+    const reply = await adapter.waitForResponse();
+    const elapsed = Date.now() - t0;
+
+    expect(reply).toContain('Echo: speed test');
+
+    // The observer flag should exist on the page.
+    const installed = await page.evaluate(() => !!window.__forgeQuiet);
+    expect(installed).toBe(true);
+
+    // With the 800ms fallback poll, an un-optimized loop would take at least
+    // ~800ms to resolve. The observer path should beat that comfortably.
+    expect(elapsed).toBeLessThan(800);
+  }, 30000);
 });
