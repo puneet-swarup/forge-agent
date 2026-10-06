@@ -5,10 +5,12 @@
 Forge Agent drives DeepSeek, ChatGPT, or Gemini through browser
 automation to code, test, and ship software — completely free.
 
+> **This repository is a fork of [Omar-Azam/forge-agent](https://github.com/Omar-Azam/forge-agent)**, substantially extended with session context, TODO automation, a multi-agent supervisor, and a full test/CI suite. Original project is MIT licensed.
+
 [![npm version](https://img.shields.io/npm/v/@omar-azam/forge-agent)](https://www.npmjs.com/package/@omar-azam/forge-agent)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-1300%2B%20passing-brightgreen)](#)
-[![Docker](https://img.shields.io/badge/docker-ghcr.io%2Fomar--azam%2Fforge--agent-blue)](https://github.com/Omar-Azam/forge-agent/pkgs/container/forge-agent)
+[![Docker](https://img.shields.io/badge/docker-ghcr.io%2Fomar--azam%2Fforge--agent-blue)](https://github.com/puneet-swarup/forge-agent/pkgs/container/forge-agent)
 
 ---
 
@@ -16,7 +18,7 @@ automation to code, test, and ship software — completely free.
 
 Forge Agent is free and open source. If it saves you time:
 
-[![GitHub Sponsors](https://img.shields.io/badge/Sponsor-GitHub-ea4aaa?logo=github)](https://github.com/sponsors/Omar-Azam)
+[![GitHub Sponsors](https://img.shields.io/badge/Sponsor-GitHub-ea4aaa?logo=github)](https://github.com/sponsors/puneet-swarup)
 [![Ko-fi](https://img.shields.io/badge/Support-Ko--fi-ff5e5b?logo=ko-fi)](https://ko-fi.com/forgeagent)
 
 ---
@@ -263,7 +265,7 @@ Run `forge-agent --setup` for guided configuration.
 
 ## Documentation
 
-Full documentation: [https://omar-azam.github.io/forge-agent](https://omar-azam.github.io/forge-agent)
+Full documentation: [https://puneet-swarup.github.io/forge-agent](https://puneet-swarup.github.io/forge-agent)
 
 - [**Complete User Guide**](USER_GUIDE.md) - every feature with copy-paste examples
 - [**Testing Guide**](TESTING_PHASE1-4.md) - verify each feature by hand
@@ -295,7 +297,7 @@ new templates, plugin examples.
 Forge Agent is free and open source. If it saves you time:
 
 - ⭐ **Star the repo** — helps others discover it
-- 💰 **[Sponsor development](https://github.com/sponsors/Omar-Azam)**
+- 💰 **[Sponsor development](https://github.com/sponsors/puneet-swarup)**
 - 📢 **Share it** — post about it, tell your team
 - 🐛 **Report bugs** — good reports make it better
 - 📝 **Improve docs** — any PR helps

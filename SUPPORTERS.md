@@ -3,10 +3,10 @@
 Thank you to everyone who supports Forge Agent development.
 
 ## 🚀 Enterprise Sponsors
-*Your company logo here — [become a sponsor](https://github.com/sponsors/Omar-Azam)*
+*Your company logo here — [become a sponsor](https://github.com/sponsors/puneet-swarup)*
 
 ## 🏢 Team Sponsors
-*[Become a team sponsor](https://github.com/sponsors/Omar-Azam)*
+*[Become a team sponsor](https://github.com/sponsors/puneet-swarup)*
 
 ## 🔧 Builders
 *[Become a builder sponsor](https://ko-fi.com/forgeagent)*

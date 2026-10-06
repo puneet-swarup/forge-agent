@@ -19,7 +19,7 @@ Thank you for considering contributing to Forge Agent! We welcome contributions 
 
 ### Clone and Install
 ```bash
-git clone https://github.com/Omar-Azam/forge-agent
+git clone https://github.com/puneet-swarup/forge-agent
 cd forge-agent
 npm install
 ```

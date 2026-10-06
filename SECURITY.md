@@ -15,7 +15,7 @@
 If you discover a security vulnerability, please report it through one of the following methods:
 
 1. **GitHub Security Advisory (Preferred):**
-   Go to [https://github.com/Omar-Azam/forge-agent/security/advisories/new](https://github.com/Omar-Azam/forge-agent/security/advisories/new) to open a private advisory.
+   Go to [https://github.com/puneet-swarup/forge-agent/security/advisories/new](https://github.com/puneet-swarup/forge-agent/security/advisories/new) to open a private advisory.
 
 2. **Direct Contact:**
    If you cannot use the GitHub advisory system, please email the maintainer directly for critical vulnerabilities.
