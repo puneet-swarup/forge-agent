@@ -36,6 +36,9 @@ const LOCK_FILE = path.join(BASE_DIR, 'audio.lock');
 
 const LOCK_STALE_MS = 60_000; // steal a lock older than this
 const GAP_MS = 150;           // pause between utterances (avoids overlap artifacts)
+// How long a drainer waits for follow-up items before exiting. Keeps it hot
+// across a turn so back-to-back announcements avoid repeated cold starts.
+const LINGER_MS = Number(process.env.FORGE_AUDIO_LINGER_MS || 800);
 
 /** Base directory holding the queue + lock (exposed for tests/diagnostics). */
 function queueDir() { return QUEUE_DIR; }
@@ -182,15 +185,30 @@ function _playOne(record) {
  * Drain the whole queue sequentially. Returns the number of items played.
  * Safe to call from any process; only the lock holder actually plays.
  */
-function drain() {
+function drain(opts = {}) {
   if (audioDisabled()) return 0;
   if (!_tryAcquireLock()) return 0;
+
+  // Linger briefly after the queue empties so a drainer stays "hot" across a
+  // single turn (speak + alarm, or two rapid call_user invocations). Without
+  // this, each utterance would pay a fresh detached-process cold start.
+  const lingerMs = opts.lingerMs != null ? opts.lingerMs : LINGER_MS;
 
   let played = 0;
   try {
     for (;;) {
       const items = _listItems();
-      if (items.length === 0) break;
+
+      if (items.length === 0) {
+        // Wait out the linger window, then re-check once more before exiting.
+        if (lingerMs > 0) {
+          _touchLock();
+          _sleep(lingerMs);
+          if (_listItems().length === 0) break;
+          continue;
+        }
+        break;
+      }
 
       for (const file of items) {
         let record;
@@ -219,16 +237,19 @@ function drain() {
 //  Detached drainer
 // ─────────────────────────────────────────────
 
-let _drainerSpawned = false;
-
 /**
  * Spawn a detached process that drains the queue, then returns immediately.
  * Detached + unref'd so it never keeps the agent process alive.
+ *
+ * IMPORTANT: we spawn on EVERY enqueue rather than once per process. The
+ * previous one-shot latch meant that after the first drainer exited (which it
+ * does as soon as the queue is momentarily empty), no later item was ever
+ * played until some other process happened to drain — which is why
+ * announcements arrived a step late. drain() takes a cross-process lock, so a
+ * redundant drainer simply finds the lock held and exits immediately; it is
+ * cheap and cannot cause overlap or dropped items.
  */
 function _spawnDrainer() {
-  if (_drainerSpawned) return;
-  _drainerSpawned = true;
-
   try {
     const modulePath = require.resolve('./audio-queue');
     const script =
@@ -242,7 +263,7 @@ function _spawnDrainer() {
     child.unref();
   } catch (_) {
     // If spawning fails, fall back to draining inline (still non-fatal).
-    _drainerSpawned = false;
+    try { drain(); } catch (__) { /* ignore */ }
   }
 }
 

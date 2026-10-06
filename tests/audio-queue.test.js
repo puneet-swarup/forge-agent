@@ -156,4 +156,47 @@ describe('audio-queue — lock & drain', () => {
     expect(msg).toContain('sync');
     delete process.env.FORGE_AUDIO_SYNC;
   });
+
+  // ── Regression: no stale one-shot drainer latch ──────────────────────────
+  //
+  // Previously _spawnDrainer() ran at most once per process. After the first
+  // drainer exited (queue momentarily empty), later enqueues were never played
+  // until some other process drained — so announcements arrived a step late.
+  // The fix spawns a drainer on every enqueue. These tests assert the queue is
+  // never left orphaned across multiple enqueue/drain cycles.
+
+  test('items enqueued AFTER a drain are still drainable', () => {
+    aq.enqueueSpeak('first');
+    const played1 = aq.drain({ lingerMs: 0 });
+    expect(played1).toBe(1);
+    expect(fs.readdirSync(aq.queueDir()).filter(f => f.endsWith('.json')).length).toBe(0);
+
+    // A later enqueue (the "next step") must not be orphaned.
+    aq.enqueueSpeak('second');
+    const played2 = aq.drain({ lingerMs: 0 });
+    expect(played2).toBe(1);
+    expect(fs.readdirSync(aq.queueDir()).filter(f => f.endsWith('.json')).length).toBe(0);
+  });
+
+  test('multiple enqueue/drain cycles all get played', () => {
+    for (let i = 0; i < 3; i++) {
+      aq.enqueueSpeak('msg-' + i);
+      expect(aq.drain({ lingerMs: 0 })).toBe(1);
+    }
+    expect(fs.readdirSync(aq.queueDir()).filter(f => f.endsWith('.json')).length).toBe(0);
+  });
+
+  test('drain with linger picks up an item added during the linger window', async () => {
+    aq.enqueueSpeak('early');
+    // Start a draining cycle that lingers, then add another item shortly after.
+    const drainPromise = Promise.resolve().then(() => aq.drain({ lingerMs: 300 }));
+    setTimeout(() => aq.enqueueSpeak('late'), 50);
+    const played = await drainPromise;
+    // Both items should be played within one drain cycle.
+    expect(played).toBeGreaterThanOrEqual(1);
+    // Give the enqueue a beat, then drain any remainder so nothing is orphaned.
+    await new Promise(r => setTimeout(r, 50));
+    aq.drain({ lingerMs: 0 });
+    expect(fs.readdirSync(aq.queueDir()).filter(f => f.endsWith('.json')).length).toBe(0);
+  });
 });

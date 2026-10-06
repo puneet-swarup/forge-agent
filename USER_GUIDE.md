@@ -435,6 +435,7 @@ Example:
 | two agents conflict | give each a unique `--session` |
 | SESSION_CONTEXT.md appears in git | add it to .gitignore (Forge does this automatically) |
 | command not found: forge-agent | use `npm link` or run `node src/index.js` |
+| speech announcements are late/out of order | fixed: drainer now kicks on every cue. `FORGE_AUDIO_LINGER_MS` tunes the keep-hot window (default 800). |
 
 ---
 

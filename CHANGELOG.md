@@ -16,6 +16,7 @@ Versioning: [Semantic Versioning](https://semver.org/)
 - **`--auto` loop + `/todo` command** — `--auto` now loops through all open `FORGE_TODO.md` items in one run; new `/todo` slash command (list/add/done/clear-done).
 
 ### Fixed
+- **Audio announcements arriving late / out of order** — the async audio drainer used a one-shot-per-process latch, so after the first drainer exited (queue momentarily empty), later cues were never played until some other process happened to drain. Now a drainer is kicked on **every** enqueue (the cross-process lock makes redundant spawns harmless no-ops), and a drainer lingers briefly (`FORGE_AUDIO_LINGER_MS`, default 800ms) to stay hot across a turn. Regression tests added.
 - Repaired 6 long-standing test failures: version assertion (now semver-based), `CACHE_ENABLED` default (checks `DEFAULTS`), two security reason-wording assertions, and two Windows-incompatible shell tests (`pwd`, `$VAR`).
 
 ### Testing
