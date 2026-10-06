@@ -41,6 +41,7 @@
         <a href="templates.html" class="nav-link">Task Templates</a>
         <a href="getting-started.html#watch-mode" class="nav-link">Watch Mode</a>
         <a href="getting-started.html#resume" class="nav-link">Session Resume</a>
+        <a href="cli-reference.html#named-sessions" class="nav-link">Named Sessions</a>
         <a href="getting-started.html#output" class="nav-link">Output Formats</a>
         <a href="plugins.html" class="nav-link">Custom Plugins</a>
 
@@ -115,6 +116,42 @@
           <div class="flag-card">
             <h3><code>--history</code></h3>
             <p>Browse and resume past tasks from a list.</p>
+          </div>
+
+          <h2 id="named-sessions">Named Sessions & Instances</h2>
+          <p>
+            A <strong>session</strong> is a <em>name</em>, not a directory. Each name maps to
+            its own persistent Chromium profile at
+            <code>~/.deepseek-agent/sessions/&lt;name&gt;</code>, giving it its own login so
+            multiple agents can run side-by-side without colliding.
+          </p>
+          <div class="flag-card">
+            <h3><code>-s &lt;name&gt;</code>, <code>--session &lt;name&gt;</code></h3>
+            <p>Run under a named session. The name (not a path) selects an isolated browser profile and data directory.</p>
+            <pre><code>forge-agent --session mybot "fix the failing tests"</code></pre>
+          </div>
+          <div class="flag-card">
+            <h3><code>--session auto</code></h3>
+            <p>Auto-generate a unique, human-readable session name such as <code>brave-otter-9f3a</code>, with its own profile.</p>
+            <pre><code>forge-agent --session auto "refactor the auth module"</code></pre>
+          </div>
+          <div class="flag-card">
+            <h3><code>--new-session</code> / <code>--random-session</code></h3>
+            <p>Aliases for <code>--session auto</code>.</p>
+          </div>
+          <div class="flag-card">
+            <h3><code>--session-dir &lt;path&gt;</code></h3>
+            <p>Advanced: use an explicit directory for the session profile. This is the only flag that takes a real path - <code>--session</code> is always a name.</p>
+          </div>
+          <div class="flag-card">
+            <h3><code>--role &lt;name&gt;</code></h3>
+            <p>Set a role label for this instance. Defaults to the session name.</p>
+          </div>
+          <div class="flag-card">
+            <h3><code>ps</code>, <code>--ps</code>, <code>--instances</code></h3>
+            <p>List all running Forge Agent instances (heartbeat-based).</p>
+            <pre><code>forge-agent ps
+forge-agent ps --json</code></pre>
           </div>
 
           <h2 id="diagnostics-security">Diagnostics & Security</h2>

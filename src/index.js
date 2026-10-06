@@ -237,19 +237,6 @@ function parseArgs(argv) {
       case '--model':
         opts.model = args[++i];
         break;
-		
-	  case '-s':
-      case '--session':
-        opts.session = args[++i];
-        break;
-
-      case '--session-dir':
-        opts.sessionDir = args[++i];
-        break;
-
-      case '--role':
-        opts.role = args[++i];
-        break;
 
       case '-s':
       case '--session':
@@ -323,13 +310,7 @@ function parseArgs(argv) {
           opts.maxParallel = a.split('=')[1];
         } else if (a && a.startsWith('--test-model=')) {
           opts.testModel = a.split('=')[1];
-        } else if (a && a.startsWith('--session=')) {
-          opts.session = a.split('=')[1];
-        } else if (a && a.startsWith('--session-dir=')) {
-          opts.sessionDir = a.split('=')[1];
-        } else if (a && a.startsWith('--role=')) {
-          opts.role = a.split('=')[1];
-		} else if (a && !a.startsWith('-')) {
+        } else if (a && !a.startsWith('-')) {
           opts.task = args.slice(i).join(' ');
           i = args.length;
         }
@@ -389,11 +370,7 @@ ${c('1;36', 'MEMORY & SESSIONS')}
       --session auto     Auto-generate a unique human-readable session name
                          (e.g. brave-otter-9f3a) with its own profile.
       --new-session      Alias for --session auto.
-      ps, --instances    List all running instances (use --json for JSON).
-      --session-dir <p>  Explicit session directory (advanced).
-      --role <name>      Role label. Defaults to session name.
-	  --session <name>   Named session (own browser profile, own login).
-				 Enables running multiple agents side-by-side.
+      ps, --ps, --instances  List all running instances (use --json for JSON).
       --session-dir <p>  Explicit session directory (advanced).
       --role <name>      Role label. Defaults to session name.
       --no-memory        Skip memory for this run
