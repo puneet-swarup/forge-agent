@@ -480,7 +480,18 @@ const BUILT_IN_COMMANDS = [
           if (agent.conversation) {
             agent.conversation.reset ? agent.conversation.reset() : null;
           }
-          return '🗑  Context cleared — fresh chat started.\n  AI has no memory of previous messages in this session.';
+          // Phase 1: re-seed the fresh chat with durable session context so the
+          // model does not lose earlier decisions after a /clear.
+          let reSeeded = false;
+          try {
+            if (agent.sessionContext && agent.sessionContext.exists()) {
+              const ctx = agent.sessionContext.asContextString();
+              if (ctx) { await agent.browser.sendMessage(ctx); reSeeded = true; }
+            }
+          } catch (_) { /* best-effort */ }
+          return reSeeded
+            ? 'Context cleared - fresh chat started.\n  Session context re-seeded from SESSION_CONTEXT.md.'
+            : 'Context cleared - fresh chat started.\n  AI has no memory of previous messages in this session.';
         }
         return '⚠  No active browser session to clear.';
       } catch (e) {
@@ -563,12 +574,47 @@ const BUILT_IN_COMMANDS = [
 
         return ctx.formatDisplay();
       } catch (e) {
-        return `❌ Memory error: ${e.message}`;
+        return `Memory error: ${e.message}`;
       }
     },
   },
 
-  // ── History ───────────────────────────────────────────────────────────────
+  // -- Session context (Phase 1) --
+  {
+    name    : 'context',
+    aliases : ['ctx', 'session-context'],
+    description: 'Show, clear, or re-seed the durable SESSION_CONTEXT.md',
+    usage   : '/context [show|clear|seed]',
+    category: 'Session',
+    requiresArg: false,
+    execute : async ({ arg, agent }) => {
+      try {
+        if (!agent || !agent.sessionContext) {
+          return 'Session context is not available for this run.';
+        }
+        const sc = agent.sessionContext;
+
+        if (arg === 'clear') {
+          sc.destroy();
+          return 'Session context file removed (SESSION_CONTEXT.md).';
+        }
+
+        if (arg === 'seed') {
+          if (!sc.exists()) return 'No SESSION_CONTEXT.md to seed from.';
+          const ctx = sc.asContextString();
+          if (agent.browser) await agent.browser.sendMessage(ctx);
+          return 'Session context re-seeded into the chat.';
+        }
+
+        if (!sc.exists()) return 'No SESSION_CONTEXT.md yet (it is created at session start).';
+        return sc.asContextString();
+      } catch (e) {
+        return 'Session context error: ' + e.message;
+      }
+    },
+  },
+
+  // -- History -- ───────────────────────────────────────────────────────────────
   {
     name: 'history',
     aliases: ['hist'],

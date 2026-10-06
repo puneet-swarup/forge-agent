@@ -43,3 +43,9 @@ desktop.ini
 dist/
 build/
 out/
+
+.forge-permissions.json
+
+# ── Forge session working memory (never commit) ──────
+SESSION_CONTEXT.md
+FORGE_TODO.md

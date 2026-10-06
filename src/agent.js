@@ -50,6 +50,19 @@ class DeepSeekAgent {
     const { getProjectContext } = require('./project-context');
     this.projectContext = getProjectContext(config.WORKING_DIR || process.cwd());
 
+    // Phase 1: durable, gitignored session working memory (SESSION_CONTEXT.md)
+    try {
+      const { SessionContext } = require('./session-context');
+      this.sessionContext = new SessionContext({
+        projectDir   : config.WORKING_DIR || process.cwd(),
+        sessionName  : process.env.FORGE_SESSION_NAME || 'default',
+        task         : options.task || '',
+        autoGitignore: config.SESSION_CONTEXT_GITIGNORE !== false,
+      });
+    } catch (_) {
+      this.sessionContext = null;
+    }
+
     this.commandRouter = new CommandRouter({
       config : config,
       agent  : this,
@@ -105,7 +118,38 @@ class DeepSeekAgent {
   async shutdown() {
     if (this._closed) return;
     this._closed = true;
+    // Phase 1: session-end cleanup - remove the ephemeral SESSION_CONTEXT.md.
+    this._sessionCtxDestroy();
     await this.browser.close();
+  }
+
+  // -- Phase 1: session context helpers --
+
+  /** Create (or resume) the durable SESSION_CONTEXT.md for this task. */
+  _sessionCtxStart(task) {
+    if (!this.sessionContext) return;
+    try {
+      this.sessionContext.data.task = (task || '').replace(/\s+/g, ' ').trim();
+      this.sessionContext.data.goal = this.sessionContext.data.task;
+      const res = this.sessionContext.create();
+      if (res && res.ok) {
+        logger.dim(`  Session context: ${this.sessionContext.file}`);
+      }
+    } catch (err) {
+      logger.warn(`Session context init failed: ${err.message}`);
+    }
+  }
+
+  /** Refresh the on-disk context after tool batches / git operations. */
+  _sessionCtxUpdate() {
+    if (!this.sessionContext) return;
+    try { this.sessionContext.update(); } catch (_) { /* best-effort */ }
+  }
+
+  /** Delete the ephemeral context file at session end. */
+  _sessionCtxDestroy() {
+    if (!this.sessionContext) return;
+    try { this.sessionContext.destroy(); } catch (_) { /* best-effort */ }
   }
 
   /**
@@ -123,6 +167,9 @@ class DeepSeekAgent {
     this._running   = true;
     const startTime = Date.now();
     const progress  = new ProgressTracker(task);
+
+    // Phase 1: open the durable session context for this task.
+    this._sessionCtxStart(task);
 
     // Track consecutive plain-text / unrecognised responses
     // so we can send a correction rather than freezing.
@@ -442,6 +489,9 @@ class DeepSeekAgent {
 
           const feedbackMsg = this.conversation.addToolResult(parsed.name, result, isError);
 
+          // Phase 1: refresh durable session context after each tool result.
+          this._sessionCtxUpdate();
+
           const estimatedTokens = this.conversation.messages
             .reduce((sum, m) => sum + Math.ceil(
               (typeof m.content === 'string' ? m.content : JSON.stringify(m.content)).length / 4
@@ -756,6 +806,9 @@ class DeepSeekAgent {
       '\n\nContinue with the next step, or provide your final response if the task is complete.';
 
     this.conversation.messages.push({ role: 'user', content: combined });
+
+    // Phase 1: refresh durable session context after a tool batch.
+    this._sessionCtxUpdate();
 
     const estimatedTokens = this.conversation.messages
       .reduce((sum, m) => sum + Math.ceil(

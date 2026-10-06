@@ -33,6 +33,8 @@ const DEFAULTS = {
   SESSION_DIR: process.env.FORGE_SESSION_DIR
     ? path.resolve(process.env.FORGE_SESSION_DIR)
     : path.join(os.homedir(), '.deepseek-agent', 'session'),
+  // Phase 1: auto-add SESSION_CONTEXT.md to the project's .gitignore
+  SESSION_CONTEXT_GITIGNORE: true,
   STRICT_SANDBOX     : false,
   MAX_OUTPUT_LENGTH  : 8_000,
 
