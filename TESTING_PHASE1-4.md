@@ -295,3 +295,36 @@ Still manual (need a real login):
   drift when those sites change; run `forge-agent --test-model` to check.
 - Load/soak testing of many concurrent children (see the performance notes in
 the response-time optimization discussion).
+
+---
+
+## 9. Containerized verification (Docker)
+
+Once Docker Desktop / the docker daemon is running, verify the container path:
+
+    docker build -t forge-agent-test .
+    docker run --rm forge-agent-test --help
+    docker run --rm forge-agent-test --version
+
+Smoke-test a non-browser feature inside the container (writes a file into the
+mounted workspace):
+
+    docker run --rm -v "$PWD:/workspace" forge-agent-test \
+      --format=json "list the files in this directory"
+
+Dev compose (bind-mounts the repo, headless):
+
+    docker compose -f docker-compose.dev.yml run --rm forge --help
+
+Notes:
+- The image sets HEADLESS=true and DOCKER_CONTAINER=true, so it needs no display.
+- A real browser run inside the container still needs a logged-in profile mounted
+  at /root/.deepseek-agent/session, or you log in interactively once.
+- The CI `integration` job covers the browser loop with a mock page, so you do NOT
+  need Docker in CI to prove the adapter works.
+
+If the daemon is not running you will see:
+
+    failed to connect to the docker API ... The system cannot find the file specified.
+
+Start Docker Desktop and retry.
