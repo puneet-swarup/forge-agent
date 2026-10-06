@@ -154,6 +154,8 @@ function parseArgs(argv) {
     listInstances: null,
     newSession: null,
     json: null,
+    auto: null,
+    resumeWork: null,
     };
 
     let i = 0;
@@ -177,6 +179,10 @@ function parseArgs(argv) {
       case 'ps':            opts.listInstances = true; break;
       case '--new-session': opts.newSession = true;   break;
       case '--json':        opts.json = true;         break;
+      case '-a':
+      case '--auto':        opts.auto = true;         break;
+      case '--resume-work':
+      case '--continue':    opts.resumeWork = true;   break;
       case '--audio-sync':   opts.audioSync = true;   break;
       case '--audio-async':  opts.audioAsync = true;  break;
       case '--parallel-tools':   opts.parallelTools = true;  break;
@@ -373,6 +379,8 @@ ${c('1;36', 'MEMORY & SESSIONS')}
       ps, --ps, --instances  List all running instances (use --json for JSON).
       --session-dir <p>  Explicit session directory (advanced).
       --role <name>      Role label. Defaults to session name.
+  -a, --auto             Run open FORGE_TODO.md items unattended (no prompt).
+      --resume-work      Auto-resume pending FORGE_TODO.md / SESSION_CONTEXT.md.
       --no-memory        Skip memory for this run
 
 ${c('1;36', 'TEMPLATES & EXAMPLES')}
@@ -1541,12 +1549,20 @@ async function main() {
   }
 
   // ── Validate we have a task or interactive mode ────────────────────────────
-  if (!args.interactive && !args.task) {
+  if (!args.interactive && !args.task && !args.auto) {
     logger.warn('No task provided. Switching to interactive mode...\n');
     args.interactive = true;
   }
 
-  // ── Launch browser ─────────────────────────────────────────────────────────
+  // -- Phase 2/3: detect pending FORGE_TODO.md / SESSION_CONTEXT.md --
+  try {
+    const { preparePendingWork } = require('./work-startup');
+    await preparePendingWork({ args, config, logger });
+  } catch (err) {
+    if (config.DEBUG) console.error('Pending-work check failed:', err.message);
+  }
+
+  // -- Launch browser ─────────────────────────────────────────────────────────
   try {
     await agent.init();
     try {
@@ -1597,10 +1613,31 @@ async function main() {
       return; 
     }
 
+    // Phase 3: in --auto mode with no explicit task, run the first open
+    // FORGE_TODO.md item non-interactively.
+    if (args.auto && !args.task && args.autoTask) {
+      args.task = args.autoTask;
+      args.interactive = false;
+      args.taskWasExplicit = false;
+    } else {
+      args.taskWasExplicit = true;
+    }
+
     if (args.interactive) {
       await startInteractiveMode(agent, config);
     } else {
-      await agent.run(args.task, templateName);
+      const runResult = await agent.run(args.task, templateName);
+      // Phase 3: in auto mode, tick the completed TODO item so the next run
+      // continues from where this one left off.
+      if (args.auto && args.todoFile && args.autoTask && !args.taskWasExplicit) {
+        try {
+          const { markTodoDone } = require('./todo-manager');
+          if (markTodoDone(config.WORKING_DIR || process.cwd(), args.autoTask)) {
+            logger.dim(`  Marked TODO done: "${args.autoTask}"`);
+          }
+        } catch (_) { /* best-effort */ }
+      }
+      void runResult;
     }
   } catch (err) {
     displayError(err);
