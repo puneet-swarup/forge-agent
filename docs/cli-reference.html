@@ -42,6 +42,11 @@
         <a href="getting-started.html#watch-mode" class="nav-link">Watch Mode</a>
         <a href="getting-started.html#resume" class="nav-link">Session Resume</a>
         <a href="cli-reference.html#named-sessions" class="nav-link">Named Sessions</a>
+        <a href="cli-reference.html#session-context-todo" class="nav-link">Session Context & TODO</a>
+        <a href="cli-reference.html#session-context-todo" class="nav-link">Session Context & TODO</a>
+        <a href="cli-reference.html#session-context-todo" class="nav-link">Session Context & TODO</a>
+        <a href="cli-reference.html#session-context-todo" class="nav-link">Session Context & TODO</a>
+        <a href="cli-reference.html#session-context-todo" class="nav-link">Session Context & TODO</a>
         <a href="getting-started.html#output" class="nav-link">Output Formats</a>
         <a href="plugins.html" class="nav-link">Custom Plugins</a>
 
@@ -153,6 +158,49 @@
             <pre><code>forge-agent ps
 forge-agent ps --json</code></pre>
           </div>
+
+          <h2 id="session-context-todo">Session Context & TODO</h2>
+          <p>
+            Forge keeps a durable, gitignored <code>SESSION_CONTEXT.md</code> at the project
+            root that records the goal, decisions, progress and current git state of a run.
+            It survives model context compaction, so it can be re-fed after the model forgets.
+            It is created at session start and removed at session end.
+          </p>
+          <div class="flag-card">
+            <h3><code>-a</code>, <code>--auto</code></h3>
+            <p>
+              Run open <code>FORGE_TODO.md</code> items unattended, with no prompt. Auto mode
+              applies to <code>FORGE_TODO.md</code> <strong>only</strong>; a
+              <code>SESSION_CONTEXT.md</code> is always advisory/read-only and is never
+              auto-acted on. On success the completed item is ticked for the next run; the
+              run halts on the first failure.
+            </p>
+            <pre><code>forge-agent --auto
+# runs the first open FORGE_TODO.md item</code></pre>
+          </div>
+          <div class="flag-card">
+            <h3><code>--resume-work</code>, <code>--continue</code></h3>
+            <p>Force the startup resume path for pending FORGE_TODO.md / SESSION_CONTEXT.md.</p>
+          </div>
+          <div class="flag-card">
+            <h3><code>/context</code> <span style="opacity:.6">(slash command)</span></h3>
+            <p>
+              Show, clear, or re-seed the durable session context:
+              <code>/context</code>, <code>/context clear</code>, <code>/context seed</code>.
+            </p>
+          </div>
+          <h3>Supervisor: spawn &amp; control child agents</h3>
+          <p>
+            A supervisor instance can spawn child agents (each with its own session and
+            Chromium profile) and monitor or stop them. Children share
+            <em>files</em> (<code>SESSION_CONTEXT.md</code>), never the browser - Chromium's
+            persistent profile takes an exclusive lock, so a single window cannot be shared.
+          </p>
+          <ul>
+            <li><code>spawn_agent(session, task, context?)</code> - start a child.</li>
+            <li><code>list_agents</code> - list running instances.</li>
+            <li><code>kill_agent(name)</code> - stop a child by session name or PID.</li>
+          </ul>
 
           <h2 id="diagnostics-security">Diagnostics & Security</h2>
           <div class="flag-card">

@@ -1245,6 +1245,53 @@ const TOOLS = {
     },
   },
 
+  spawn_agent: {
+    description: 'Spawn a child Forge Agent instance to work on a task in parallel. Each child gets its OWN session (own Chromium profile) so instances never share a browser. Returns the child PID and session name.',
+    parameters: {
+      session: { type: 'string', required: true,  description: 'Unique session name for the child (e.g. worker-auth)' },
+      task   : { type: 'string', required: true,  description: 'Task string for the child to run' },
+      role   : { type: 'string', required: false, description: 'Role label (defaults to the session name)' },
+      cwd    : { type: 'string', required: false, description: 'Working directory for the child (default: current)' },
+      context: { type: 'string', required: false, description: 'Extra context handed off to the child (written to its SESSION_CONTEXT.md)' },
+      detached: { type: 'boolean', required: false, description: 'Detach so the child outlives this process' },
+    },
+    async execute({ session, task, role, cwd, context, detached } = {}) {
+      try {
+        const sup = require('./agent-supervisor');
+        const info = sup.spawnAgent({ session, task, role, cwd: cwd ? resolve(cwd) : config.WORKING_DIR, context, detached: !!detached });
+        return 'Spawned child agent' + String.fromCharCode(10) + '  session: ' + info.session + String.fromCharCode(10) + '  pid    : ' + info.pid + String.fromCharCode(10) + '  cwd    : ' + info.cwd + String.fromCharCode(10) + 'Track it with list_agents; stop it with kill_agent.';
+      } catch (e) {
+        return 'Failed to spawn agent: ' + e.message;
+      }
+    },
+  },
+
+  list_agents: {
+    description: 'List running Forge Agent instances (parent + children) using the session registry heartbeats.',
+    parameters: {
+      includeDead: { type: 'boolean', required: false, description: 'Include instances whose process is gone' },
+    },
+    async execute({ includeDead } = {}) {
+      const sup = require('./agent-supervisor');
+      const reg = require('./session-registry');
+      const instances = sup.listChildren({ includeDead: !!includeDead, prune: !includeDead });
+      return reg.formatInstanceTable(instances, false);
+    },
+  },
+
+  kill_agent: {
+    description: 'Stop a child Forge Agent instance by its session name or PID.',
+    parameters: {
+      name: { type: 'string', required: true, description: 'Session name (or unique prefix) of the child to stop' },
+    },
+    async execute({ name } = {}) {
+      const sup = require('./agent-supervisor');
+      const res = sup.killChild(name);
+      if (res.ok) return 'Stopped child agent (pid ' + res.pid + ').';
+      return 'Could not stop child: ' + (res.error || 'unknown error');
+    },
+  },
+
   // ── Take Screenshot ─────────────────────────────────────────────────────────
   take_screenshot: {
     description: 'Capture a screenshot of the entire screen. Useful for debugging UI issues or capturing visual state.',
