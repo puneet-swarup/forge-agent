@@ -590,6 +590,59 @@ function applyFlagsToConfig(args, config) {
 //  Interactive Mode Entry Point
 // ─────────────────────────────────────────────
 
+// ─────────────────────────────────────────────
+//  Phase 3: --auto TODO loop
+// ─────────────────────────────────────────────
+
+/**
+ * Run every open FORGE_TODO.md item, one at a time, unattended.
+ * Ticks each item done on success and halts on the first failure so the TODO
+ * file stays accurate for the next run.
+ */
+async function runAutoTodoLoop(agent, config, args, logger) {
+  const { readTodo, markTodoDone } = require('./todo-manager');
+  const projectDir = config.WORKING_DIR || process.cwd();
+
+  let todo = readTodo(projectDir);
+  if (!todo || todo.open.length === 0) {
+    logger.warn('\n🤖 --auto: no open FORGE_TODO.md items. Nothing to do.\n');
+    return;
+  }
+
+  logger.info(`\n🤖 --auto: ${todo.open.length} open item(s) to process.\n`);
+
+  let completed = 0;
+  // Re-read the file each iteration so the queue reflects reality.
+  while (true) {
+    todo = readTodo(projectDir);
+    const next = todo && todo.open.length > 0 ? todo.open[0] : null;
+    if (!next) break;
+
+    logger.info(`\n▶ [${completed + 1}] ${next.text}\n`);
+
+    let ok = true;
+    try {
+      await agent.run(next.text, null);
+    } catch (err) {
+      ok = false;
+      logger.warn(`  Item failed: ${err.message}`);
+    }
+
+    if (!ok) {
+      logger.warn(`\n⏸ --auto halted on failure at: "${next.text}" (left open for retry).\n`);
+      break;
+    }
+
+    try { markTodoDone(projectDir, next.text); } catch (_) {}
+    completed++;
+    logger.dim(`  Marked done: "${next.text}"`);
+  }
+
+  logger.info(`\n✅ --auto finished. ${completed} item(s) completed.\n`);
+  // Return so main() can shut down cleanly.
+  return completed;
+}
+
 async function startInteractiveMode(agent, config) {
   try {
     const { CommandRouter } = require('./commands');
@@ -1613,31 +1666,22 @@ async function main() {
       return; 
     }
 
-    // Phase 3: in --auto mode with no explicit task, run the first open
-    // FORGE_TODO.md item non-interactively.
-    if (args.auto && !args.task && args.autoTask) {
-      args.task = args.autoTask;
-      args.interactive = false;
-      args.taskWasExplicit = false;
-    } else {
+    // Phase 3: --auto runs open FORGE_TODO.md items unattended.
+    //  - If an explicit task was given, run just that task once.
+    //  - Otherwise loop through ALL open items top-to-bottom, ticking each on
+    //    success and halting on the first failure.
+    const autoNoExplicitTask = args.auto && !args.task;
+    if (args.auto && args.task) {
+      // Explicit task + --auto: run once, do not touch the TODO list.
       args.taskWasExplicit = true;
     }
 
     if (args.interactive) {
       await startInteractiveMode(agent, config);
+    } else if (autoNoExplicitTask) {
+      await runAutoTodoLoop(agent, config, args, logger);
     } else {
-      const runResult = await agent.run(args.task, templateName);
-      // Phase 3: in auto mode, tick the completed TODO item so the next run
-      // continues from where this one left off.
-      if (args.auto && args.todoFile && args.autoTask && !args.taskWasExplicit) {
-        try {
-          const { markTodoDone } = require('./todo-manager');
-          if (markTodoDone(config.WORKING_DIR || process.cwd(), args.autoTask)) {
-            logger.dim(`  Marked TODO done: "${args.autoTask}"`);
-          }
-        } catch (_) { /* best-effort */ }
-      }
-      void runResult;
+      await agent.run(args.task, templateName);
     }
   } catch (err) {
     displayError(err);

@@ -203,3 +203,52 @@ describe('Slash Command System', () => {
   });
 
 });
+// ─────────────────────────────────────────────────────────
+//  /todo command (Phase 2/3)
+// ─────────────────────────────────────────────────────────
+
+describe('/todo command', () => {
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+
+  let dir;
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'forge-todo-cmd-'));
+  });
+  afterEach(() => {
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) {}
+  });
+
+  test('is registered', () => {
+    expect(findCommand('todo')).toBeTruthy();
+  });
+
+  test('add creates FORGE_TODO.md then lists items', async () => {
+    const r = makeRouter({ WORKING_DIR: dir });
+    const add = await r.execute('/todo add write the docs');
+    expect(add).toContain('Added TODO');
+    const list = await r.execute('/todo');
+    expect(list).toContain('write the docs');
+    expect(list).toContain('1 open');
+  });
+
+  test('done ticks the first open item', async () => {
+    const r = makeRouter({ WORKING_DIR: dir });
+    await r.execute('/todo add first task');
+    const res = await r.execute('/todo done');
+    expect(res).toContain('Marked done');
+    expect(fs.readFileSync(path.join(dir, 'FORGE_TODO.md'), 'utf8')).toContain('- [x] first task');
+  });
+
+  test('clear-done removes completed items', async () => {
+    const r = makeRouter({ WORKING_DIR: dir });
+    await r.execute('/todo add keep me');
+    await r.execute('/todo add done me');
+    await r.execute('/todo done 1');
+    await r.execute('/todo clear-done');
+    const raw = fs.readFileSync(path.join(dir, 'FORGE_TODO.md'), 'utf8');
+    expect(raw).not.toContain('keep me');
+    expect(raw).toContain('done me');
+  });
+});

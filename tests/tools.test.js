@@ -396,8 +396,10 @@ describe('run_command', () => {
   });
 
   test('runs in the correct working directory', async () => {
-    const result = await executeTool('run_command', { command: 'pwd', cwd: TMP_DIR });
-    expect(result.trim()).toBe(TMP_DIR);
+    const cmd = process.platform === 'win32' ? 'cd' : 'pwd';
+    const result = await executeTool('run_command', { command: cmd, cwd: TMP_DIR });
+    const norm = (s) => s.trim().replace(/\\/g, '/').toLowerCase();
+    expect(norm(result)).toBe(norm(TMP_DIR));
   });
 
   test('throws on command failure', async () => {
@@ -413,7 +415,8 @@ describe('run_command', () => {
 
   test('accepts extra environment variables', async () => {
     const result = await executeTool('run_command', {
-      command: 'echo $MY_VAR', env: { MY_VAR: 'test_value' },
+      command: process.platform === 'win32' ? 'echo %MY_VAR%' : 'echo $MY_VAR',
+      env: { MY_VAR: 'test_value' },
     });
     expect(result).toContain('test_value');
   });

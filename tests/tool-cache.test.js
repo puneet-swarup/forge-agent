@@ -177,7 +177,7 @@ describe('ToolCache', () => {
   });
 
   test('CACHE_ENABLED defaults to true in config', () => {
-    expect(config.CACHE_ENABLED).toBe(true);
+    expect(config.DEFAULTS.CACHE_ENABLED).toBe(true);
   });
 
   test('invalidatesCache returns truthy for append_to_file', () => {

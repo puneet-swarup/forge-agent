@@ -43,10 +43,6 @@
         <a href="getting-started.html#resume" class="nav-link">Session Resume</a>
         <a href="cli-reference.html#named-sessions" class="nav-link">Named Sessions</a>
         <a href="cli-reference.html#session-context-todo" class="nav-link">Session Context & TODO</a>
-        <a href="cli-reference.html#session-context-todo" class="nav-link">Session Context & TODO</a>
-        <a href="cli-reference.html#session-context-todo" class="nav-link">Session Context & TODO</a>
-        <a href="cli-reference.html#session-context-todo" class="nav-link">Session Context & TODO</a>
-        <a href="cli-reference.html#session-context-todo" class="nav-link">Session Context & TODO</a>
         <a href="getting-started.html#output" class="nav-link">Output Formats</a>
         <a href="plugins.html" class="nav-link">Custom Plugins</a>
 
@@ -169,7 +165,7 @@ forge-agent ps --json</code></pre>
           <div class="flag-card">
             <h3><code>-a</code>, <code>--auto</code></h3>
             <p>
-              Run open <code>FORGE_TODO.md</code> items unattended, with no prompt. Auto mode
+              Loop through all open <code>FORGE_TODO.md</code> items unattended, with no prompt. Auto mode
               applies to <code>FORGE_TODO.md</code> <strong>only</strong>; a
               <code>SESSION_CONTEXT.md</code> is always advisory/read-only and is never
               auto-acted on. On success the completed item is ticked for the next run; the
@@ -187,6 +183,14 @@ forge-agent ps --json</code></pre>
             <p>
               Show, clear, or re-seed the durable session context:
               <code>/context</code>, <code>/context clear</code>, <code>/context seed</code>.
+            </p>
+          </div>
+          <div class="flag-card">
+            <h3><code>/todo</code> <span style="opacity:.6">(slash command)</span></h3>
+            <p>
+              Manage FORGE_TODO.md: <code>/todo</code> (list),
+              <code>/todo add &lt;text&gt;</code>, <code>/todo done &lt;n&gt;</code>,
+              <code>/todo clear-done</code>.
             </p>
           </div>
           <h3>Supervisor: spawn &amp; control child agents</h3>

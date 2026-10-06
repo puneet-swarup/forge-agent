@@ -148,12 +148,13 @@ recording the goal, decisions, progress and current git state of a run. It
 survives model context compaction, so it can be re-fed after the model forgets
 earlier turns. Created at session start, removed at session end.
 
-FORGE_TODO.md is a persistent, human-authored task list. --auto works through
-its open items top-to-bottom, ticking each [ ] to [x] on success, and halts on
-the first failure. Auto mode applies to FORGE_TODO.md only - a
-SESSION_CONTEXT.md is always advisory and never auto-acted on.
+FORGE_TODO.md is a persistent, human-authored task list. --auto loops through
+all its open items top-to-bottom in a single run, ticking each [ ] to [x] on
+success, and halts on the first failure. Auto mode applies to FORGE_TODO.md only
+- a SESSION_CONTEXT.md is always advisory and never auto-acted on.
 
-Interactive commands: /context, /context clear, /context seed.
+Interactive commands: /context (show|clear|seed) and
+/todo (add <text> | done <n> | clear-done).
 
 Multi-Agent (Supervisor Mode): a supervisor can spawn_agent, list_agents, and
 kill_agent. Each child uses its own --session (own Chromium profile); children

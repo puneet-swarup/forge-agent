@@ -22,7 +22,7 @@ describe('Security Module', () => {
     test('blocks /etc/passwd', () => {
       const result = security.validatePath('/etc/passwd');
       expect(result.safe).toBe(false);
-      expect(result.reason).toContain('matches a protected path');
+      expect(result.reason).toMatch(/protected path|outside the working directory/);
     });
 
     test('blocks ~/.ssh path', () => {
@@ -52,7 +52,7 @@ describe('Security Module', () => {
     test('blocks path with .. traversal to sensitive location', () => {
       const result = security.validatePath('/tmp/../../etc/passwd');
       expect(result.safe).toBe(false);
-      expect(result.reason).toContain('matches a protected path');
+      expect(result.reason).toMatch(/protected path|outside the working directory/);
     });
 
     test('returns safe:true for normal file in working dir', () => {

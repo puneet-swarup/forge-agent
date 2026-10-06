@@ -552,7 +552,7 @@ const BUILT_IN_COMMANDS = [
   // ── Memory ────────────────────────────────────────────────────────────────
   {
     name    : 'memory',
-    aliases : ['mem', 'context'],
+    aliases : ['mem'],
     description: 'Show or clear project memory for current directory',
     usage   : '/memory [clear|summary]',
     category: 'Session',
@@ -610,6 +610,66 @@ const BUILT_IN_COMMANDS = [
         return sc.asContextString();
       } catch (e) {
         return 'Session context error: ' + e.message;
+      }
+    },
+  },
+
+  // -- FORGE_TODO.md --
+  {
+    name    : 'todo',
+    aliases : ['todos', 'tasks'],
+    description: 'Show, add, or tick items in FORGE_TODO.md',
+    usage   : '/todo [add <text> | done <n> | clear-done]',
+    category: 'Session',
+    requiresArg: false,
+    execute : async ({ arg, args, config }) => {
+      try {
+        const fs = require('fs');
+        const path = require('path');
+        const { readTodo, markTodoDone, TODO_FILE } = require('./todo-manager');
+        const dir = (config && config.WORKING_DIR) || process.cwd();
+        const file = path.join(dir, TODO_FILE);
+        const sub = (args && args[0]) || '';
+
+        if (sub === 'add') {
+          const text = (args.slice(1).join(' ') || '').trim();
+          if (!text) return 'Usage: /todo add <text>';
+          const line = '- [ ] ' + text + '\n';
+          if (!fs.existsSync(file)) fs.writeFileSync(file, '# TODO\n' + line, 'utf8');
+          else fs.appendFileSync(file, line, 'utf8');
+          return 'Added TODO: ' + text;
+        }
+
+        if (sub === 'done') {
+          const n = parseInt(args[1], 10);
+          const t = readTodo(dir);
+          if (!t || !t.open.length) return 'No open TODO items.';
+          const item = (!isNaN(n) && n >= 1) ? t.open[n - 1] : t.open[0];
+          if (!item) return 'No TODO item #' + n + '.';
+          markTodoDone(dir, item.text);
+          return 'Marked done: ' + item.text;
+        }
+
+        if (sub === 'clear-done') {
+          if (!fs.existsSync(file)) return 'No FORGE_TODO.md.';
+          const raw = fs.readFileSync(file, 'utf8');
+          const kept = raw.split('\n').filter(l => !/^\s*[-*]\s+\[[xX]\]/.test(l));
+          fs.writeFileSync(file, kept.join('\n'), 'utf8');
+          return 'Removed completed items from FORGE_TODO.md.';
+        }
+
+        const t = readTodo(dir);
+        if (!t) return 'No FORGE_TODO.md in this directory. Use /todo add <text> to create one.';
+        if (!t.items.length) return 'FORGE_TODO.md has no items.';
+        const lines = ['FORGE_TODO.md', '─'.repeat(40)];
+        t.items.forEach((it, i) => {
+          lines.push('  ' + (it.done ? '[x]' : '[ ]') + ' ' + (i + 1) + '. ' + it.text);
+        });
+        lines.push('');
+        lines.push(t.open.length + ' open, ' + t.done.length + ' done.');
+        return lines.join('\n');
+      } catch (e) {
+        return 'TODO error: ' + e.message;
       }
     },
   },
