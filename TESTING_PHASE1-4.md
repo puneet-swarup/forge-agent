@@ -233,6 +233,25 @@ Focused suites for the new features:
     npx jest tests/agent-supervisor.test.js
     npx jest tests/commands.test.js
 
+### Browser + supervisor + auto-loop integration tests
+
+These use a REAL headless Chromium against a LOCAL mock chat page (no login,
+no network), so they run in CI. They auto-skip if Chromium is not installed.
+
+    npx jest tests/integration-browser.test.js
+    npx jest tests/integration-supervisor.test.js
+    npx jest tests/integration-auto-loop.test.js
+
+Total after all phases: 1594 passing, 0 failing (2 Jest 'FAILURES' lines are
+just captured console.log output, not failures).
+
+### CI
+
+Two jobs run on every push/PR:
+- Test: unit suite across Node 18/20/22 (Chromium skipped for speed).
+- Integration: installs Chromium and runs the browser E2E + supervisor + auto-loop
+  integration tests.
+
 ---
 
 ## 6. Safety checklist (run through after testing)
@@ -262,8 +281,17 @@ Focused suites for the new features:
 
 ---
 
-## 8. What is NOT covered here
+## 8. What is covered by automated tests vs. manual
 
-- Real end-to-end browser runs against DeepSeek/ChatGPT/Gemini (need a login).
+Automated (CI-runnable, no login needed):
+- Unit tests for session-context, todo-manager, work-startup, agent-supervisor,
+  /todo command.
+- Browser E2E against a local mock chat page (send + scrape + tool_call parse).
+- Supervisor lifecycle (spawn a real child, verify, kill).
+- --auto loop wiring (run all items, halt on failure).
+
+Still manual (need a real login):
+- End-to-end runs against the REAL DeepSeek/ChatGPT/Gemini UIs. Selectors can
+  drift when those sites change; run `forge-agent --test-model` to check.
 - Load/soak testing of many concurrent children (see the performance notes in
 the response-time optimization discussion).

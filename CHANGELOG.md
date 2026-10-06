@@ -16,7 +16,13 @@ Versioning: [Semantic Versioning](https://semver.org/)
 - **`--auto` loop + `/todo` command** — `--auto` now loops through all open `FORGE_TODO.md` items in one run; new `/todo` slash command (list/add/done/clear-done).
 
 ### Fixed
-- Repaired 6 long-standing test failures: version assertion (now semver-based), `CACHE_ENABLED` default (checks `DEFAULTS`), two security reason-wording assertions, and two Windows-incompatible shell tests (`pwd`, `$VAR`). Suite is now fully green (1582 passing).
+- Repaired 6 long-standing test failures: version assertion (now semver-based), `CACHE_ENABLED` default (checks `DEFAULTS`), two security reason-wording assertions, and two Windows-incompatible shell tests (`pwd`, `$VAR`).
+
+### Testing
+- **Browser E2E integration tests** — `tests/integration-browser.test.js` drives a REAL headless Chromium against a LOCAL mock chat page (`tests/helpers/mock-chat-server.js`): verifies the adapter's send → scrape loop and that a fenced `tool_call` survives scraping and parses. No login/network needed; auto-skips without Chromium.
+- **Supervisor E2E** — `tests/integration-supervisor.test.js` spawns a real child process, verifies its session dir/heartbeat, and kills it.
+- **Auto-loop E2E** — `tests/integration-auto-loop.test.js` verifies `--auto` runs every open item, ticks them, and halts on the first failure.
+- **CI** — new `integration` job installs Chromium and runs the E2E suites; syntax-check list extended to the new modules. Full suite now 1594 passing, 0 failing.
 - **Cross-platform audio tools** — src/audio.js: platform-agnostic `call_user` (text-to-speech) and `raise_alarm` (audible alert) tools. Auto-selects the best backend per OS — SAPI/PowerShell (Windows), `say`/`afplay` (macOS), `spd-say`/`espeak-ng`/`espeak`/`paplay`/`aplay`/`canberra-gtk-play` (Linux) — with a universal terminal-bell fallback. Honours `FORGE_NO_AUDIO` for CI/headless hosts. Documented in README and docs/tools.html, with dedicated unit tests.
 
 ---
