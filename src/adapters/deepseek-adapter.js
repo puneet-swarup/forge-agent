@@ -147,7 +147,13 @@ class DeepSeekAdapter extends BaseAdapter {
           }
           lastText = text;
 
-          const quiet = await this._waitForDomQuiet(stableDelay, 250);
+          // Give the quiet check enough headroom: it must be able to observe
+          // a full STABLE_DELAY of silence (the old 250ms cap was shorter than
+          // STABLE_DELAY, so it could never confirm quiet on slow pages).
+          const quiet = await this._waitForDomQuiet(
+            stableDelay,
+            Math.max(stableDelay * 4, 1_500),
+          );
 
           const now = Date.now();
           if (now - lastIndicatorUpdate > 1_000) {
@@ -160,7 +166,20 @@ class DeepSeekAdapter extends BaseAdapter {
             lastIndicatorUpdate = now;
           }
 
-          if (quiet && text.length > 0 && !await this._isGenerating()) break;
+          // Require the text to be unchanged ACROSS the quiet window before we
+          // accept completion. A single quiet window can occur mid-stream (the
+          // reasoning phase, or a gap between token batches), and treating that
+          // as "done" is what produced truncated / half responses. Re-extract
+          // after the quiet period and compare against the pre-quiet sample.
+          if (quiet) {
+            const after = await this._extractLastMessage();
+            lastText = after;
+            if (after === text && after.length > 0 && !await this._isGenerating()) break;
+            // Text is quiet but the page still reports generating (e.g. a
+            // reasoning pause between token batches). Yield briefly so we do
+            // not busy-spin while waiting for the stream to resume.
+            await this.page.waitForTimeout(120);
+          }
         }
       } else {
         // Fallback: text-stability loop (previous behaviour).
@@ -430,6 +449,46 @@ class DeepSeekAdapter extends BaseAdapter {
    */
   async _extractLastMessage() {
     return await this.page.evaluate(() => {
+      // Tags that never carry assistant prose — action chrome, icons, editors.
+      const SKIP_TAGS = new Set([
+        'button','svg','path','img','picture','noscript','script','style',
+        'textarea','input','select','option','canvas','video','audio','iframe',
+      ]);
+      // Class / aria-label fragments used by DeepSeek's message action toolbar
+      // (Copy, Download, Regenerate, Edit, Share, Like/Dislike, ...). These sit
+      // INSIDE the assistant bubble, so a naive DOM walk leaks their text.
+      const ACTION_WORDS = [
+        'copy','download','regenerate','rewrite','edit','share','like','dislike',
+        'thumbs','feedback','retry','refresh','toolbar','action','actions','btn',
+        'button','icon','stop','send','menu','rating','vote',
+      ];
+      const looksLikeActionChrome = (node) => {
+        if (!node || node.nodeType !== Node.ELEMENT_NODE) return false;
+        if (node.getAttribute('role') === 'button') return true;
+        const raw = [
+          typeof node.className === 'string' ? node.className : '',
+          node.getAttribute('aria-label') || '',
+          node.getAttribute('data-testid') || '',
+          node.getAttribute('title') || '',
+        ].join(' ').toLowerCase();
+        if (!raw) return false;
+        return ACTION_WORDS.some(w => raw.includes(w));
+      };
+      const isHidden = (node) => {
+        if (!node || node.nodeType !== Node.ELEMENT_NODE) return false;
+        if (node.hidden) return true;
+        if (node.getAttribute('aria-hidden') === 'true') return true;
+        const style = node.getAttribute('style') || '';
+        if (/display\s*:\s*none|visibility\s*:\s*hidden/i.test(style)) return true;
+        // Computed style catches class-based hiding (e.g. DeepSeek's sr-only /
+        // hidden raw-copy node) that inline-style checks would miss.
+        try {
+          const cs = window.getComputedStyle(node);
+          if (cs && (cs.display === 'none' || cs.visibility === 'hidden')) return true;
+        } catch (_) { /* ignore */ }
+        return false;
+      };
+
       function getFullText(el) {
         if (!el) return '';
         let result = '';
@@ -441,6 +500,13 @@ class DeepSeekAdapter extends BaseAdapter {
           }
           if (node.nodeType !== Node.ELEMENT_NODE) return;
           const tag = node.tagName.toLowerCase();
+
+          // Drop UI chrome (buttons/icons/toolbars) and hidden duplicate nodes
+          // (DeepSeek keeps a hidden raw copy of the reply for editing), so we
+          // never print "Copy"/"Download" or the response twice / half.
+          if (SKIP_TAGS.has(tag)) return;
+          if (isHidden(node)) return;
+          if (looksLikeActionChrome(node)) return;
 
           if (tag === 'pre') {
             const codeEl = node.querySelector('code');

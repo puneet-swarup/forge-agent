@@ -160,4 +160,60 @@ describe('browser integration (mock chat)', () => {
     // ~800ms to resolve. The observer path should beat that comfortably.
     expect(elapsed).toBeLessThan(800);
   }, 30000);
+
+  itBrowser('scraper drops action-toolbar text and the hidden raw copy (no "Copy"/"Download", no duplicates)', async () => {
+    const { getAdapter } = require('../src/adapter-factory');
+    const config = {
+      DEEPSEEK_URL: server.url,
+      HEALTH_CHECK_TIMEOUT: 5000,
+      SEND_DELAY: 100,
+      GENERATION_POLL: 40,
+      STABLE_DELAY: 150,
+      APPEAR_TIMEOUT: 8000,
+      RESPONSE_TIMEOUT: 15000,
+      ACTIVE_PROFILE: 'default',
+      PLANNING_MODE: false,
+      WORKING_DIR: process.cwd(),
+    };
+    const adapter = getAdapter('deepseek', page, config);
+
+    await adapter.sendMessage('chrome test');
+    const reply = await adapter.waitForResponse();
+
+    // The assistant bubble contains Copy/Download buttons and a hidden raw
+    // copy of the text; neither may leak into the scraped output.
+    expect(reply).not.toMatch(/\bCopy\b/);
+    expect(reply).not.toMatch(/\bDownload\b/);
+
+    // The reply body must appear exactly once (hidden raw copy excluded).
+    const occurrences = reply.split('Echo: chrome test').length - 1;
+    expect(occurrences).toBe(1);
+  }, 30000);
+
+  itBrowser('does not accept a mid-stream quiet gap as completion (no half output)', async () => {
+    const { getAdapter } = require('../src/adapter-factory');
+    const config = {
+      DEEPSEEK_URL: server.url,
+      HEALTH_CHECK_TIMEOUT: 5000,
+      SEND_DELAY: 100,
+      GENERATION_POLL: 40,
+      STABLE_DELAY: 300,
+      APPEAR_TIMEOUT: 8000,
+      RESPONSE_TIMEOUT: 15000,
+      ACTIVE_PROFILE: 'default',
+      PLANNING_MODE: false,
+      WORKING_DIR: process.cwd(),
+    };
+    const adapter = getAdapter('deepseek', page, config);
+
+    // This reply streams, then pauses longer than STABLE_DELAY mid-way before
+    // finishing. The old code would treat the pause as "done" and return a
+    // truncated reply; the new cross-window stability check must wait it out.
+    await adapter.sendMessage('PAUSE_TEST');
+    const reply = await adapter.waitForResponse();
+
+    expect(reply).toContain('part one');
+    expect(reply).toContain('part two');
+    expect(reply).not.toMatch(/part one\s*$/);
+  }, 30000);
 });
