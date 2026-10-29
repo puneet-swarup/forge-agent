@@ -1,3 +1,4 @@
+// @ts-check
 // src/doctor.js — One-command health check for Forge Agent.
 //
 // Runs a set of read-only checks (Node version, config validity, Chromium /

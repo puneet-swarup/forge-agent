@@ -27,6 +27,7 @@ npm install
 ### Verify Setup
 ```bash
 npm test                      # All tests must pass
+npm run typecheck             # JSDoc/@ts-check modules must type-check
 node src/index.js --version   # Should print: Forge Agent v2.0.0
 ```
 

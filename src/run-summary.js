@@ -1,3 +1,4 @@
+// @ts-check
 // src/run-summary.js - Durable, attributable per-run summaries.
 // When several agents run, a human cannot remember which agent did what.
 // Every terminal outcome writes a summary to the run's session dir:
@@ -131,7 +132,7 @@ function listSummaries() {
       if (s) out.push(s);
     }
   } catch (_) { /* ignore */ }
-  out.sort((a, b) => new Date(b.finishedAt || 0) - new Date(a.finishedAt || 0));
+  out.sort((a, b) => new Date(b.finishedAt || 0).getTime() - new Date(a.finishedAt || 0).getTime());
   return out;
 }
 

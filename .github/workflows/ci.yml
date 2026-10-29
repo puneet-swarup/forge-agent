@@ -47,6 +47,9 @@ jobs:
         continue-on-error: true   # warn but don't block CI yet
 
       # ── Lint ───────────────────────────────────────────────────────────────
+      - name: Type-check (JSDoc / @ts-check modules)
+        run: npx tsc -p tsconfig.json
+
       - name: Check for syntax errors
         run: node --check src/index.js src/agent.js src/browser.js src/tools.js src/parser.js src/prompt.js src/config.js src/logger.js src/session-context.js src/todo-manager.js src/work-startup.js src/agent-supervisor.js
 

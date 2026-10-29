@@ -1,3 +1,4 @@
+// @ts-check
 // src/paths.js - Single source of truth for Forge Agent's on-disk locations.
 //
 // Historically these lived under ~/.deepseek-agent (a model-specific name),
