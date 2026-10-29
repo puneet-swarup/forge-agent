@@ -1,6 +1,4 @@
+# These are the funding destinations shown on the repo's Sponsor button.
+# Only list pages the maintainer actually owns.
 github: [puneet-swarup]
-open_collective: forge-agent
-ko_fi: forgeagent
-custom:
-  - https://forge-agent.dev/sponsor
-  - https://buymeacoffee.com/forgeagent
+ko_fi: puneetswarup

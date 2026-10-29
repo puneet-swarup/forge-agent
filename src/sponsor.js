@@ -7,10 +7,10 @@ const os = require('os');
 
 const SPONSOR_URLS = {
   github:        'https://github.com/sponsors/puneet-swarup',
-  openCollective: 'https://opencollective.com/forge-agent',
-  kofi:          'https://ko-fi.com/forgeagent',
-  buyMeACoffee:  'https://buymeacoffee.com/forgeagent',
-  docs:          'https://forge-agent.dev/sponsor',
+  openCollective: 'https://github.com/sponsors/puneet-swarup',
+  kofi:          'https://ko-fi.com/puneetswarup',
+  buyMeACoffee:  'https://ko-fi.com/puneetswarup',
+  docs:          'https://github.com/puneet-swarup/forge-agent',
 };
 
 const SPONSOR_TIERS = [
@@ -124,8 +124,8 @@ class SponsorNudge {
       '   time, a small sponsorship helps keep it maintained.',
       '',
       '   ☕ $5/mo  →  github.com/sponsors/puneet-swarup',
-      '   ⭐ $10/mo →  ko-fi.com/forgeagent',
-      '   🏢 Teams  →  forge-agent.dev/sponsor',
+      '   ⭐ $10/mo →  ko-fi.com/puneetswarup',
+      '   🏢 Teams  →  github.com/sponsors/puneet-swarup',
       '',
       '   To disable this message: forge-agent --no-sponsor-nudge',
       line,

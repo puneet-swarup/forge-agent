@@ -108,3 +108,18 @@ describe('Sponsorship Module', () => {
     expect(() => showNudgeIfAppropriate(null, config, console)).not.toThrow();
   });
 });
+
+
+describe('Sponsor links are real (no placeholders)', () => {
+  test('kofi points to the maintainer real page', () => {
+    expect(SPONSOR_URLS.kofi).toBe('https://ko-fi.com/puneetswarup');
+  });
+
+  test('no placeholder donation URLs remain', () => {
+    const all = JSON.stringify(SPONSOR_URLS);
+    expect(all).not.toContain('ko-fi.com/forgeagent');
+    expect(all).not.toContain('buymeacoffee.com/forgeagent');
+    expect(all).not.toContain('opencollective.com/forge-agent');
+    expect(all).not.toContain('forge-agent.dev');
+  });
+});

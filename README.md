@@ -19,7 +19,7 @@ automation to code, test, and ship software — completely free.
 Forge Agent is free and open source. If it saves you time:
 
 [![GitHub Sponsors](https://img.shields.io/badge/Sponsor-GitHub-ea4aaa?logo=github)](https://github.com/sponsors/puneet-swarup)
-[![Ko-fi](https://img.shields.io/badge/Support-Ko--fi-ff5e5b?logo=ko-fi)](https://ko-fi.com/forgeagent)
+[![Ko-fi](https://img.shields.io/badge/Support-Ko--fi-ff5e5b?logo=ko-fi)](https://ko-fi.com/puneetswarup)
 
 ---
 

@@ -9,13 +9,13 @@ Thank you to everyone who supports Forge Agent development.
 *[Become a team sponsor](https://github.com/sponsors/puneet-swarup)*
 
 ## 🔧 Builders
-*[Become a builder sponsor](https://ko-fi.com/forgeagent)*
+*[Become a builder sponsor](https://ko-fi.com/puneetswarup)*
 
 ## ⭐ Supporters
-*[Become a supporter](https://ko-fi.com/forgeagent)*
+*[Become a supporter](https://ko-fi.com/puneetswarup)*
 
 ## ☕ Coffee Supporters
-*[Buy a coffee](https://buymeacoffee.com/forgeagent)*
+*[Buy a coffee](https://ko-fi.com/puneetswarup)*
 
 ---
 
