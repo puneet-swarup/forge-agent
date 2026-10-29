@@ -155,6 +155,18 @@
 forge-agent ps --json</code></pre>
           </div>
 
+          <h2 id="run-summaries">Run Summaries</h2>
+          <p>Every run that reaches a terminal state (completed, failed, or timed out) writes a durable summary to its session directory:</p>
+          <ul>
+            <li><code>~/.deepseek-agent/sessions/&lt;session&gt;/summary.md</code> &mdash; human-readable</li>
+            <li><code>~/.deepseek-agent/sessions/&lt;session&gt;/summary.json</code> &mdash; machine-readable</li>
+          </ul>
+          <p>Each summary records the session name, role, task, status, duration, step count, files written, commands run, error count, and the final output. A concise summary is also printed to the terminal when the run completes. This is especially useful when several agents are spawned at once: you can always tell which agent did what.</p>
+
+          <h2 id="response-protocol">Response Protocol</h2>
+          <p>To detect completion deterministically, the model is asked to wrap each reply in explicit markers: <code>&lt;&lt;&lt;FORGE_START&gt;&gt;&gt;</code> ... <code>&lt;&lt;&lt;FORGE_END&gt;&gt;&gt;</code>. When the end marker is seen, the adapter stops immediately and strips the markers from the returned text.</p>
+          <p>This is a <em>fast path</em>, not a dependency: if the model ignores the markers or emits them malformed, the adapter falls back to DOM-quiet detection, so reliability is never reduced. Set <code>DEBUG</code> to save the raw scraped reply to <code>~/.deepseek-agent/logs/last-raw-response.txt</code> for inspection.</p>
+
           <h2 id="session-context-todo">Session Context & TODO</h2>
           <p>
             Forge keeps a durable, gitignored <code>SESSION_CONTEXT.md</code> at the project

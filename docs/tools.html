@@ -186,6 +186,16 @@
         <h3 id="kill_agent">kill_agent</h3>
         <p>Stop a child agent by its session name or PID.</p>
 
+        <h3 id="run-summaries">Run summaries</h3>
+        <p>
+          Every agent that reaches a terminal state (completed, failed, timed out) writes a
+          summary to its session directory: <code>~/.deepseek-agent/sessions/&lt;session&gt;/summary.md</code>
+          (human-readable) and <code>summary.json</code> (machine-readable), covering the task,
+          status, duration, steps, files written, commands run, errors, and final output. A
+          short summary is also printed when the run completes. This lets you tell exactly which
+          spawned agent did what.
+        </p>
+
         <h2 id="git-integration">Git Integration</h2>
 
         <h3 id="git_status">git_status</h3>

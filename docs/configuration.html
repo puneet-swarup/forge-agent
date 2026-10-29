@@ -110,6 +110,22 @@
   "MAX_ITERATIONS": 150,
   "STABLE_DELAY": 3000
 }</code></pre>
+
+        <h3>Fast / Low-Latency Mode</h3>
+        <pre><code>{
+  "SEND_DELAY": 250,
+  "STABLE_DELAY": 1000,
+  "NAV_SETTLE_MS": 500
+}</code></pre>
+        <p>
+          <code>SEND_DELAY</code> is the pause after filling the input before submitting
+          (default 250 ms). <code>STABLE_DELAY</code> is how long the DOM must stay quiet before
+          a reply is considered complete (default 1500 ms); lowering it too far can truncate
+          replies that pause mid-generation. <code>NAV_SETTLE_MS</code> is a short fallback
+          settle after navigation if the chat input selector is not found quickly (default
+          500 ms). All timing values are overridable, so reverting a change is a config edit,
+          never a code revert.
+        </p>
       </div>
     </main>
 
