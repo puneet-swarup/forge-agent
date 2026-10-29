@@ -84,7 +84,7 @@ RULES FOR TOOL CALLS:
 3. After a tool call STOP — do not write anything after the closing tag
 4. Wait for the tool result before deciding what to do next
 5. Read files before writing them — never assume file contents
-6. When the ENTIRE task is complete write exactly: TASK_COMPLETE
+6. When the ENTIRE task is complete, FIRST write a brief summary of what you did (2-5 bullets: files created/changed, commands run, tests passed), THEN write exactly: TASK_COMPLETE on its own line
    Do not write TASK_COMPLETE until ALL work is done and tested
 7. CRITICAL JSON ESCAPING: Inside the JSON, you MUST properly escape all double quotes (\\") and newlines (\\n). NEVER use literal newlines inside the "content" string.
 8. BEFORE issuing a write_file / append_to_file, double-check that the "path" matches

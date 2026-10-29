@@ -602,6 +602,29 @@ class DeepSeekAgent {
             }
           }
 
+          try {
+            const _s = require('./run-summary').buildSummary({
+              task: task, status: 'completed',
+              session: process.env.FORGE_SESSION_NAME || null,
+              role: process.env.FORGE_ROLE || null,
+              model: config.MODEL || 'deepseek',
+              profile: config.ACTIVE_PROFILE || 'default',
+              workingDir: config.WORKING_DIR,
+              durationMs: Date.now() - startTime,
+              stepsCount: progress.toolCallCount,
+              filesWritten: [...progress.filesWritten],
+              commandsRun: progress.commandsRun.slice(0, 10),
+              errorCount: progress.errorCount,
+              finalOutput: content, templateName: templateName
+            });
+            logger.dim('');
+            logger.dim('-- Run summary: ' + _s.session + ' (' + _s.role + ') --');
+            logger.dim('  Status : ' + _s.status + ' . ' + _s.duration + ' . ' + _s.steps + ' steps . ' + _s.errorCount + ' errors');
+            if (_s.filesWritten.length) logger.dim('  Files  : ' + _s.filesWritten.length + ' written');
+            if (_s.commandsRun.length) logger.dim('  Cmds   : ' + _s.commandsRun.length + ' run');
+            logger.dim('  Saved  : ~/.deepseek-agent/sessions/' + _s.session + '/summary.md');
+          } catch (_) {}
+
           this._running = false;
           if (config.DEBUG) {
             const stats = cache.stats();
@@ -934,6 +957,27 @@ class DeepSeekAgent {
     } catch (err) {
       // History failures must never crash the agent
     }
+
+    // Durable, attributable per-run summary (esp. for spawned agents whose
+    // stdout is lost). Best-effort; never throws.
+    try {
+      require('./run-summary').writeSummary({
+        task: task,
+        status: status,
+        session: process.env.FORGE_SESSION_NAME || null,
+        role: process.env.FORGE_ROLE || null,
+        model: config.MODEL || 'deepseek',
+        profile: config.ACTIVE_PROFILE || 'default',
+        workingDir: config.WORKING_DIR,
+        durationMs: Date.now() - startTime,
+        stepsCount: progress.toolCallCount,
+        filesWritten: [...progress.filesWritten],
+        commandsRun: progress.commandsRun.slice(0, 10),
+        errorCount: progress.errorCount,
+        finalOutput: (result || '').slice(0, 2000),
+        templateName: templateName
+      });
+    } catch (_) {}
   }
 }
 
