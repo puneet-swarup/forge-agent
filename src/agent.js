@@ -36,6 +36,23 @@ const { isRunningInDocker, printDockerInfo } = require('./docker');
 //  Agent class
 // ─────────────────────────────────────────────
 
+// Map a tool name to a short verb phrase for the step-line one-liner.
+function _stepDescVerb(name) {
+  const map = {
+    read_file: 'reading', write_file: 'writing', write_files: 'writing',
+    append_to_file: 'appending to', replace_in_file: 'editing',
+    delete_file: 'deleting', move_file: 'moving', copy_file: 'copying',
+    list_directory: 'listing', search_in_files: 'searching', search_codebase: 'searching',
+    find_files: 'finding', run_command: 'running', run_tests: 'testing',
+    git_status: 'checking git', git_diff: 'diffing', git_log: 'reading git log',
+    install_package: 'installing', start_process: 'starting process',
+    stop_process: 'stopping process', read_process_logs: 'reading logs',
+    spawn_agent: 'spawning agent', kill_agent: 'stopping agent',
+    show_info: 'answering', fetch_url: 'fetching', read_url: 'fetching',
+  };
+  return map[name] || ('using ' + name);
+}
+
 class DeepSeekAgent {
   constructor(options = {}) {
     this.browser      = new DeepSeekBrowser();
@@ -250,7 +267,12 @@ class DeepSeekAgent {
       let step = 1;
 
       while (true) {
-        logger.stepLine(step, progress.elapsedMs, progress);
+        // Protocol default: every step line carries a short one-liner saying
+        // what the step is doing, derived from the previous tool call.
+        const _stepDesc = progress.lastTool
+          ? (_stepDescVerb(progress.lastTool.name) + (progress.lastTool.target ? ' ' + progress.lastTool.target : ''))
+          : 'starting — sending task to model';
+        logger.stepLine(step, progress.elapsedMs, progress, _stepDesc);
 
         // Safety circuit breaker
         if (step > 10000) {

@@ -21,6 +21,16 @@ const STEP = {
 //  ProgressTracker
 // ─────────────────────────────────────────────
 
+function _toolTarget(name, args) {
+  if (!args) return '';
+  if (args.path) return String(args.path);
+  if (args.command) return String(args.command).slice(0, 40);
+  if (args.pattern) return String(args.pattern);
+  if (args.query) return String(args.query).slice(0, 40);
+  if (name === 'write_files' && Array.isArray(args.files)) return (args.files.length + ' files');
+  return '';
+}
+
 class ProgressTracker {
   constructor(task) {
     this.task       = task;
@@ -31,12 +41,14 @@ class ProgressTracker {
     this.commandsRun   = [];
     this.errorCount    = 0;
     this.toolCallCount = 0;
+    this.lastTool      = null; // { name, target } — powers the step-line one-liner
   }
 
   // ── Recording ──────────────────────────────────────────────────────────────
 
   recordToolCall(name, args) {
     this.toolCallCount++;
+    this.lastTool = { name: name, target: _toolTarget(name, args) };
 
     // Track specific tool types for the summary
     if (name === 'write_file' || name === 'write_files') {

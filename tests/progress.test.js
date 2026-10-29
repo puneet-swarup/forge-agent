@@ -350,3 +350,39 @@ describe('buildPartialSummary', () => {
     expect(summary).toContain('COMPLETED');
   });
 });
+
+
+describe('ProgressTracker lastTool', () => {
+  test('is null initially', () => {
+    const p = new ProgressTracker('t');
+    expect(p.lastTool).toBeNull();
+  });
+
+  test('records the last tool name and target', () => {
+    const p = new ProgressTracker('t');
+    p.recordToolCall('read_file', { path: 'package.json' });
+    expect(p.lastTool).toEqual({ name: 'read_file', target: 'package.json' });
+  });
+
+  test('uses command as target for run_command', () => {
+    const p = new ProgressTracker('t');
+    p.recordToolCall('run_command', { command: 'npm test' });
+    expect(p.lastTool.name).toBe('run_command');
+    expect(p.lastTool.target).toBe('npm test');
+  });
+
+  test('updates to the most recent tool', () => {
+    const p = new ProgressTracker('t');
+    p.recordToolCall('read_file', { path: 'a.js' });
+    p.recordToolCall('write_file', { path: 'b.js' });
+    expect(p.lastTool.name).toBe('write_file');
+    expect(p.lastTool.target).toBe('b.js');
+  });
+
+  test('handles missing args gracefully', () => {
+    const p = new ProgressTracker('t');
+    p.recordToolCall('list_directory', {});
+    expect(p.lastTool.name).toBe('list_directory');
+    expect(p.lastTool.target).toBe('');
+  });
+});

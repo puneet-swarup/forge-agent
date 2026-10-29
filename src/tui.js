@@ -163,11 +163,17 @@ class TUI {
    * Example:
    * ─── Step 3 ─────────────────────── 14s · 2 files · 0 errors ───
    */
-  renderStepLine(stepNum, elapsedMs, progress) {
+  renderStepLine(stepNum, elapsedMs, progress, descriptor) {
     this.stepNum = stepNum;
     const width  = getWidth();
 
-    const stepStr = colors(['bold', 'white'], `Step ${stepNum}`);
+    // Protocol default: every step line carries a short one-liner describing
+    // what the step is doing, so the human always knows the intent.
+    let _stepLabel = `Step ${stepNum}`;
+    if (descriptor && String(descriptor).trim()) {
+      _stepLabel += ' \u2014 ' + String(descriptor).trim();
+    }
+    const stepStr = colors(['bold', 'white'], _stepLabel);
     const elapsed = color('gray', formatMs(elapsedMs || 0));
 
     // Right side stats

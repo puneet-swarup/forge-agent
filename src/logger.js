@@ -130,8 +130,8 @@ const logger = {
   },
 
   // ── Step line (used in agent loop) ────────────────────────────────────────
-  stepLine(stepNum, elapsedMs, progress) {
-    getTUI().renderStepLine(stepNum, elapsedMs, progress);
+  stepLine(stepNum, elapsedMs, progress, descriptor) {
+    getTUI().renderStepLine(stepNum, elapsedMs, progress, descriptor);
   },
 
   // ── Clearline (for overwrite-style output) ────────────────────────────────
