@@ -1400,7 +1400,7 @@ function getToolDescriptions() {
 function appendToAuditLog(entry) {
   if (!config.AUDIT_LOG) return;
   try {
-    const logDir = path.join(os.homedir(), '.deepseek-agent');
+    const logDir = require('./paths').forgeHome();
     if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
     
     const logPath = path.join(logDir, 'audit.log');

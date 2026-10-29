@@ -57,7 +57,7 @@ describe('Community Health Files', () => {
     expect(fs.existsSync(filePath)).toBe(true);
     const content = fs.readFileSync(filePath, 'utf8');
     expect(content).toContain('github:');
-    expect(content).toContain('open_collective:');
+    expect(content).toContain('ko_fi:');
   });
 
   test('docs/sponsor.html exists and contains sponsorship options', () => {

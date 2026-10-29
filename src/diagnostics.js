@@ -19,7 +19,7 @@ function generateDiagnostics() {
     platform: process.platform,
     arch: process.arch,
     cwd: process.cwd(),
-    configPath: path.join(os.homedir(), '.deepseek-agent', 'config.json'),
+    configPath: require('./paths').forgePath('config.json'),
     sessionPath: config.SESSION_DIR,
     historyPath: config.HISTORY_FILE,
     memoryPath: config.MEMORY_FILE,

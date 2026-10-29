@@ -644,7 +644,7 @@ class DeepSeekAgent {
             logger.dim('  Status : ' + _s.status + ' . ' + _s.duration + ' . ' + _s.steps + ' steps . ' + _s.errorCount + ' errors');
             if (_s.filesWritten.length) logger.dim('  Files  : ' + _s.filesWritten.length + ' written');
             if (_s.commandsRun.length) logger.dim('  Cmds   : ' + _s.commandsRun.length + ' run');
-            logger.dim('  Saved  : ~/.deepseek-agent/sessions/' + _s.session + '/summary.md');
+            logger.dim('  Saved  : ~/.forge-agent/sessions/' + _s.session + '/summary.md');
           } catch (_) {}
 
           this._running = false;
@@ -920,7 +920,7 @@ class DeepSeekAgent {
   async _saveConversationLog(task, finalResponse) {
     try {
       const os      = require('os');
-      const logsDir = path.join(os.homedir(), '.deepseek-agent', 'logs');
+      const logsDir = require('./paths').forgePath('logs');
       fs.mkdirSync(logsDir, { recursive: true });
 
       const ts      = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);

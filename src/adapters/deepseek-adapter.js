@@ -237,10 +237,10 @@ class DeepSeekAdapter extends BaseAdapter {
       if (this.config.DEBUG) {
         try {
           const _fs = require('fs'), _os = require('os'), _p = require('path');
-          const _dir = _p.join(_os.homedir(), '.deepseek-agent', 'logs');
+          const _dir = _p.join(require('../paths').forgeHome(), 'logs');
           _fs.mkdirSync(_dir, { recursive: true });
           _fs.writeFileSync(_p.join(_dir, 'last-raw-response.txt'), final, 'utf8');
-          logger.dim('Raw response saved: ~/.deepseek-agent/logs/last-raw-response.txt');
+          logger.dim('Raw response saved: ~/.forge-agent/logs/last-raw-response.txt');
         } catch (_) { /* best-effort */ }
       }
 

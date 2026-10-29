@@ -497,10 +497,10 @@ ${c('1;36', 'LAUNCH')}
 
 ${c('1;36', 'MORE INFO')}
   Docs:    https://github.com/puneet-swarup/forge-agent
-  Config:  ~/.deepseek-agent/config.json
-  Memory:  ~/.deepseek-agent/memory.json
-  History: ~/.deepseek-agent/history.json
-  Plugins: ~/.deepseek-agent/tools/
+  Config:  ~/.forge-agent/config.json
+  Memory:  ~/.forge-agent/memory.json
+  History: ~/.forge-agent/history.json
+  Plugins: ~/.forge-agent/tools/
 `);
 }
 
@@ -1627,13 +1627,13 @@ async function main() {
   }
 
   if (args.configPath) {
-    const globalConfigPath = path.join(require('os').homedir(), '.deepseek-agent', 'config.json');
+    const globalConfigPath = require('./paths').resolveExisting('config.json');
     console.log(globalConfigPath);
     process.exit(0);
   }
 
   // ── First-time setup hint ────────────────────────────────────────────────
-  const globalConfigPath = path.join(require('os').homedir(), '.deepseek-agent', 'config.json');
+  const globalConfigPath = require('./paths').resolveExisting('config.json');
   if (!fs.existsSync(globalConfigPath) && !args.task && !args.interactive && !args.calibrate) {
     logger.banner();
     console.log('\n\x1b[33mWelcome to Forge Agent!\x1b[0m');

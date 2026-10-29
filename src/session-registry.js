@@ -18,9 +18,8 @@ const path = require('path');
 // ─────────────────────────────────────────────
 
 function baseDir() {
-  return process.env.FORGE_HOME
-    ? path.resolve(process.env.FORGE_HOME)
-    : path.join(os.homedir(), '.deepseek-agent');
+  // Delegate to the single source of truth (model-agnostic ~/.forge-agent).
+  return require('./paths').forgeHome();
 }
 
 function sessionsRoot() {

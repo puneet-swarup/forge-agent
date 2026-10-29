@@ -138,7 +138,7 @@ const BUILT_IN_COMMANDS = [
   {
     name: 'save-config',
     aliases: ['save-settings'],
-    description: 'Save current session config changes to ~/.deepseek-agent/config.json',
+    description: 'Save current session config changes to ~/.forge-agent/config.json',
     usage: '/save-config',
     category: 'Config',
     requiresArg: false,
@@ -777,7 +777,7 @@ const BUILT_IN_COMMANDS = [
     execute: async ({ config }) => {
       try {
         const pluginDir = config.PLUGIN_DIR ||
-          path.join(os.homedir(), '.deepseek-agent', 'tools');
+          require('./paths').forgePath('tools');
         const { discoverPlugins, loadPlugin } = require('./plugin-loader');
         const files = discoverPlugins(pluginDir);
 

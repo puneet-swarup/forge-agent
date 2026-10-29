@@ -77,7 +77,7 @@ const WIZARD_STEPS = [
 ];
 
 class Wizard {
-  constructor(configPath = path.join(os.homedir(), '.deepseek-agent', 'config.json')) {
+  constructor(configPath = require('./paths').forgePath('config.json')) {
     this.configPath = configPath;
     this.rl = null;
   }

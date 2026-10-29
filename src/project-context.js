@@ -22,7 +22,7 @@ const os     = require('os');
 }
 */
 
-const PROJECTS_DIR = path.join(os.homedir(), '.deepseek-agent', 'projects');
+const PROJECTS_DIR = require('./paths').forgePath('projects');
 
 // ─────────────────────────────────────────────
 //  Utility

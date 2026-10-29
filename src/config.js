@@ -3,6 +3,11 @@
 const path = require('path');
 const fs   = require('fs');
 const os   = require('os');
+const paths = require('./paths');
+
+// One-time migration from legacy ~/.deepseek-agent to model-agnostic
+// ~/.forge-agent (non-destructive copy; best-effort).
+try { paths.migrateIfNeeded(); } catch (_) { /* never block startup */ }
 
 // ─────────────────────────────────────────────
 //  Default values
@@ -33,7 +38,7 @@ const DEFAULTS = {
   AUDIO_SEQUENTIAL       : true,
   SESSION_DIR: process.env.FORGE_SESSION_DIR
     ? path.resolve(process.env.FORGE_SESSION_DIR)
-    : path.join(os.homedir(), '.deepseek-agent', 'session'),
+    : paths.forgePath('session'),
   // Phase 1: auto-add SESSION_CONTEXT.md to the project's .gitignore
   SESSION_CONTEXT_GITIGNORE: true,
   STRICT_SANDBOX     : false,
@@ -55,21 +60,21 @@ const DEFAULTS = {
 
   // Memory & Cache
   MEMORY_ENABLED     : true,
-  MEMORY_FILE        : path.join(os.homedir(), '.deepseek-agent', 'memory.json'),
+  MEMORY_FILE        : paths.forgePath('memory.json'),
   CACHE_ENABLED      : true,
   CACHE_TTL_MS       : 30_000,
   CACHE_MAX_ENTRIES  : 200,
 
   // History
   HISTORY_ENABLED    : true,
-  HISTORY_FILE       : path.join(os.homedir(), '.deepseek-agent', 'history.json'),
+  HISTORY_FILE       : paths.forgePath('history.json'),
   HISTORY_MAX_ENTRIES: 200,
 
   // Plugins
-  PLUGIN_DIR         : path.join(os.homedir(), '.deepseek-agent', 'tools'),
+  PLUGIN_DIR         : paths.forgePath('tools'),
 
   // Templates
-  TEMPLATES_FILE     : path.join(os.homedir(), '.deepseek-agent', 'templates.json'),
+  TEMPLATES_FILE     : paths.forgePath('templates.json'),
 
   // Output formatting
   OUTPUT_FORMAT      : 'text',
@@ -84,7 +89,7 @@ const DEFAULTS = {
 
   // Sponsorship
   DISABLE_SPONSOR_NUDGE   : false,
-  SPONSOR_NUDGE_FILE      : path.join(os.homedir(), '.deepseek-agent', 'sponsor-nudge.json'),
+  SPONSOR_NUDGE_FILE      : paths.forgePath('sponsor-nudge.json'),
 
   // Docker
   DOCKER_CONTAINER   : process.env.DOCKER_CONTAINER || '',
@@ -120,7 +125,7 @@ function loadJsonSafe(filePath) {
   return {};
 }
 
-const globalConfigPath  = path.join(os.homedir(), '.deepseek-agent', 'config.json');
+const globalConfigPath  = paths.resolveExisting('config.json');
 const projectConfigPath =
   fs.existsSync(path.join(process.cwd(), 'forge-agent.config.json'))
     ? path.join(process.cwd(), 'forge-agent.config.json')
@@ -182,7 +187,7 @@ const _raw = {
 try {
   fs.mkdirSync(path.dirname(_raw.SESSION_DIR), { recursive: true });
   fs.mkdirSync(_raw.SESSION_DIR,               { recursive: true });
-  fs.mkdirSync(path.join(os.homedir(), '.deepseek-agent', 'logs'), { recursive: true });
+  fs.mkdirSync(paths.forgePath('logs'), { recursive: true });
 } catch {}
 
 // Fix non-absolute WORKING_DIR

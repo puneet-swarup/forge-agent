@@ -55,7 +55,7 @@ class SponsorNudge {
   constructor(historyStore, config) {
     this.historyStore = historyStore;
     this.config = config;
-    this.nudgeFile = config.SPONSOR_NUDGE_FILE || path.join(os.homedir(), '.deepseek-agent', 'sponsor-nudge.json');
+    this.nudgeFile = config.SPONSOR_NUDGE_FILE || require('./paths').forgePath('sponsor-nudge.json');
   }
 
   shouldShowNudge() {

@@ -172,7 +172,7 @@ function formatMs(ms) {
  */
 function saveReport(report, customTag = null) {
   try {
-    const benchDir = path.join(os.homedir(), '.deepseek-agent', 'benchmarks');
+    const benchDir = require('./paths').forgePath('benchmarks');
     fs.mkdirSync(benchDir, { recursive: true });
 
     const date = new Date().toISOString().split('T')[0];
@@ -192,7 +192,7 @@ function saveReport(report, customTag = null) {
  */
 function loadLastReport() {
   try {
-    const benchDir = path.join(os.homedir(), '.deepseek-agent', 'benchmarks');
+    const benchDir = require('./paths').forgePath('benchmarks');
     if (!fs.existsSync(benchDir)) return null;
 
     const files = fs.readdirSync(benchDir)

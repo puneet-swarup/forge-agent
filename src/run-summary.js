@@ -19,7 +19,7 @@ function resolveSummaryDir() {
   }
   const name = process.env.FORGE_SESSION_NAME || 'default';
   try { return require('./session-registry').sessionDirFor(name); } catch (_) {}
-  return path.join(os.homedir(), '.deepseek-agent', 'sessions', name);
+  return path.join(require('./paths').forgeHome(), 'sessions', name);
 }
 
 function fmtDuration(ms) {

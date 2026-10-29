@@ -62,7 +62,7 @@ function checkConfig() {
 function checkDirs() {
   try {
     const config = require('./config');
-    const dir = path.dirname(config.SESSION_DIR || path.join(os.homedir(), '.deepseek-agent', 'session'));
+    const dir = path.dirname(config.SESSION_DIR || require('./paths').forgePath('session'));
     try { fs.mkdirSync(dir, { recursive: true }); } catch (_) {}
     const probe = path.join(dir, '.doctor-write-test');
     try {

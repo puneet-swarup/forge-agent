@@ -104,7 +104,7 @@ const TOPICS = {
   'plugins': () => `
   ${cb('white', '🔌 CUSTOM PLUGINS')}
   ${c('cyan', '──────────────────')}
-  Add your own tools by dropping .js files into ${c('gray', '~/.deepseek-agent/tools/')}
+  Add your own tools by dropping .js files into ${c('gray', '~/.forge-agent/tools/')}
 
   ${cb('white', 'PLUGIN FORMAT:')}
   ${cb('white', 'module.exports = {')}
@@ -120,7 +120,7 @@ const TOPICS = {
 
   ${cb('white', 'GENERATE A STUB:')}
   ${c('cyan', 'forge-agent --new-plugin my_tool')}
-  (creates ${c('gray', '~/.deepseek-agent/tools/my_tool.js')} with example code)
+  (creates ${c('gray', '~/.forge-agent/tools/my_tool.js')} with example code)
 
   ${cb('white', 'LIST LOADED PLUGINS:')}
   ${c('cyan', 'forge-agent --list-plugins')}
@@ -180,7 +180,7 @@ const TOPICS = {
   ${c('cyan', 'forge-agent --no-timeout "build entire application"')}
   (agent waits forever — use on very slow connections)
 
-  ${cb('white', 'PERMANENT CONFIG (edit ~/.deepseek-agent/config.json):')}
+  ${cb('white', 'PERMANENT CONFIG (edit ~/.forge-agent/config.json):')}
   ${cb('white', '{')}
     ${cb('white', '"RESPONSE_TIMEOUT": 900000,')}
     ${cb('white', '"MAX_ITERATIONS": 150,')}

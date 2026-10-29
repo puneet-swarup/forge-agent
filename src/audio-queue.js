@@ -29,7 +29,7 @@ const { speak, raiseAlarm, audioDisabled } = require('./audio');
 
 const BASE_DIR = process.env.FORGE_AUDIO_DIR
   ? path.resolve(process.env.FORGE_AUDIO_DIR)
-  : path.join(os.homedir(), '.deepseek-agent');
+  : require('./paths').forgeHome();
 
 const QUEUE_DIR = path.join(BASE_DIR, 'audio-queue');
 const LOCK_FILE = path.join(BASE_DIR, 'audio.lock');
