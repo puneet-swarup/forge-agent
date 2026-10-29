@@ -71,3 +71,33 @@ describe('run-summary', () => {
     expect(() => summary.writeSummary({ task: 123, filesWritten: 'notarray' })).not.toThrow();
   });
 });
+
+
+describe('run-summary - read + list', () => {
+  test('readSummary returns null when no summary exists', () => {
+    const s = summary.readSummary('nope-' + Date.now());
+    expect(s).toBeNull();
+  });
+
+  test('readSummary reads a written summary', () => {
+    const res = summary.writeSummary({ task: 'readable', status: 'completed', finalOutput: 'x' });
+    expect(res).not.toBeNull();
+    // resolveSummaryDir honours FORGE_SESSION_DIR; readSummary uses session name.
+    // Write under the canonical session dir for the current session name too.
+    const fs = require('fs');
+    const path = require('path');
+    const reg = require('../src/session-registry');
+    const name = 'read-' + Date.now();
+    const dir = reg.sessionDirFor(name);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'summary.json'), JSON.stringify({ session: name, task: 'readable', status: 'completed' }), 'utf8');
+    const got = summary.readSummary(name);
+    expect(got).not.toBeNull();
+    expect(got.task).toBe('readable');
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) {}
+  });
+
+  test('listSummaries returns an array', () => {
+    expect(Array.isArray(summary.listSummaries())).toBe(true);
+  });
+});

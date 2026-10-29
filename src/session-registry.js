@@ -72,6 +72,18 @@ function generateSessionName() {
 
 const INSTANCE_FILE = 'instance.json';
 
+// Canonical directory for heartbeats, INDEPENDENT of where the browser profile
+// lives. This is what makes `ps` reliable: a run started with --session-dir <x>
+// still records its heartbeat here, so it is always discoverable.
+function instancesRoot() {
+  return path.join(baseDir(), 'instances');
+}
+
+function heartbeatFileFor(name) {
+  const safe = String(name || 'default').replace(/[^A-Za-z0-9._-]/g, '_');
+  return path.join(instancesRoot(), safe + '.json');
+}
+
 function instanceFileFor(sessionDir) {
   return path.join(sessionDir, INSTANCE_FILE);
 }
@@ -99,25 +111,33 @@ function writeHeartbeat(info = {}) {
     sessionDir,
     argv: process.argv.slice(2).join(' ').slice(0, 300),
   };
+  const name = record.id;
+  const json = JSON.stringify(record, null, 2);
+  // 1) Canonical heartbeat file - always discoverable by `ps`.
+  try {
+    fs.mkdirSync(instancesRoot(), { recursive: true });
+    fs.writeFileSync(heartbeatFileFor(name), json, 'utf8');
+  } catch (_) { /* best-effort */ }
+  // 2) Legacy session-dir copy - keeps older tooling working.
   try {
     fs.mkdirSync(sessionDir, { recursive: true });
-    fs.writeFileSync(instanceFileFor(sessionDir), JSON.stringify(record, null, 2), 'utf8');
-    return record;
-  } catch (_) {
-    return null;
-  }
+    fs.writeFileSync(instanceFileFor(sessionDir), json, 'utf8');
+  } catch (_) { /* best-effort */ }
+  return record;
 }
 
 /** Update just the status/heartbeat of an existing instance record. */
 function updateHeartbeat(status) {
   try {
-    const sessionDir = process.env.FORGE_SESSION_DIR;
-    if (!sessionDir) return null;
-    const file = instanceFileFor(sessionDir);
+    const name = process.env.FORGE_SESSION_NAME || 'default';
+    const file = heartbeatFileFor(name);
     const existing = JSON.parse(fs.readFileSync(file, 'utf8'));
     existing.status = status || existing.status;
     existing.lastHeartbeat = Date.now();
-    fs.writeFileSync(file, JSON.stringify(existing, null, 2), 'utf8');
+    const json = JSON.stringify(existing, null, 2);
+    fs.writeFileSync(file, json, 'utf8');
+    // Keep the legacy session-dir copy in sync too.
+    try { fs.writeFileSync(instanceFileFor(existing.sessionDir), json, 'utf8'); } catch (_) {}
     return existing;
   } catch (_) {
     return null;
@@ -125,6 +145,8 @@ function updateHeartbeat(status) {
 }
 
 function removeHeartbeat() {
+  const name = process.env.FORGE_SESSION_NAME || 'default';
+  try { fs.unlinkSync(heartbeatFileFor(name)); } catch (_) { /* ignore */ }
   try {
     const sessionDir = process.env.FORGE_SESSION_DIR;
     if (sessionDir) fs.unlinkSync(instanceFileFor(sessionDir));
@@ -158,27 +180,38 @@ function isPidAlive(pid) {
  */
 function listInstances(opts = {}) {
   const { includeDead = false, prune = false } = opts;
-  const root = sessionsRoot();
-  let names = [];
+  const seen = new Map(); // name -> { record, file }
+
+  // 1) Canonical heartbeat files (always written, regardless of --session-dir).
   try {
-    names = fs.readdirSync(root, { withFileTypes: true })
-      .filter(d => d.isDirectory())
-      .map(d => d.name);
-  } catch (_) {
-    return [];
-  }
+    const files = fs.readdirSync(instancesRoot()).filter(f => f.endsWith('.json'));
+    for (const f of files) {
+      const file = path.join(instancesRoot(), f);
+      try {
+        const record = JSON.parse(fs.readFileSync(file, 'utf8'));
+        seen.set(record.id || record.name || f, { record, file });
+      } catch (_) {}
+    }
+  } catch (_) {}
+
+  // 2) Legacy session-dir instance.json files (only if not already seen).
+  try {
+    const names = fs.readdirSync(sessionsRoot(), { withFileTypes: true })
+      .filter(d => d.isDirectory()).map(d => d.name);
+    for (const name of names) {
+      const file = instanceFileFor(sessionDirFor(name));
+      try {
+        const record = JSON.parse(fs.readFileSync(file, 'utf8'));
+        const key = record.id || record.name || name;
+        if (!seen.has(key)) seen.set(key, { record, file });
+      } catch (_) {}
+    }
+  } catch (_) {}
 
   const out = [];
-  for (const name of names) {
-    const dir = sessionDirFor(name);
-    const file = instanceFileFor(dir);
-    let record;
-    try {
-      record = JSON.parse(fs.readFileSync(file, 'utf8'));
-    } catch (_) {
-      continue; // no heartbeat => not a tracked instance
-    }
-
+  for (const entry of seen.values()) {
+    const record = entry.record;
+    const file = entry.file;
     const alive = isPidAlive(record.pid);
     if (!alive && prune) {
       try { fs.unlinkSync(file); } catch (__) {}
@@ -267,6 +300,8 @@ module.exports = {
   baseDir,
   sessionsRoot,
   sessionDirFor,
+  instancesRoot,
+  heartbeatFileFor,
   generateSessionName,
   writeHeartbeat,
   updateHeartbeat,

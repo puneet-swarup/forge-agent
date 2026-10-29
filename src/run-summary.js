@@ -106,5 +106,34 @@ function writeSummary(info) {
   }
 }
 
-module.exports = { writeSummary: writeSummary, buildSummary: buildSummary, renderMarkdown: renderMarkdown, resolveSummaryDir: resolveSummaryDir };
+/** Read the summary.json for a given session name, or null. */
+function readSummary(sessionName) {
+  try {
+    const registry = require('./session-registry');
+    const dir = registry.sessionDirFor(sessionName);
+    const jsonPath = path.join(dir, 'summary.json');
+    if (!fs.existsSync(jsonPath)) return null;
+    return JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+  } catch (_) {
+    return null;
+  }
+}
+
+/** List summaries across all sessions (newest first). */
+function listSummaries() {
+  const out = [];
+  try {
+    const registry = require('./session-registry');
+    const root = registry.sessionsRoot();
+    const names = fs.readdirSync(root, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name);
+    for (const name of names) {
+      const s = readSummary(name);
+      if (s) out.push(s);
+    }
+  } catch (_) { /* ignore */ }
+  out.sort((a, b) => new Date(b.finishedAt || 0) - new Date(a.finishedAt || 0));
+  return out;
+}
+
+module.exports = { writeSummary: writeSummary, buildSummary: buildSummary, renderMarkdown: renderMarkdown, resolveSummaryDir: resolveSummaryDir, readSummary: readSummary, listSummaries: listSummaries };
 

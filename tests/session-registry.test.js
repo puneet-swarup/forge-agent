@@ -146,3 +146,77 @@ describe('session-registry — liveness & lookup', () => {
     expect(fs.existsSync(file)).toBe(false);
   });
 });
+
+
+describe('session-registry - canonical heartbeat (ps reliability)', () => {
+  test('writeHeartbeat writes a canonical instances/<name>.json', () => {
+    const reg = require('../src/session-registry');
+    const name = 'canon-' + Date.now();
+    const prevName = process.env.FORGE_SESSION_NAME;
+    const prevDir = process.env.FORGE_SESSION_DIR;
+    process.env.FORGE_SESSION_NAME = name;
+    delete process.env.FORGE_SESSION_DIR;
+    try {
+      const rec = reg.writeHeartbeat({ status: 'starting' });
+      expect(rec).not.toBeNull();
+      const file = reg.heartbeatFileFor(name);
+      expect(require('fs').existsSync(file)).toBe(true);
+      const parsed = JSON.parse(require('fs').readFileSync(file, 'utf8'));
+      expect(parsed.status).toBe('starting');
+      expect(parsed.pid).toBe(process.pid);
+    } finally {
+      if (prevName === undefined) delete process.env.FORGE_SESSION_NAME;
+      else process.env.FORGE_SESSION_NAME = prevName;
+      if (prevDir !== undefined) process.env.FORGE_SESSION_DIR = prevDir;
+      try { require('fs').unlinkSync(reg.heartbeatFileFor(name)); } catch (_) {}
+    }
+  });
+
+  test('an instance using a custom --session-dir is still discoverable', () => {
+    const reg = require('../src/session-registry');
+    const fs = require('fs');
+    const os = require('os');
+    const path = require('path');
+    const name = 'customdir-' + Date.now();
+    const customDir = fs.mkdtempSync(path.join(os.tmpdir(), 'forge-sess-'));
+    const prevName = process.env.FORGE_SESSION_NAME;
+    const prevDir = process.env.FORGE_SESSION_DIR;
+    process.env.FORGE_SESSION_NAME = name;
+    process.env.FORGE_SESSION_DIR = customDir;
+    try {
+      reg.writeHeartbeat({ status: 'running' });
+      // Even though the profile lives in customDir, the canonical heartbeat
+      // must make it visible to listInstances().
+      const all = reg.listInstances({ includeDead: true });
+      const found = all.find(i => i.id === name || i.name === name);
+      expect(found).toBeTruthy();
+      expect(found.alive).toBe(true);
+    } finally {
+      if (prevName === undefined) delete process.env.FORGE_SESSION_NAME;
+      else process.env.FORGE_SESSION_NAME = prevName;
+      if (prevDir === undefined) delete process.env.FORGE_SESSION_DIR;
+      else process.env.FORGE_SESSION_DIR = prevDir;
+      try { fs.unlinkSync(reg.heartbeatFileFor(name)); } catch (_) {}
+      try { fs.rmSync(customDir, { recursive: true, force: true }); } catch (_) {}
+    }
+  });
+
+  test('updateHeartbeat flips status to running', () => {
+    const reg = require('../src/session-registry');
+    const fs = require('fs');
+    const name = 'upd-' + Date.now();
+    const prevName = process.env.FORGE_SESSION_NAME;
+    process.env.FORGE_SESSION_NAME = name;
+    try {
+      reg.writeHeartbeat({ status: 'starting' });
+      const updated = reg.updateHeartbeat('running');
+      expect(updated.status).toBe('running');
+      const parsed = JSON.parse(fs.readFileSync(reg.heartbeatFileFor(name), 'utf8'));
+      expect(parsed.status).toBe('running');
+    } finally {
+      if (prevName === undefined) delete process.env.FORGE_SESSION_NAME;
+      else process.env.FORGE_SESSION_NAME = prevName;
+      try { require('fs').unlinkSync(reg.heartbeatFileFor(name)); } catch (_) {}
+    }
+  });
+});

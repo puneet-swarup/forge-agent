@@ -57,6 +57,10 @@ process.stderr.on('error', err => { if (err.code === 'EPIPE') process.exit(0); }
   } else if (process.env.FORGE_SESSION_NAME) {
     process.env.FORGE_ROLE = process.env.FORGE_SESSION_NAME;
   }
+
+  // Write a 'starting' heartbeat IMMEDIATELY (before browser launch) so `ps`
+  // can see an agent that is still booting or blocked at login.
+  try { registry.writeHeartbeat({ status: 'starting', startedAt: Date.now() }); } catch (_) {}
 })();
 
 const config       = require('./config');
@@ -135,6 +139,8 @@ function parseArgs(argv) {
     benchmarkJson: false,
     benchmarkIterations: 3,
     diagnostics : false,
+    doctor      : false,
+    summary     : false,
     copy        : false,
     security    : false,
     auditLog    : false,
@@ -229,6 +235,8 @@ function parseArgs(argv) {
       case '--benchmark-compare': opts.benchmarkCompare = true; break;
       case '--benchmark-json': opts.benchmarkJson = true; break;
       case '--diagnostics': opts.diagnostics = true;    break;
+      case '--doctor':      opts.doctor      = true;    break;
+      case '--summary':     opts.summary     = (args[i + 1] && !args[i + 1].startsWith('-')) ? args[++i] : true; break;
       case '--copy':        opts.copy        = true;    break;
       case '--timeout':     opts.timeout     = args[++i]; break;
       case '--tool-timeout': opts.toolTimeout = args[++i]; break;
@@ -457,6 +465,8 @@ ${c('1;36', 'SHELL COMPLETIONS')}
 
 ${c('1;36', 'INFO')}
       --version          Show version
+      --summary [sess]   Show run summaries (all, or one session)
+      --doctor           One-command health check (Node, Chromium, config, login)
       --diagnostics      Show system info for bug reports
       --diagnostics --copy Copy diagnostics as GitHub markdown
       --cheatsheet       Show quick reference card
@@ -1419,6 +1429,43 @@ async function main() {
   }
 
   // ── Diagnostics ──────────────────────────────────────────────────────────
+  if (args.summary) {
+    try {
+      const rs = require('./run-summary');
+      if (typeof args.summary === 'string') {
+        const s = rs.readSummary(args.summary);
+        if (!s) { console.log('No summary found for session: ' + args.summary); process.exit(1); }
+        console.log('');
+        console.log(rs.renderMarkdown(s));
+      } else {
+        const all = rs.listSummaries();
+        if (all.length === 0) { console.log('No run summaries yet. Complete a run first.'); process.exit(0); }
+        console.log('');
+        console.log('Run summaries (newest first):');
+        for (const s of all) {
+          console.log('  ' + String(s.session).padEnd(20) + ' ' + String(s.status).padEnd(10) + ' ' + s.duration + '  ' + String(s.task).slice(0, 50));
+        }
+        console.log('');
+      }
+    } catch (e) {
+      console.error('Summary error: ' + e.message);
+      process.exit(1);
+    }
+    process.exit(0);
+  }
+
+  if (args.doctor) {
+    try {
+      const { runDoctor, formatDoctor } = require('./doctor');
+      const report = runDoctor();
+      console.log(formatDoctor(report));
+      process.exit(report.worst === 'fail' ? 1 : 0);
+    } catch (e) {
+      console.error('Doctor error: ' + e.message);
+      process.exit(2);
+    }
+  }
+
   if (args.diagnostics) {
     try {
       const { generateDiagnostics, formatDiagnostics, formatDiagnosticsMarkdown } = require('./diagnostics');

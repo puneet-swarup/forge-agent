@@ -228,6 +228,17 @@ forge-agent ps --json</code></pre>
             <p>Generate a system report for bug debugging.</p>
           </div>
           <div class="flag-card">
+            <h3><code>--doctor</code></h3>
+            <p>One-command health check: verifies Node version, Chromium install, config validity, data-directory writability, and browser-profile presence, then prints a PASS/WARN/FAIL report with hints. Exits non-zero if any check fails (useful in CI).</p>
+            <pre><code>forge-agent --doctor</code></pre>
+          </div>
+          <div class="flag-card">
+            <h3><code>--summary [session]</code></h3>
+            <p>Show durable run summaries. With no argument, lists all sessions (newest first) with status, duration, and task. With a session name, prints that run's full summary.</p>
+            <pre><code>forge-agent --summary
+forge-agent --summary mybot</code></pre>
+          </div>
+          <div class="flag-card">
             <h3><code>--security</code></h3>
             <p>Show the current security posture and blocked paths.</p>
           </div>
