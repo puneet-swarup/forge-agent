@@ -128,7 +128,16 @@ function hasFilePattern(dir, pattern) {
 
 function buildNodeCmd(bin, opts, args) {
   // Use npx if the binary isn't globally installed
-  const cmd = `npx --no ${bin}`;
+  // Prefer the project-local binary so we don't depend on npx being on PATH
+  // (absent in some CI/sandboxes, which made the nested spawn return 0 tests).
+  let cmd = `npx --no ${bin}`;
+  try {
+    const _path = require('path');
+    const _fs   = require('fs');
+    const _exe  = process.platform === 'win32' ? bin + '.cmd' : bin;
+    const _local = _path.join(process.cwd(), 'node_modules', '.bin', _exe);
+    if (_fs.existsSync(_local)) cmd = `"${_local}"`;
+  } catch (_) { /* keep npx fallback */ }
   return [cmd, ...args.filter(Boolean)].join(' ');
 }
 

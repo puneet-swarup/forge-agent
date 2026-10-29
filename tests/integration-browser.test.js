@@ -216,4 +216,81 @@ describe('browser integration (mock chat)', () => {
     expect(reply).toContain('part two');
     expect(reply).not.toMatch(/part one\s*$/);
   }, 30000);
+
+  itBrowser('response envelope markers are stripped and completion is fast', async () => {
+    const { getAdapter } = require('../src/adapter-factory');
+    const config = {
+      DEEPSEEK_URL: server.url,
+      HEALTH_CHECK_TIMEOUT: 5000,
+      SEND_DELAY: 100,
+      GENERATION_POLL: 40,
+      STABLE_DELAY: 150,
+      APPEAR_TIMEOUT: 8000,
+      RESPONSE_TIMEOUT: 15000,
+      ACTIVE_PROFILE: 'default',
+      PLANNING_MODE: false,
+      WORKING_DIR: process.cwd(),
+    };
+    const adapter = getAdapter('deepseek', page, config);
+
+    // Default mock reply is wrapped in <<<FORGE_START>>>/<<<FORGE_END>>>.
+    // The adapter must strip the markers and return clean prose.
+    await adapter.sendMessage('hello envelope');
+    const reply = await adapter.waitForResponse();
+
+    expect(reply).not.toContain('<<<FORGE_START>>>');
+    expect(reply).not.toContain('<<<FORGE_END>>>');
+    expect(reply).toContain('Echo: hello envelope');
+  }, 30000);
+
+  itBrowser('falls back to DOM-quiet completion when markers are absent', async () => {
+    const { getAdapter } = require('../src/adapter-factory');
+    const config = {
+      DEEPSEEK_URL: server.url,
+      HEALTH_CHECK_TIMEOUT: 5000,
+      SEND_DELAY: 100,
+      GENERATION_POLL: 40,
+      STABLE_DELAY: 150,
+      APPEAR_TIMEOUT: 8000,
+      RESPONSE_TIMEOUT: 15000,
+      ACTIVE_PROFILE: 'default',
+      PLANNING_MODE: false,
+      WORKING_DIR: process.cwd(),
+    };
+    const adapter = getAdapter('deepseek', page, config);
+
+    // NO_MARKER_TEST => mock emits NO envelope. The adapter must still return
+    // the full reply via the DOM-quiet fallback (backward compatibility).
+    await adapter.sendMessage('NO_MARKER_TEST please');
+    const reply = await adapter.waitForResponse();
+
+    expect(reply).toContain('Echo: NO_MARKER_TEST please');
+    expect(reply).not.toContain('<<<FORGE_START>>>');
+    expect(reply).not.toContain('<<<FORGE_END>>>');
+  }, 30000);
+
+  itBrowser('tolerates sloppy markers (prose before START, whitespace around)', async () => {
+    const { getAdapter } = require('../src/adapter-factory');
+    const config = {
+      DEEPSEEK_URL: server.url,
+      HEALTH_CHECK_TIMEOUT: 5000,
+      SEND_DELAY: 100,
+      GENERATION_POLL: 40,
+      STABLE_DELAY: 150,
+      APPEAR_TIMEOUT: 8000,
+      RESPONSE_TIMEOUT: 15000,
+      ACTIVE_PROFILE: 'default',
+      PLANNING_MODE: false,
+      WORKING_DIR: process.cwd(),
+    };
+    const adapter = getAdapter('deepseek', page, config);
+
+    await adapter.sendMessage('WS_MARKER_TEST');
+    const reply = await adapter.waitForResponse();
+
+    // Markers must be stripped even when surrounded by whitespace and prose.
+    expect(reply).not.toContain('<<<FORGE_START>>>');
+    expect(reply).not.toContain('<<<FORGE_END>>>');
+    expect(reply).toContain('answer-body');
+  }, 30000);
 });

@@ -7,6 +7,14 @@ const { Errors }  = require('../errors');
 const { withSendRetry, withResponseRetry } = require('../retry');
 const { ThinkingTracker, formatThinkingForLog } = require('../thinking');
 
+// Explicit response-envelope markers agreed with the model via system-prompt.
+// When the model emits the END marker, completion is certain — we can stop
+// immediately instead of waiting for DOM quiet. If markers are absent (model
+// ignored the contract), every code path falls back to the DOM-quiet logic, so
+// this can never make completion LESS reliable, only faster when honoured.
+const RESPONSE_START = '<<<FORGE_START>>>';
+const RESPONSE_END   = '<<<FORGE_END>>>';
+
 /**
  * Adapter for chat.deepseek.com
  */
@@ -146,6 +154,8 @@ class DeepSeekAdapter extends BaseAdapter {
             this.thinkingTracker.update(text);
           }
           lastText = text;
+          // Marker fast-path: END marker => definitively complete.
+          if (this._hasEndMarker(text)) break;
 
           // Give the quiet check enough headroom: it must be able to observe
           // a full STABLE_DELAY of silence (the old 250ms cap was shorter than
@@ -192,6 +202,7 @@ class DeepSeekAdapter extends BaseAdapter {
           }
           if (text !== lastText) {
             lastText    = text;
+            if (this._hasEndMarker(text)) break;
             stableStart = null;
           } else if (text.length > 0) {
             if (!stableStart) stableStart = Date.now();
@@ -221,6 +232,18 @@ class DeepSeekAdapter extends BaseAdapter {
       }
 
       const final   = await this._extractLastMessage();
+      // DEBUG-only: capture the RAW scraped text (before stripping) so
+      // protocol compliance can be inspected without another live login.
+      if (this.config.DEBUG) {
+        try {
+          const _fs = require('fs'), _os = require('os'), _p = require('path');
+          const _dir = _p.join(_os.homedir(), '.deepseek-agent', 'logs');
+          _fs.mkdirSync(_dir, { recursive: true });
+          _fs.writeFileSync(_p.join(_dir, 'last-raw-response.txt'), final, 'utf8');
+          logger.dim('Raw response saved: ~/.deepseek-agent/logs/last-raw-response.txt');
+        } catch (_) { /* best-effort */ }
+      }
+
       const cleaned = this._cleanText(final);
 
       if (!cleaned || cleaned.trim().length === 0) {
@@ -592,7 +615,26 @@ class DeepSeekAdapter extends BaseAdapter {
   _cleanText(text) {
     if (!text) return '';
     // Strip <think> blocks always — unconditional
-    return text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+    // Strip the response envelope markers if the model emitted them.
+    let out = text;
+    if (out.includes(RESPONSE_START)) out = out.split(RESPONSE_START).join('');
+    if (out.includes(RESPONSE_END))   out = out.split(RESPONSE_END).join('');
+    return out.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+  }
+
+  /**
+   * True if the scraped text contains the model's END marker. When true the
+   * reply is definitively complete and we can skip the quiet-window wait.
+   */
+  _hasEndMarker(text) {
+    if (typeof text !== 'string') return false;
+    const startIdx = text.lastIndexOf(RESPONSE_START);
+    const endIdx   = text.lastIndexOf(RESPONSE_END);
+    // Require END to appear AFTER a START. This prevents a stray mention of
+    // the END marker inside the model's prose or a code block (e.g. when it is
+    // explaining the protocol) from being mistaken for real completion, and
+    // rejects an END marker that appears without a matching START.
+    return startIdx !== -1 && endIdx !== -1 && endIdx > startIdx;
   }
 
   async _isGenerating() {

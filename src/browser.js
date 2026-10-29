@@ -80,7 +80,29 @@ class DeepSeekBrowser {
   async _navigate(url) {
     try {
       await this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: config.BROWSER_TIMEOUT || 90_000 });
-      await this.page.waitForTimeout(3_000);
+      // Replace the old blind 3s sleep with a real readiness signal: wait
+      // for the chat input to appear. Falls back to a short settle if the
+      // adapter/selectors aren't available or don't match in time.
+      const _inputSelectors = this.adapter && typeof this.adapter._getInputSelectors === 'function'
+        ? this.adapter._getInputSelectors()
+        : null;
+
+      if (_inputSelectors && _inputSelectors.length > 0) {
+        let _ready = false;
+        for (const _sel of _inputSelectors) {
+          try {
+            await this.page.waitForSelector(_sel, { timeout: 5_000 });
+            _ready = true;
+            break;
+          } catch (_) { /* try next selector */ }
+        }
+        if (!_ready) {
+          logger.warn('Chat input not detected after navigation — continuing with fallback settle.');
+          await this.page.waitForTimeout(config.NAV_SETTLE_MS || 500);
+        }
+      } else {
+        await this.page.waitForTimeout(config.NAV_SETTLE_MS || 500);
+      }
     } catch (err) {
       logger.warn(`Navigation warning: ${err.message}`);
     }

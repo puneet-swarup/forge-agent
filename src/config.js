@@ -16,10 +16,11 @@ const DEFAULTS = {
   // Timing (tuned for slow connections)
   RESPONSE_TIMEOUT   : 600_000,   // 10 min total wait
   STABLE_DELAY       : 1_500,     // 1.5s of silence before response is done
-  SEND_DELAY         : 600,       // 0.6s after filling input
+  SEND_DELAY         : 250,       // 0.25s after filling input (was 600ms; safe lower bound)
   GENERATION_POLL    : 400,       // poll every 400ms
   APPEAR_TIMEOUT     : 20_000,    // 20s for first chars to appear
   BROWSER_TIMEOUT    : 30_000,    // 30s for page navigation
+  NAV_SETTLE_MS      : 500,       // fallback settle if selector wait fails (see browser.js)
   TOOL_TIMEOUT       : 300_000,   // 5min for shell commands
   HEALTH_CHECK_TIMEOUT: 15_000,   // 15s for health checks
 

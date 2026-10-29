@@ -124,7 +124,7 @@ const PAGE = `<!doctype html>
       if (text.includes('PAUSE_TEST')) {
         const first  = 'part one ';
         const second = 'part two done';
-        const full   = first + second;
+        const full   = '<<<FORGE_START>>>' + first + second + '<<<FORGE_END>>>';
         // Keep the generating indicator up for the WHOLE reply, including the
         // mid-stream pause, so the adapter's _isGenerating() probe correctly
         // reports "still working" and does not return a half response.
@@ -149,7 +149,31 @@ const PAGE = `<!doctype html>
         return;
       }
 
-      streamInto(node, replyFor(text));
+      // NO_MARKER_TEST: reply WITHOUT the response envelope, to exercise the
+      // adapter's DOM-quiet fallback path (markers absent => still correct).
+      if (text.includes('NO_MARKER_TEST')) {
+        streamInto(node, replyFor(text));
+        return;
+      }
+
+      // WS_MARKER_TEST: markers with surrounding whitespace and a little prose
+      // BEFORE the START marker (a sloppy-but-honouring model). Adapter must
+      // still detect END-after-START and strip markers from the returned text.
+      if (text.includes('WS_MARKER_TEST')) {
+        const NL = String.fromCharCode(10);
+        const body = 'Sure, here you go:' + NL + NL +
+          '  <<<FORGE_START>>>  ' + NL + 'answer-body' + NL + '  <<<FORGE_END>>>  ' + NL;
+        streamInto(node, body);
+        return;
+      }
+
+      // Default: wrap the reply in the explicit response envelope markers that
+      // the system prompt asks the model to emit. This lets the adapter detect
+      // completion deterministically via <<<FORGE_END>>> instead of guessing.
+      const START = '<<<FORGE_START>>>';
+      const END   = '<<<FORGE_END>>>';
+      const NL    = String.fromCharCode(10);
+      streamInto(node, START + NL + replyFor(text) + NL + END);
     });
   </script>
 </body></html>`;

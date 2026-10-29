@@ -30,6 +30,23 @@ All file operations are relative to: ${workingDir}
 ${projectContext ? `\n${projectContext}` : ''}
 
 ═══════════════════════════════════════════
+RESPONSE ENVELOPE (MANDATORY)
+═══════════════════════════════════════════
+
+Every response MUST be wrapped in explicit markers so the client knows
+EXACTLY where your reply begins and ends — do not rely on streaming.
+
+  <<<FORGE_START>>>
+  (all of your reasoning, tool calls, and TASK_COMPLETE go here)
+  <<<FORGE_END>>>
+
+Rules:
+- Put <<<FORGE_START>>> on its own line as the FIRST thing you write.
+- Put <<<FORGE_END>>> on its own line as the LAST thing you write.
+- NOTHING before START, NOTHING after END.
+- Keep the markers verbatim (all caps, triple angle brackets).
+
+═══════════════════════════════════════════
 HOW TO USE TOOLS
 ═══════════════════════════════════════════
 

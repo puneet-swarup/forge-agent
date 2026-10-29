@@ -64,7 +64,13 @@ function validatePath(filePath, opts = {}) {
 
     // Fix 2: Block additional sensitive paths
     for (const blocked of BLOCKED_PATHS) {
-      if (abs === blocked || abs.startsWith(blocked + path.sep)) {
+      // Compare NORMALISED forms so platform-specific resolution can't bypass
+      // the check: on Windows path.resolve('/etc/passwd') becomes 'D:\\etc\\passwd',
+      // which never equals the literal '/etc/passwd' in BLOCKED_PATHS.
+      const _norm = (p) => { try { return path.resolve(p).toLowerCase(); } catch { return String(p).toLowerCase(); } };
+      const _absN = _norm(abs);
+      const _blkN = _norm(blocked);
+      if (_absN === _blkN || _absN.startsWith(_blkN + path.sep)) {
         return { safe: false, reason: `Security: access denied — "${filePath}" matches a protected path.` };
       }
     }
