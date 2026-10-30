@@ -18,6 +18,33 @@ function _resolveFileKey(p, cwd) {
   }
 }
 
+// Commands that cannot mutate the working tree. Anything not on this list is
+// conservatively treated as a mutating command and serialised as a barrier.
+const READ_ONLY_COMMANDS = new Set([
+  'cat', 'ls', 'dir', 'pwd', 'echo', 'type', 'head', 'tail', 'wc',
+  'grep', 'find', 'which', 'where', 'node', 'git',
+]);
+
+function _isReadOnlyCommand(cmd) {
+  const s = String(cmd || '').trim();
+  if (!s) return false;
+  const parts = s.split(/\s+/);
+  const bin = parts[0].toLowerCase();
+  if (!READ_ONLY_COMMANDS.has(bin)) return false;
+  // `node script.js` can write anything — only allow pure version queries.
+  if (bin === 'node') {
+    const second = (parts[1] || '').toLowerCase();
+    return parts.length === 2 && (second === '-v' || second === '--version');
+  }
+  // `git` is read-only only for inspection subcommands.
+  if (bin === 'git') {
+    const sub = (parts[1] || '').toLowerCase();
+    return ['status', 'log', 'diff', 'show', 'branch', 'rev-parse', 'ls-files']
+      .indexOf(sub) !== -1;
+  }
+  return true;
+}
+
 function conflictKeys(name, args, cwd) {
   const keys = [];
   const a = args || {};
@@ -48,7 +75,15 @@ function conflictKeys(name, args, cwd) {
       addFile(a.path_b);
       break;
     case 'run_command':
-      keys.push('shell:' + String(a.command || '').trim());
+      // Shell commands are treated as a single global barrier UNLESS both
+      // sides are provably read-only. Keying on the exact command string let
+      // `npm install` and `npm install foo` run concurrently against the same
+      // tree (they hash to different keys), which corrupted node_modules.
+      if (_isReadOnlyCommand(a.command)) {
+        keys.push('shell-ro');
+      } else {
+        keys.push('shell-rw');
+      }
       break;
     case 'install_package':
       keys.push('shell:install:' + JSON.stringify(a.packages || a.package || a.name || a));

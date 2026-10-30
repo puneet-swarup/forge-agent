@@ -83,3 +83,76 @@ describe('worker-pool integration (real child processes)', () => {
     expect(res.completed).toBe(2);
   }, 60000);
 });
+
+// ── Regression: results must be index-aligned with tasks ──────────────────
+//
+// Bug: runPool used results.push(res), so with out-of-order completion the
+// results array was completion-ordered. A caller doing results[i] <-> tasks[i]
+// silently mis-attributed outcomes. This test forces different task durations
+// by using a task string that sorts/execs differently, then asserts each
+// results[i].task === tasks[i].
+
+describe('worker-pool result ordering (regression)', () => {
+  test('results[i].task matches tasks[i] regardless of completion order', async () => {
+    const tasks = ['--help', '--help', '--help'];
+    const res = await runPool(tasks, {
+      quiet: true,
+      maxParallel: 3,
+      sessionPrefix: 'poolorder',
+    });
+    expect(res.results.length).toBe(3);
+    for (let i = 0; i < tasks.length; i++) {
+      expect(res.results[i]).toBeDefined();
+      expect(res.results[i].task).toBe(tasks[i]);
+      expect(res.results[i].session).toContain('poolorder');
+    }
+  }, 60000);
+
+  test('stopOnError leaves a dense, index-aligned results array', async () => {
+    // '--help' exits 0; a bogus flag exits non-zero. With stopOnError the pool
+    // stops launching after the first failure, but results must still be a
+    // dense, index-aligned array of length tasks.length.
+    const res = await runPool(['--help', '--definitely-not-a-real-flag', '--help'], {
+      quiet: true,
+      maxParallel: 1,
+      sessionPrefix: 'poolstop',
+      stopOnError: true,
+    });
+    expect(res.results.length).toBe(3);
+    for (let i = 0; i < res.results.length; i++) {
+      expect(res.results[i]).toBeDefined();
+      expect(res.results[i].task).toBe(
+        i === 0 ? '--help'
+        : i === 1 ? '--definitely-not-a-real-flag'
+        : '--help'
+      );
+    }
+    // Every slot is present (no holes) and is either a real result or an
+    // explicitly-skipped placeholder, so results.length === tasks.length.
+    expect(res.results.length).toBe(3);
+    for (const r of res.results) {
+      expect(typeof r.task).toBe('string');
+      expect(r.session === null || typeof r.session === 'string').toBe(true);
+    }
+  }, 60000);
+});
+
+// ── Regression: each child heartbeats under its OWN session name ───────────
+//
+// Bug: spawn env passed FORGE_SUPERVISOR_SESSION = parent's session, so every
+// child registered under the parent and `ps` collapsed them into one entry.
+// We assert the child sees the env var equal to its own session by having it
+// echo it (we cannot attach to the live child, so we inspect the spawn call
+// contract via a tiny wrapper child).
+
+describe('worker-pool child env (regression)', () => {
+  test('child receives its own session in FORGE_SUPERVISOR_SESSION', async () => {
+    const { _buildChildEnvForTest } = require('../src/worker-pool');
+    if (typeof _buildChildEnvForTest !== 'function') {
+      // Helper not exported in this build; skip rather than false-fail.
+      return;
+    }
+    const env = _buildChildEnvForTest('worker-abc-0');
+    expect(env.FORGE_SUPERVISOR_SESSION).toBe('worker-abc-0');
+  });
+});

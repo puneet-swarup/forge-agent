@@ -166,12 +166,14 @@ class DeepSeekBrowser {
         try {
           return await this.adapter.sendMessage(text);
         } catch (secondErr) {
-          // Take debug screenshot on final failure
+          // Debug screenshot on final failure, under the model-agnostic Forge
+          // home so it works on Windows too.
           try {
-            const debugPath = '/tmp/forge-selector-debug.png';
+            const debugPath = require('./paths').forgePath('logs', 'selector-debug.png');
+            require('fs').mkdirSync(require('path').dirname(debugPath), { recursive: true });
             await this.page.screenshot({ path: debugPath });
             logger.dim(`Debug screenshot saved: ${debugPath}`);
-          } catch (e) {}
+          } catch (e) { void e; }
           throw secondErr;
         }
       }
@@ -231,10 +233,13 @@ class DeepSeekBrowser {
     console.log('═'.repeat(60) + '\n');
   }
 
-  /** Take a screenshot (for debugging) */
-  async screenshot(filePath = '/tmp/forge-agent-debug.png') {
-    await this.page.screenshot({ path: filePath, fullPage: false });
-    logger.info(`Screenshot saved: ${filePath}`);
+  /** Take a screenshot (for debugging). Returns the saved path. */
+  async screenshot(filePath) {
+    const target = filePath || require('./paths').forgePath('logs', 'debug.png');
+    require('fs').mkdirSync(require('path').dirname(target), { recursive: true });
+    await this.page.screenshot({ path: target, fullPage: false });
+    logger.info(`Screenshot saved: ${target}`);
+    return target;
   }
 }
 
