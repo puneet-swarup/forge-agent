@@ -23,11 +23,25 @@ function planPath(dir) {
 }
 
 // Read plan items using todo-manager's parser (same checkbox semantics).
+// Checkbox-only parser. Matches setDone() exactly so list/tick/status agree.
+// (todo-manager.parseTodo also counts plain '- text' bullets as items, which
+// is wrong for a checkbox plan and made the counts drift.)
+function parsePlanItems(raw) {
+  const out = [];
+  const lines = String(raw || '').split(String.fromCharCode(10));
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^\s*[-*]\s+\[([ xX])\]\s+(.*)$/);
+    if (!m) continue;
+    out.push({ text: m[2].trim(), done: m[1].toLowerCase() === 'x', line: i + 1 });
+  }
+  return out;
+}
+
 function readPlan(dir) {
   const file = planPath(dir);
   if (!fs.existsSync(file)) return null;
   const raw = fs.readFileSync(file, 'utf8');
-  const items = todo.parseTodo(raw);
+  const items = parsePlanItems(raw);
   return {
     file: file,
     items: items,
@@ -118,4 +132,4 @@ if (require.main === module) {
   process.exit(main(process.argv));
 }
 
-module.exports = { readPlan, setDone, formatStatus, progressBar, planPath, PLAN_FILE };
+module.exports = { readPlan, setDone, formatStatus, progressBar, planPath, PLAN_FILE, parsePlanItems };

@@ -50,6 +50,20 @@ describe('plan: readPlan', () => {
     const p = readPlan(dir);
     expect(p.items).toHaveLength(3);
   });
+
+  test('ignores plain bullets + headers (checkbox-only, matches tick)', () => {
+    writePlan([
+      '### Phase X - header',
+      '- plain bullet, not a task',
+      '- [ ] real task one',
+      '> quoted prose',
+      '- [x] real task two',
+    ]);
+    const p = readPlan(dir);
+    expect(p.items).toHaveLength(2);
+    expect(p.open[0].text).toContain('real task one');
+    expect(p.done[0].text).toContain('real task two');
+  });
 });
 
 describe('plan: setDone', () => {
