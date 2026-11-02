@@ -295,6 +295,12 @@ describe('walkFiles', () => {
     const files = walkFiles(REPO);
     files.forEach(f => expect(path.isAbsolute(f)).toBe(true));
   });
+
+  test('G1: a file path is searched directly (not silently skipped)', () => {
+    const single = path.join(REPO, 'src', 'auth', 'login.js');
+    const files  = walkFiles(single);
+    expect(files).toEqual([single]);
+  });
 });
 
 // ─────────────────────────────────────────────

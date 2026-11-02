@@ -3,7 +3,7 @@
 
 const fs            = require('fs');
 const path          = require('path');
-const { execSync }  = require('child_process');
+const { execSync, exec } = require('child_process');
 const http          = require('http');
 const https         = require('https');
 const config        = require('./config');
@@ -48,6 +48,56 @@ function resolve(filePath) {
   return path.resolve(config.WORKING_DIR, filePath);
 }
 
+// ─────────────────────────────────────────────
+//  Adapter provider (for opt-in read_file upload, ARCHITECTURE.md §11)
+// ─────────────────────────────────────────────
+// tools.js is transport-agnostic and normally has no browser/adapter handle.
+// The agent registers a provider so the read_file tool can reach the live
+// adapter when (and only when) READ_FILE_UPLOAD is enabled. Returns null when
+// unavailable, so every caller transparently falls back to inline text.
+let _adapterProvider = null;
+
+function setAdapterProvider(fn) {
+  _adapterProvider = typeof fn === 'function' ? fn : null;
+}
+
+function getAdapter() {
+  try { return _adapterProvider ? _adapterProvider() : null; } catch (_) { return null; }
+}
+
+/**
+ * Attempt to upload a file instead of inlining it. Returns a short result
+ * string on success, or null to signal "fall back to inline text". Never throws.
+ */
+async function tryUploadRead(abs, filePath, sizeBytes) {
+  if (!config.READ_FILE_UPLOAD) return null;
+  const minBytes = config.READ_FILE_UPLOAD_MIN_BYTES || 4096;
+  if (sizeBytes < minBytes) return null;
+
+  const adapter = getAdapter();
+  if (!adapter || typeof adapter.supportsUpload !== 'function') return null;
+
+  try {
+    if (!(await adapter.supportsUpload())) return null;
+  } catch (_) {
+    return null;
+  }
+
+  const timeoutMs = config.READ_FILE_UPLOAD_TIMEOUT_MS || 15000;
+  try {
+    const res = await Promise.race([
+      adapter.uploadFile(abs, { timeoutMs }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('upload timeout')), timeoutMs)),
+    ]);
+    if (!res || !res.ok) return null;
+    return '✓ uploaded ' + filePath + ' (' + formatBytes(sizeBytes) + ') as a native attachment' +
+      ' — open it from the attachment instead of inlining. [method: ' + (res.method || 'upload') + ']';
+  } catch (err) {
+    if (config.DEBUG) console.warn('[read_file] upload failed, falling back: ' + err.message);
+    return null;
+  }
+}
+
 /**
  * Validate that a resolved path is safe to access.
  *
@@ -86,8 +136,8 @@ function formatBytes(bytes) {
 function globToRegex(glob) {
   const escaped = glob
     .replace(/[.+^${}()|[\]\\]/g, '\\$&')  // escape regex special chars
-    .replace(/\*/g, '.*')                    // * → .*
-    .replace(/\?/g, '.');                    // ? → .
+    .replace(/\*/g, '[^/]*')               // * -> any chars except path separator
+    .replace(/\?/g, '[^/]');               // ? -> one char except path separator
   return new RegExp('^' + escaped + '$', 'i');
 }
 
@@ -187,6 +237,19 @@ const TOOLS = {
 
       // Fix 8 — Warn when reading files that commonly contain secrets
       const warning = security.checkSensitiveFileType(filePath);
+
+      // Opt-in upload path (ARCHITECTURE.md §11): for whole-file reads of
+      // sufficiently large files, try to upload instead of inlining text.
+      // tryUploadRead returns null when disabled/unsupported/failed, so the
+      // inline path below always remains the fallback. Never attempted when a
+      // line range is requested (the model needs the specific lines inline).
+      if (start_line == null && end_line == null) {
+        try {
+          const sizeBytes = fs.statSync(abs).size;
+          const uploaded = await tryUploadRead(abs, filePath, sizeBytes);
+          if (uploaded) return warning ? warning + '\n\n' + uploaded : uploaded;
+        } catch (_) { /* fall through to inline */ }
+      }
 
       if (start_line != null || end_line != null) {
         const lines = content.split('\n');
@@ -483,20 +546,20 @@ const TOOLS = {
         logger.dim(`[run_command] Executing: ${command} (cwd: ${workDir})`);
       }
 
-      try {
-        const output = execSync(command, {
-          cwd         : workDir,
-          encoding    : 'utf8',
-          timeout     : timeoutMs,
-          maxBuffer   : 20 * 1024 * 1024,
-          env         : { ...process.env, ...env },
-          stdio       : ['pipe', 'pipe', 'pipe'],
+      const result = await new Promise(function (resolve, reject) {
+        exec(command, {
+          cwd       : workDir,
+          encoding  : 'utf8',
+          timeout   : timeoutMs,
+          maxBuffer : 20 * 1024 * 1024,
+          env       : Object.assign({}, process.env, env),
+        }, function (err, stdout) {
+          if (err) return reject(classifyCommandError(err, command));
+          resolve((stdout || '').trim());
         });
-        const result = (output || '').trim();
-        return truncate(result || '(command completed with no output)', config.MAX_OUTPUT_LENGTH, 'command_output');
-      } catch (err) {
-        throw classifyCommandError(err, command);
-      }
+      });
+
+      return truncate(result || '(command completed with no output)', config.MAX_OUTPUT_LENGTH, 'command_output');
     },
   },
 
@@ -603,7 +666,29 @@ const TOOLS = {
         }
       }
 
-      walk(dir);
+      // G1 fix: directory may resolve to a single file (ENOTDIR otherwise).
+      let _stat = null;
+      try { _stat = fs.statSync(dir); } catch { _stat = null; }
+      if (_stat && _stat.isFile()) {
+        let content = '';
+        try { content = fs.readFileSync(dir, 'utf8'); } catch { content = ''; }
+        const lines = content.split('\n');
+        for (let i = 0; i < lines.length; i++) {
+          if (regex.test(lines[i])) {
+            const ctxStart = Math.max(0, i - context_lines);
+            const ctxEnd   = Math.min(lines.length - 1, i + context_lines);
+            const block = [];
+            for (let j = ctxStart; j <= ctxEnd; j++) {
+              const prefix = j === i ? '>' : ' ';
+              block.push(`${dir}:${j + 1}${prefix} ${lines[j]}`);
+            }
+            matches.push(block.join('\n'));
+            if (matches.length >= MAX) break;
+          }
+        }
+      } else {
+        walk(dir);
+      }
 
       if (matches.length === 0) return `No matches found for: ${pattern}`;
       const result = matches.join('\n' + '─'.repeat(40) + '\n');
@@ -676,24 +761,26 @@ const TOOLS = {
     },
     async execute({ files }) {
       if (!Array.isArray(files)) throw new Error('"files" must be an array of {path, content}');
-      const results = [];
-      for (const item of files) {
+      const fsp = fs.promises;
+      const results = await Promise.all(files.map(async function (item) {
         if (!item || !item.path) {
           logger.warn('write_files: item missing path, skipping');
-          continue;
+          return null;
         }
         const filePath = item.path;
-        const content  = item.content || '';
-        const abs = resolve(filePath);
+        const content = item.content || '';
+        const abs = assertSafePath(filePath, 'write');
         try {
-          fs.mkdirSync(path.dirname(abs), { recursive: true });
-          fs.writeFileSync(abs, content, 'utf8');
+          await fsp.mkdir(path.dirname(abs), { recursive: true });
+          await fsp.writeFile(abs, content, 'utf8');
         } catch (err) {
           throw classifyFsError(err, filePath, 'write');
         }
-        results.push(`✓ ${filePath}`);
-      }
-      return `Wrote ${results.length} files:\n${results.join('\n')}`;
+        return filePath;
+      }));
+      const written = results.filter(Boolean);
+      const header = 'Wrote ' + written.length + ' files:';
+      return [header].concat(written.map(function (p) { return '✓ ' + p; })).join('\n');
     },
   },
 
@@ -1533,4 +1620,4 @@ function getLoadedPlugins() {
   return loadedPlugins;
 }
 
-module.exports = { TOOLS, executeTool, getToolDescriptions, getLoadedPluginCount, getLoadedPlugins, cache };
+module.exports = { TOOLS, executeTool, getToolDescriptions, getLoadedPluginCount, getLoadedPlugins, cache, setAdapterProvider };

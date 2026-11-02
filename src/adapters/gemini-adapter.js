@@ -99,6 +99,75 @@ class GeminiAdapter extends BaseAdapter {
       await this.page.waitForTimeout(2000);
     }
   }
+
+  // ── Upload capability (ARCHITECTURE.md §11) ────────────────────────────────
+
+  /**
+   * Selectors for Gemini native file-attach input.
+   * Gemini usually exposes a hidden input[type=file] behind an "Add files"
+   * material button/menu. Always probed via supportsUpload() before use.
+   */
+  _getUploadSelectors() {
+    return [
+      'input[type="file"]',
+      'input[type="file"][accept]',
+      '[class*="upload"] input[type="file"]',
+      'uploader input[type="file"]',
+      'input[type="file"][name*="file"]',
+    ];
+  }
+
+  /**
+   * Upload a local file to Gemini chat as a native attachment.
+   * Tries setInputFiles first; falls back to a filechooser event. Any failure
+   * throws — the caller (read_file) treats a throw as "fall back to text".
+   */
+  async uploadFile(absPath, opts = {}) {
+    const fs = require('fs');
+    const timeoutMs = opts.timeoutMs || (this.config.READ_FILE_UPLOAD_TIMEOUT_MS || 15000);
+
+    if (!absPath || !fs.existsSync(absPath)) {
+      throw new Error('uploadFile: file not found: ' + absPath);
+    }
+
+    const selectors = this._getUploadSelectors();
+    for (const selector of selectors) {
+      try {
+        const handle = await this.page.$(selector);
+        if (!handle) continue;
+        await handle.setInputFiles(absPath, { timeout: timeoutMs });
+        return { ok: true, method: 'setInputFiles', selector };
+      } catch (err) {
+        logger.warn('uploadFile(gemini): setInputFiles failed for ' + selector + ': ' + err.message);
+      }
+    }
+
+    const chooserTriggers = [
+      'button[aria-label*="Add files" i]',
+      'button[aria-label*="attach" i]',
+      'button[aria-label*="upload" i]',
+      'button[mattooltip*="Add files" i]',
+      'button[aria-label*="Add" i]',
+      '[class*="upload"]',
+      '[class*="attach"]',
+    ];
+    for (const trigger of chooserTriggers) {
+      try {
+        const el = await this.page.$(trigger);
+        if (!el) continue;
+        const [chooser] = await Promise.all([
+          this.page.waitForEvent('filechooser', { timeout: Math.min(timeoutMs, 5000) }),
+          el.click({ timeout: 3000 }),
+        ]);
+        await chooser.setFiles(absPath);
+        return { ok: true, method: 'filechooser', selector: trigger };
+      } catch (_) {
+        continue;
+      }
+    }
+
+    throw new Error('uploadFile(gemini): no usable file input or attach affordance found');
+  }
 }
 
 module.exports = GeminiAdapter;

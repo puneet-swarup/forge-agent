@@ -43,6 +43,10 @@ const DEFAULTS = {
   SESSION_CONTEXT_GITIGNORE: true,
   STRICT_SANDBOX     : false,
   MAX_OUTPUT_LENGTH  : 8_000,
+  // read_file upload (default OFF - see ARCHITECTURE.md section 11)
+  READ_FILE_UPLOAD           : false,
+  READ_FILE_UPLOAD_MIN_BYTES : 4096,
+  READ_FILE_UPLOAD_TIMEOUT_MS: 15000,
 
   // Display
   HEADLESS           : false,

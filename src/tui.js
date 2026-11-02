@@ -171,7 +171,12 @@ class TUI {
     // what the step is doing, so the human always knows the intent.
     let _stepLabel = `Step ${stepNum}`;
     if (descriptor && String(descriptor).trim()) {
-      _stepLabel += ' \u2014 ' + String(descriptor).trim();
+      const desc = String(descriptor).trim();
+      const budget = Math.max(20, width - 34);
+      const shown = desc.length > budget
+        ? desc.slice(0, budget - 1).trimEnd() + String.fromCharCode(8230)
+        : desc;
+      _stepLabel += ' \u2014 ' + shown;
     }
     const stepStr = colors(['bold', 'white'], _stepLabel);
     const elapsed = color('gray', formatMs(elapsedMs || 0));

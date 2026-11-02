@@ -155,6 +155,58 @@ class BaseAdapter {
     return results;
   }
 
+  // ── Upload capability (opt-in; see ARCHITECTURE.md §11) ──────────────────
+
+  /**
+   * Selectors for the chat UI's native file-attach input.
+   * Subclasses that support upload override this; the default is empty, which
+   * means supportsUpload() returns false and callers fall back to inline text.
+   * @returns {string[]}
+   */
+  _getUploadSelectors() { return []; }
+
+  /**
+   * Probe whether the current page exposes a usable file input.
+   * Returns the first selector that matches a file input, or null.
+   * Best-effort and cheap: used to gate the upload-first path per call.
+   * @returns {Promise<string|null>}
+   */
+  async detectUploadSelector() {
+    const selectors = this._getUploadSelectors();
+    if (!selectors || selectors.length === 0) return null;
+    for (const selector of selectors) {
+      try {
+        const el = await this.page.$(selector);
+        if (el) return selector;
+      } catch {
+        continue;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * True when this adapter can upload a file to the current page right now.
+   * Both the flag-independent probe AND an actual selector must succeed.
+   * @returns {Promise<boolean>}
+   */
+  async supportsUpload() {
+    return (await this.detectUploadSelector()) !== null;
+  }
+
+  /**
+   * Upload a local file to the chat UI as a native attachment.
+   * Default implementation throws — subclasses that advertise supportsUpload()
+   * must override this. Callers MUST treat any throw as "fall back to text".
+   * @param {string} absPath - Absolute path to the file to upload
+   * @param {Object} [opts] - { timeoutMs }
+   * @returns {Promise<{ ok: boolean, method: string, selector?: string }>}
+   */
+  async uploadFile(absPath, opts = {}) {
+    void absPath; void opts;
+    throw new Error('uploadFile() not implemented for ' + this.constructor.name);
+  }
+
   // ── Protected Helper Methods ───────────────────────────────────────────────
 
   /**

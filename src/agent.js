@@ -7,7 +7,7 @@ const { execSync }                 = require('child_process');
 const config                       = require('./config');
 const logger                       = require('./logger');
 const DeepSeekBrowser              = require('./browser');
-const { executeTool, cache }       = require('./tools');
+const { executeTool, cache, setAdapterProvider } = require('./tools');
 const { parseResponse,
         formatToolResult }         = require('./parser');
 const { executeBatch }             = require('./parallel-executor');
@@ -31,6 +31,7 @@ const {
   isPlanResponse 
 } = require('./planner');
 const { isRunningInDocker, printDockerInfo } = require('./docker');
+const { describeStep }             = require('./step-summary');
 
 // ─────────────────────────────────────────────
 //  Agent class
@@ -106,7 +107,11 @@ class DeepSeekAgent {
     }
 
     await this.browser.launch();
-    
+
+    // Let the read_file tool reach the live adapter for opt-in upload
+    // (ARCHITECTURE.md §11). No-op unless READ_FILE_UPLOAD is enabled.
+    setAdapterProvider(() => this.browser && this.browser.adapter);
+
     if (isRunningInDocker()) {
       printDockerInfo();
     }
@@ -269,9 +274,12 @@ class DeepSeekAgent {
       while (true) {
         // Protocol default: every step line carries a short one-liner saying
         // what the step is doing, derived from the previous tool call.
-        const _stepDesc = progress.lastTool
-          ? (_stepDescVerb(progress.lastTool.name) + (progress.lastTool.target ? ' ' + progress.lastTool.target : ''))
-          : 'starting — sending task to model';
+        const _stepDesc = describeStep({
+          lastTool  : progress.lastTool ? progress.lastTool.name : null,
+          lastTarget: progress.lastTool ? progress.lastTool.target : null,
+          state     : step === 1 ? 'starting' : 'working',
+          maxLen    : 60,
+        });
         logger.stepLine(step, progress.elapsedMs, progress, _stepDesc);
 
         // Safety circuit breaker

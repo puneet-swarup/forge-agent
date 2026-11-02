@@ -60,7 +60,83 @@ class DeepSeekAdapter extends BaseAdapter {
         '[class*="conversation"]',
         'main',
       ],
+      // Native file-attach inputs (ARCHITECTURE.md §11). Usually a hidden
+      // input[type=file] wrapped by a styled paperclip label. Drift-prone —
+      // always probed via supportsUpload() before use.
+      uploadInput: [
+        'input[type="file"]',
+        'input[type="file"][accept]',
+        '[class*="upload"] input[type="file"]',
+        '[class*="attach"] input[type="file"]',
+      ],
     };
+  }
+
+  // ── Upload capability (ARCHITECTURE.md §11) ────────────────────────────────
+
+  _getUploadSelectors() {
+    return this.selectors.uploadInput || [];
+  }
+
+  /**
+   * Upload a local file to DeepSeek's chat as a native attachment.
+   * Tries the hidden input[type=file] via setInputFiles first; falls back to a
+   * filechooser event if the input is not directly addressable (e.g. a styled
+   * label wraps it and intercepts the click). Any failure throws — the caller
+   * (read_file) treats a throw as "fall back to inline text".
+   *
+   * @param {string} absPath - Absolute path to the file
+   * @param {Object} [opts]  - { timeoutMs }
+   * @returns {Promise<{ ok: boolean, method: string, selector?: string }>}
+   */
+  async uploadFile(absPath, opts = {}) {
+    const fs = require('fs');
+    const timeoutMs = opts.timeoutMs || (this.config.READ_FILE_UPLOAD_TIMEOUT_MS || 15000);
+
+    if (!absPath || !fs.existsSync(absPath)) {
+      throw new Error('uploadFile: file not found: ' + absPath);
+    }
+
+    // Path 1: direct setInputFiles on the first matching file input.
+    const selectors = this._getUploadSelectors();
+    for (const selector of selectors) {
+      try {
+        const handle = await this.page.$(selector);
+        if (!handle) continue;
+        await handle.setInputFiles(absPath, { timeout: timeoutMs });
+        return { ok: true, method: 'setInputFiles', selector };
+      } catch (err) {
+        logger.warn('uploadFile: setInputFiles failed for ' + selector + ': ' + err.message);
+        // try the next selector / fall through to filechooser
+      }
+    }
+
+    // Path 2: filechooser fallback — click an attach affordance and intercept
+    // the native file dialog. We look for a visible label/button near the
+    // input selectors; if none, we click the input's parent.
+    const chooserTriggers = [
+      'label[for]',
+      'button[aria-label*="attach" i]',
+      'button[aria-label*="upload" i]',
+      '[class*="attach"]',
+      '[class*="upload"]',
+    ];
+    for (const trigger of chooserTriggers) {
+      try {
+        const el = await this.page.$(trigger);
+        if (!el) continue;
+        const [chooser] = await Promise.all([
+          this.page.waitForEvent('filechooser', { timeout: Math.min(timeoutMs, 5000) }),
+          el.click({ timeout: 3000 }),
+        ]);
+        await chooser.setFiles(absPath);
+        return { ok: true, method: 'filechooser', selector: trigger };
+      } catch (_) {
+        continue;
+      }
+    }
+
+    throw new Error('uploadFile: no usable file input or attach affordance found');
   }
 
   // ── ThinkingTracker safety ─────────────────────────────────────────────────

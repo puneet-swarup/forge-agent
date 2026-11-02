@@ -221,6 +221,13 @@ function fuzzyMatch(query, target) {
 function walkFiles(dir, maxFiles = 500) {
   const results = [];
 
+  // G1 fix: if the caller passed a file (not a directory), search just it
+  // instead of silently returning [] (readdirSync would throw ENOTDIR).
+  try {
+    const st = fs.statSync(dir);
+    if (st.isFile()) return [dir];
+  } catch { /* fall through to normal walk */ }
+
   function walk(current, depth) {
     if (depth > 8 || results.length >= maxFiles) return;
     let entries;

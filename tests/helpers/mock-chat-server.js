@@ -18,11 +18,33 @@ const PAGE = `<!doctype html>
 <body>
   <main class="chat-content" id="messages"></main>
   <textarea id="chat-input" placeholder="Message"></textarea>
+  <label for="file-input" id="attach-label" aria-label="Attach file">📎</label>
+  <input type="file" id="file-input" style="display:none" />
+  <div id="attachments" class="attachments"></div>
   <button type="submit" id="send" aria-label="Send">Send</button>
   <script>
     const messages = document.getElementById('messages');
     const input    = document.getElementById('chat-input');
     const send     = document.getElementById('send');
+    const fileInput   = document.getElementById('file-input');
+    const attachments = document.getElementById('attachments');
+
+    // File-attach support (ARCHITECTURE.md §11). When a file is chosen we
+    // render a chip with its name so tests can assert the upload landed. A
+    // data-upload-count attribute makes the assertion trivial.
+    window.__uploads = [];
+    fileInput.addEventListener('change', () => {
+      const files = Array.from(fileInput.files || []);
+      files.forEach((f) => {
+        window.__uploads.push(f.name);
+        const chip = document.createElement('span');
+        chip.className = 'attachment-chip';
+        chip.setAttribute('data-file', f.name);
+        chip.textContent = f.name;
+        attachments.appendChild(chip);
+      });
+      attachments.setAttribute('data-upload-count', String(window.__uploads.length));
+    });
 
     // Build a message bubble. Assistant bubbles carry a message-action
     // toolbar (Copy/Download) plus a hidden raw copy of the text, mirroring

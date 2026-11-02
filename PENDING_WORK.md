@@ -20,11 +20,22 @@
 ## Pending / Next
 
 ### High value, small
+- [ ] Step-line summaries (ARCHITECTURE.md section 12): target summariser + width clamp.
+- [ ] `captureFailure()` diagnostic bundle (screenshot + DOM + URL) on send failure / empty-streak (ARCHITECTURE.md section 13.2).
+- [ ] Image + telemetry blocking in `browser.js`, config-gated (ARCHITECTURE.md section 13.2).
+- [ ] `isCurrentPageLayout()` predicate as a `health.js` check (ARCHITECTURE.md section 13.2).
 - [ ] README quick-win path: 3 commands from install to first successful run.
 - [ ] `forge-agent ps` should also show each agent's LAST summary status (read sibling `summary.json`; read-only).
 - [ ] Decide `SPONSOR_TIERS` wording in `src/sponsor.js` (currently aspirational $5/$10/$25/$100/Enterprise; may not map to Ko-fi tiers).
 
 ### Medium
+- [ ] Async `run_command` (`exec` instead of `execSync`) — stops blocking the event loop; keeps timeout/maxBuffer/classify (ARCHITECTURE.md section 14.1).
+- [ ] Concurrent `write_files` via `Promise.all`, keeping `assertSafePath` (ARCHITECTURE.md section 14.1).
+- [ ] Segment-scoped `globToRegex` (`*` -> `[^\/]*`) so `*.js` does not match across dirs (ARCHITECTURE.md section 14.1).
+- [ ] Async FS in file handlers (`fs.promises`) — handlers are already `await`ed by `executeTool` (ARCHITECTURE.md section 14.3).
+- [ ] Harden `read_url`: redirects, 5xx retryable, 15s socket timeout (ARCHITECTURE.md section 14.1).
+- [x] `supportsUpload()` + `uploadFile()` adapter capability with `filechooser` fallback, behind `READ_FILE_UPLOAD=false` — now implemented for **DeepSeek AND Gemini**; `read_file` upload-first path + tests (ARCHITECTURE.md sections 11 + 13.2).
+- [ ] `onChunk` streaming hook for display only in `waitForResponse()` (ARCHITECTURE.md section 13.2).
 - [ ] Opt more modules into `@ts-check` incrementally (parser.js, retry.js, session-registry.js). Catches Date/undefined bug classes.
 - [ ] Streaming-parse idea: parse a complete tool_call as it appears but EXECUTE mutating tools only at reply end; read-only tools may start early. Must keep truncation-safety; test against mock `PAUSE_TEST`.
 - [ ] Verify real DeepSeek honours `<<<FORGE_START>>>`/`<<<FORGE_END>>>`: run `forge-agent --debug "reply pong"`, inspect `~/.forge-agent/logs/last-raw-response.txt`. If ignored, DOM-quiet fallback still works — decide whether to keep the markers.
@@ -38,6 +49,18 @@
 
 ## Key files added recently
 - `src/paths.js`, `src/run-summary.js`, `src/doctor.js`, `tests/paths.test.js`, `tests/run-summary.test.js`, `tests/doctor.test.js`, `tsconfig.json`
+- `src/step-summary.js`, `scripts/plan.js`, `scripts/check-syntax.js`, `tests/{plan,step-summary,adapter-upload}.test.js`
+
+## Recently fixed (tooling hardening)
+- G1: `search_in_files` / `search_codebase` silently returned "no matches" when `directory` was a file (swallowed ENOTDIR). Now both search the single file. Regressions in `tools.test.js` + `searcher.test.js`.
+- G2: `formatTestResult` reported a false `✅ PASS` for runs with no test summary (timeout/killed). Now reports `⚠ INCONCLUSIVE`; `runTests` also flags spawn timeouts. Regression in `test-runner.test.js`.
+- G3: confirmed `process-manager` already accepts hyphenated/underscored names; added regression in `process-manager.test.js`.
+- `src/step-summary.js`, `scripts/plan.js`, `scripts/check-syntax.js`, `tests/{plan,step-summary,adapter-upload}.test.js`
+
+## Recently fixed (tooling hardening)
+- G1: `search_in_files` / `search_codebase` silently returned "no matches" when `directory` was a file (swallowed ENOTDIR). Now both search the single file. Regressions in `tools.test.js` + `searcher.test.js`.
+- G2: `formatTestResult` reported a false `✅ PASS` for runs with no test summary (timeout/killed). Now reports `⚠ INCONCLUSIVE`; `runTests` also flags spawn timeouts. Regression in `test-runner.test.js`.
+- G3: confirmed `process-manager` already accepts hyphenated/underscored names; added regression in `process-manager.test.js`.
 
 ## How to resume
 1. `git pull` (ensure at/after bc1706a).

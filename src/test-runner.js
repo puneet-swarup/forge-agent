@@ -170,6 +170,10 @@ function parseJestOutput(raw, framework) {
     result.passed  = parseInt(s.match(/(\d+) passed/)?.[1]  || '0');
     result.skipped = parseInt(s.match(/(\d+) skipped/)?.[1] || '0');
     result.total   = parseInt(s.match(/(\d+) total/)?.[1]   || '0');
+  } else {
+    // No summary means jest did not finish (timeout / killed / crashed).
+    // Flag it so callers don't mistake an empty result for a green pass.
+    result.inconclusive = true;
   }
 
   // Duration: "Time: 1.234 s"
@@ -348,6 +352,7 @@ function baseResult(framework, rawOutput) {
     total    : 0,
     duration : 'unknown',
     failures : [],
+    inconclusive: false,
     rawOutput: rawOutput.slice(0, 6000),
   };
 }
@@ -420,6 +425,11 @@ function runTests(dir, opts = {}) {
   result.command = command;
   result.exitCode = exitCode;
 
+  // Surface a spawn-level timeout (spawnSync sets .signal='SIGTERM' and
+  // .error.code='ETIMEDOUT' when the timeout elapses). Mark inconclusive.
+  result.timedOut = !!(proc.error && proc.error.code === 'ETIMEDOUT') || proc.signal === 'SIGTERM';
+  if (result.timedOut) result.inconclusive = true;
+
   return result;
 }
 
@@ -428,10 +438,18 @@ function runTests(dir, opts = {}) {
  */
 function formatTestResult(result) {
   const lines  = [];
-  const status = result.failed === 0 ? '✅ PASS' : '❌ FAIL';
+  // An inconclusive run (no summary: timeout / killed / crashed) must NOT be
+  // reported as a green pass just because failed === 0.
+  const inconclusive = result.inconclusive || (result.total === 0 && result.passed === 0 && result.failed === 0);
+  const status = result.failed > 0
+    ? '❌ FAIL'
+    : (inconclusive ? '⚠ INCONCLUSIVE' : '✅ PASS');
 
   lines.push(`${status} — ${result.framework}`);
   lines.push(`${result.passed} passed · ${result.failed} failed · ${result.skipped} skipped · ${result.total} total · ${result.duration}`);
+  if (inconclusive) {
+    lines.push('(No test summary was produced — the runner likely timed out, was killed, or crashed. Re-run with a larger timeout or check the raw output below.)');
+  }
   lines.push('');
 
   if (result.failures.length > 0) {

@@ -494,6 +494,15 @@ describe('search_in_files', () => {
 });
 
 // ─────────────────────────────────────────────────────────
+
+  test('G1: directory may be a single file path (no ENOTDIR false-negative)', async () => {
+    const result = await executeTool('search_in_files', {
+      pattern: 'goodbye', directory: tmp('search_dir', 'b.js'),
+    });
+    expect(result).toContain('b.js');
+    expect(result).toContain('goodbye');
+    expect(result).not.toMatch(/No matches/);
+  });
 //  write_files (batch)
 // ─────────────────────────────────────────────────────────
 

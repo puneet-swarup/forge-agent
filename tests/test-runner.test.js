@@ -165,6 +165,25 @@ describe('parseJestOutput — failing', () => {
   test('failure has message', ()    => expect(result.failures[0].message).toBeTruthy());
 });
 
+
+describe('G2: parseJestOutput — no summary is inconclusive (not a pass)', () => {
+  // A run killed by timeout/crash produces no "Tests:" line. Previously this
+  // parsed to 0/0/0 and formatTestResult reported ✅ PASS — a false green.
+  const NO_SUMMARY = 'PASS tests/a.test.js\n(node) warning\nTest Suites: 1 passed, 1 total\n';
+
+  test('inconclusive flag set when summary missing', () => {
+    const r = parseJestOutput(NO_SUMMARY, 'jest');
+    expect(r.inconclusive).toBe(true);
+    expect(r.total).toBe(0);
+  });
+
+  test('formatTestResult shows INCONCLUSIVE, not PASS', () => {
+    const r = parseJestOutput(NO_SUMMARY, 'jest');
+    const out = formatTestResult(r);
+    expect(out).toMatch(/INCONCLUSIVE/);
+    expect(out).not.toMatch(/✅ PASS/);
+  });
+});
 // ─────────────────────────────────────────────
 //  parsePytestOutput
 // ─────────────────────────────────────────────

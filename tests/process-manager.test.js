@@ -99,6 +99,12 @@ describe('startProcess', () => {
     expect(logs.some(l => l.includes('hello from process'))).toBe(true);
   });
 
+  test('G3: accepts hyphenated + underscored names', () => {
+    const r = startProcess('full-suite_run1', 'node -e "setInterval(()=>{},1000)"');
+    expect(r.started).toBe(true);
+    expect(REGISTRY.has('full-suite_run1')).toBe(true);
+  });
+
   test('captures stderr output', async () => {
     startProcess('stderr-test', 'node -e "process.stderr.write(\'error output\\n\')"');
     await new Promise(r => setTimeout(r, 300));

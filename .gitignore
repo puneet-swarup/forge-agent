@@ -49,3 +49,35 @@ out/
 # ── Forge session working memory (never commit) ──────
 SESSION_CONTEXT.md
 FORGE_TODO.md
+
+# ── Playwright/Chromium persistent profile (when --session-dir . or project root) ──
+# These are written into CWD by launchPersistentContext; never commit them.
+BrowserMetrics-spare.pma
+Crashpad/
+Default/
+GPUPersistentCache/
+GrShaderCache/
+ShaderCache/
+Variations
+Safe Browsing/
+Local State
+Last Browser
+Last Version
+component_crx_cache/
+extensions_crx_cache/
+first_party_sets.db
+first_party_sets.db-journal
+segmentation_platform/
+lockfile
+instance.json
+
+# ── Ad-hoc command / test output captures ──────
+*-out.txt
+test-err.txt
+
+# ── Forge plan file (delete on sign-off; don't track transient plans) ──
+# FORGE_PLAN.md is intentionally NOT ignored — it is the active task plan.
+
+# ── Per-run session summaries (written to session dir, e.g. CWD when --session-dir .) ──
+summary.json
+summary.md
