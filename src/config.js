@@ -48,6 +48,10 @@ const DEFAULTS = {
   READ_FILE_UPLOAD_MIN_BYTES : 4096,
   READ_FILE_UPLOAD_TIMEOUT_MS: 15000,
 
+  // Browser resource optimisation (default OFF; see ARCHITECTURE.md s.13.2)
+  BROWSER_BLOCK_IMAGES    : false,
+  BROWSER_BLOCK_TELEMETRY : false,
+
   // Display
   HEADLESS           : false,
   DEBUG              : false,

@@ -28,6 +28,18 @@ class DeepSeekBrowser {
 
     const sessionDir = path.resolve(config.SESSION_DIR);
 
+    // Resource args: optionally disable image rendering (ARCHITECTURE s.13.2).
+    const launchArgs = [
+      '--disable-blink-features=AutomationControlled',
+      '--no-first-run',
+      '--disable-default-apps',
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+    ];
+    if (config.BROWSER_BLOCK_IMAGES) {
+      launchArgs.push('--blink-settings=imagesEnabled=false');
+    }
+
     this.context = await chromium.launchPersistentContext(sessionDir, {
       headless      : config.HEADLESS,
       viewport      : { width: 1280, height: 900 },
@@ -36,19 +48,28 @@ class DeepSeekBrowser {
         'AppleWebKit/537.36 (KHTML, like Gecko)',
         'Chrome/124.0.0.0 Safari/537.36',
       ].join(' '),
-      args: [
-        '--disable-blink-features=AutomationControlled',
-        '--no-first-run',
-        '--disable-default-apps',
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-      ],
+      args: launchArgs,
       ignoreDefaultArgs: ['--enable-automation'],
     });
 
     // Grab existing page or open a new one
     const pages   = this.context.pages();
     this.page     = pages.length > 0 ? pages[0] : await this.context.newPage();
+
+    // Optional telemetry/analytics blocking (ARCHITECTURE s.13.2). Scoped to
+    // known analytics hosts only; never aborts chat/api assets.
+    if (config.BROWSER_BLOCK_TELEMETRY) {
+      const BLOCK = /(google-analytics\.com|googletagmanager\.com|doubleclick\.net|segment\.(io|com)|hotjar\.com|mixpanel\.com|fullstory\.com|sentry\.io)/i;
+      try {
+        await this.page.route('**/*', (route) => {
+          const url = route.request().url();
+          if (BLOCK.test(url)) return route.abort();
+          return route.continue();
+        });
+      } catch (e) {
+        logger.warn('Telemetry blocking setup failed: ' + e.message);
+      }
+    }
 
     // Mask automation signals
     await this.page.addInitScript(() => {

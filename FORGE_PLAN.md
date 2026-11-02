@@ -78,11 +78,11 @@ genuine remaining gaps. Each already-done item gets a REGRESSION GUARD test.
 - [x] P3.1d Gate: node -c + new tests/failure-capture.test.js green.
 
 ### P3.2 Image + telemetry blocking (s.13.2) - REAL
-- [ ] P3.2a browser.js launch(): BROWSER_BLOCK_IMAGES (blink arg) +
+- [x] P3.2a browser.js launch(): BROWSER_BLOCK_IMAGES (blink arg) +
        BROWSER_BLOCK_TELEMETRY (page.route abort), config-gated default off.
-- [ ] P3.2b Edge: upload chip still uploadable when images blocked (mock smoke);
+- [x] P3.2b Edge: upload chip still uploadable when images blocked (mock smoke);
        route installed only when flag on; abort list scoped.
-- [ ] P3.2c Gate: node -c + new tests/browser-optimizations.test.js green.
+- [x] P3.2c Gate: node -c + new tests/browser-optimizations.test.js green.
 
 ### P3.3 isCurrentPageLayout() health predicate (s.13.2) - REAL
 - [ ] P3.3a Adapter predicate; health.js reports layout match/warn (NOT selection).
