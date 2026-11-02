@@ -136,8 +136,13 @@ function formatBytes(bytes) {
 function globToRegex(glob) {
   const escaped = glob
     .replace(/[.+^${}()|[\]\\]/g, '\\$&')  // escape regex special chars
+    // `**/` -> any number of leading path segments; bare `**` -> any chars incl '/'
+    .replace(/\*\*\//g, '\u0001')          // placeholder for **/
+    .replace(/\*\*/g, '\u0002')            // placeholder for **
     .replace(/\*/g, '[^/]*')               // * -> any chars except path separator
-    .replace(/\?/g, '[^/]');               // ? -> one char except path separator
+    .replace(/\?/g, '[^/]')                // ? -> one char except path separator
+    .replace(/\u0001/g, '(?:.*/)?')        // **/ -> optional nested path
+    .replace(/\u0002/g, '.*');             // ** -> any chars incl separators
   return new RegExp('^' + escaped + '$', 'i');
 }
 
@@ -1620,4 +1625,4 @@ function getLoadedPlugins() {
   return loadedPlugins;
 }
 
-module.exports = { TOOLS, executeTool, getToolDescriptions, getLoadedPluginCount, getLoadedPlugins, cache, setAdapterProvider };
+module.exports = { TOOLS, executeTool, getToolDescriptions, getLoadedPluginCount, getLoadedPlugins, cache, setAdapterProvider, globToRegex };

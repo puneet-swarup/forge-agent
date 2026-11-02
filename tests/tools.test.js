@@ -19,7 +19,7 @@ jest.mock('../src/config', () => ({
   DEBUG            : false,
 }));
 
-const { executeTool, TOOLS, cache } = require('../src/tools');
+const { executeTool, TOOLS, cache, globToRegex } = require('../src/tools');
 
 // ─────────────────────────────────────────────────────────
 //  Helpers
@@ -413,6 +413,21 @@ describe('run_command', () => {
     ).rejects.toThrow();
   }, 3000);
 
+  test('P1.2 event-loop guard: long command does not block timers', async () => {
+    let ticks = 0;
+    const timer = setInterval(() => { ticks++; }, 25);
+    const sleepCmd = process.platform === 'win32'
+      ? 'ping -n 3 127.0.0.1 > nul'
+      : 'sleep 0.6';
+    try {
+      await executeTool('run_command', { command: sleepCmd, timeout: 5000 });
+    } finally {
+      clearInterval(timer);
+    }
+    // If run_command blocked the event loop (execSync), the timer could not
+    // have fired during the ~600ms command. Require it ticked.
+    expect(ticks).toBeGreaterThan(0);
+  }, 8000);
   test('accepts extra environment variables', async () => {
     const result = await executeTool('run_command', {
       command: process.platform === 'win32' ? 'echo %MY_VAR%' : 'echo $MY_VAR',
@@ -425,6 +440,34 @@ describe('run_command', () => {
 // ─────────────────────────────────────────────────────────
 //  find_files
 // ─────────────────────────────────────────────────────────
+
+  describe('globToRegex (P1.1 regression guard)', () => {
+    test('* does not cross path separators', () => {
+      expect(globToRegex('*.js').test('a.js')).toBe(true);
+      expect(globToRegex('*.js').test('sub/a.js')).toBe(false);
+    });
+
+    test('? matches one non-separator char', () => {
+      expect(globToRegex('a?.js').test('ab.js')).toBe(true);
+      expect(globToRegex('a?.js').test('a/b.js')).toBe(false);
+    });
+
+    test('double-star prefix matches nested paths', () => {
+      expect(globToRegex('**/*.js').test('sub/a.js')).toBe(true);
+      expect(globToRegex('**/*.js').test('a/b/c.js')).toBe(true);
+    });
+
+    test('literal dot is escaped (not a wildcard)', () => {
+      expect(globToRegex('a.js').test('a.js')).toBe(true);
+      expect(globToRegex('a.js').test('axjs')).toBe(false);
+    });
+
+    test('find_files honours segment scope end-to-end', async () => {
+      await writeTemp('gsub/inner.js', 'x');
+      const out = await executeTool('find_files', { pattern: '*.js', directory: tmp('gsub') });
+      expect(out).toContain('inner.js');
+    });
+  });
 
 describe('find_files', () => {
   beforeAll(async () => {
@@ -526,6 +569,30 @@ describe('write_files', () => {
       .rejects.toThrow('"files" must be an array');
   });
 
+  test('P1.3 write_files guards: preserves order + reports all', async () => {
+    const files = [
+      { path: tmp('wfo', 'a.txt'), content: 'A' },
+      { path: tmp('wfo', 'b.txt'), content: 'B' },
+      { path: tmp('wfo', 'c.txt'), content: 'C' },
+    ];
+    const out = await executeTool('write_files', { files });
+    const aIdx = out.indexOf('a.txt');
+    const bIdx = out.indexOf('b.txt');
+    const cIdx = out.indexOf('c.txt');
+    expect(aIdx).toBeLessThan(bIdx);
+    expect(bIdx).toBeLessThan(cIdx);
+  });
+
+  test('P1.3 write_files guards: empty array writes nothing', async () => {
+    const out = await executeTool('write_files', { files: [] });
+    expect(out).toContain('0 files');
+  });
+
+  test('P1.3 write_files guards: unsafe path rejects the batch', async () => {
+    const bad = process.platform === 'win32' ? 'C:\\Users\\Puneet\\.ssh\\evil.txt' : '/etc/shadow';
+    await expect(executeTool('write_files', { files: [{ path: bad, content: 'x' }] }))
+      .rejects.toThrow();
+  });
   test('creates parent directories for each file', async () => {
     await executeTool('write_files', {
       files: [
@@ -547,6 +614,39 @@ describe('read_url', () => {
     expect(result.length).toBeGreaterThan(10);
   }, 60000);
 
+  describe('P1.4 read_url guards (local server)', () => {
+    const http = require('http');
+    let srv, base, attempts5xx;
+    beforeAll((done) => {
+      attempts5xx = 0;
+      srv = http.createServer((req, res) => {
+        if (req.url === '/redir') { res.writeHead(302, { Location: base + '/page' }); return res.end(); }
+        if (req.url === '/page') { res.writeHead(200, { 'Content-Type': 'text/html' }); return res.end('<html><head><style>x{}</style></head><body><script>bad()</script><p>HelloText</p></body></html>'); }
+        if (req.url === '/flaky') { attempts5xx++; if (attempts5xx === 1) { res.writeHead(503); return res.end(); } res.writeHead(200); return res.end('recovered'); }
+        res.writeHead(404); res.end();
+      });
+      srv.listen(0, '127.0.0.1', () => { base = 'http://127.0.0.1:' + srv.address().port; done(); });
+    });
+    afterAll((done) => { try { srv.close(done); } catch (_) { done(); } });
+
+    test('follows a 302 redirect', async () => {
+      const out = await executeTool('read_url', { url: base + '/redir' });
+      expect(out).toContain('HelloText');
+    }, 20000);
+
+    test('strips script and style tags', async () => {
+      const out = await executeTool('read_url', { url: base + '/page' });
+      expect(out).toContain('HelloText');
+      expect(out).not.toContain('bad()');
+      expect(out).not.toContain('x{}');
+    }, 20000);
+
+    test('retries a 5xx then succeeds', async () => {
+      const out = await executeTool('read_url', { url: base + '/flaky' });
+      expect(out).toContain('recovered');
+      expect(attempts5xx).toBeGreaterThanOrEqual(2);
+    }, 20000);
+  });
   test('rejects on invalid URL', async () => {
     await expect(executeTool('read_url', { url: 'http://localhost:1' }))
       .rejects.toThrow();
