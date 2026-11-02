@@ -105,12 +105,19 @@ const logger = {
   },
 
   // ── Completion ────────────────────────────────────────────────────────────
+  // Accepted signatures (ARCHITECTURE s.10.4):
+  //   finalOutput(string)               -> plain completion text
+  //   finalOutput(progressTracker, status) -> rich completion panel
+  // Null/undefined are handled defensively so a stray call never throws.
   finalOutput(progress, status) {
-    // If progress is a string (legacy call), we still show it
-    if (typeof progress === 'string' && !status) {
-      console.log(progress);
+    // Legacy / plain-string path.
+    if (typeof progress === 'string') {
+      if (progress) console.log(progress);
       return;
     }
+    // Nullish guard: nothing to render.
+    if (progress == null) return;
+    // Rich path: a ProgressTracker (or tracker-like object).
     getTUI().renderCompletion(progress, status);
   },
 

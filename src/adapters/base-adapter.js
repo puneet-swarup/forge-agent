@@ -57,16 +57,17 @@ class BaseAdapter {
   async sendMessage(text) {
     let fullText = text;
 
-    // On first message: prepend system prompt
+    // System prompt unification (ARCHITECTURE s.10.1): the canonical system
+    // prompt is built by prompt.js and is ALREADY embedded in the first user
+    // message that agent.js sends. Prepending system-prompt.js here would
+    // inject a SECOND, conflicting prompt (XML markers vs fenced tool_call)
+    // and only for adapters that set _isFirstMessage (e.g. Gemini). To keep a
+    // single contract, we never re-inject the full system prompt. We only
+    // prepend optional project context when one was explicitly set.
     if (this._isFirstMessage) {
-      const { buildSystemPrompt } = require('../system-prompt');
-      const systemPrompt = buildSystemPrompt({
-        projectContext: this._projectContext || '',
-        profile       : this.config.ACTIVE_PROFILE || 'default',
-        planMode      : this.config.PLANNING_MODE   || false,
-        workingDir    : this.config.WORKING_DIR     || process.cwd(),
-      });
-      fullText = systemPrompt + '\n\n════════════════════════════════\nUSER TASK:\n' + text;
+      if (this._projectContext) {
+        fullText = this._projectContext + '\n\n' + text;
+      }
       this._isFirstMessage = false;
     }
 

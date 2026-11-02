@@ -49,17 +49,17 @@ genuine remaining gaps. Each already-done item gets a REGRESSION GUARD test.
 ## Phase P2 - genuine gaps from ARCHITECTURE.md s.10
 
 ### P2.1 Unify the two buildSystemPrompt functions (s.10.1) - REAL
-- [ ] P2.1a Two buildSystemPrompt exist (prompt.js:18 AND system-prompt.js:10).
+- [x] P2.1a Two buildSystemPrompt exist (prompt.js:18 AND system-prompt.js:10).
        Pick system-prompt.js canonical; prompt.js delegates; unify tool-call
        format (fenced vs FORGE markers) into one contract.
-- [ ] P2.1b Edge: first-message injection identical from both paths; PLAN mode
+- [x] P2.1b Edge: first-message injection identical from both paths; PLAN mode
        preserved; profile addition merged once; markers present.
-- [ ] P2.1c Gate: node -c + system-prompt + prompt tests green; snapshot prompt.
+- [x] P2.1c Gate: node -c + system-prompt + prompt tests green; snapshot prompt.
 
 ### P2.2 Normalise logger.finalOutput signature (s.10.4) - verify then fix
-- [ ] P2.2a Audit call sites; accept string + ProgressTracker via shim (or
+- [x] P2.2a Audit call sites; accept string + ProgressTracker via shim (or
        normalise). Edge: string, tracker, null/undefined safe.
-- [ ] P2.2b Gate: node -c + logger/progress tests green.
+- [x] P2.2b Gate: node -c + logger/progress tests green.
 
 ### P2.3 Phase gate
 - [ ] P2.3 Full suite + check-syntax --all green; git status clean.

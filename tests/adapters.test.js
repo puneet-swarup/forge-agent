@@ -54,6 +54,49 @@ describe('Model Adapters', () => {
       expect(el).toBeNull();
     });
 
+    test('P2.1: adapter does not re-inject a second system prompt', async () => {
+      // A concrete subclass that records exactly what _typeText receives.
+      class RecordingAdapter extends BaseAdapter {
+        _getInputSelectors() { return ['#in']; }
+        _getSendSelectors() { return ['#send']; }
+        _getStopSelectors() { return []; }
+        _getNewChatSelectors() { return []; }
+        _getResponseSelectors() { return []; }
+        getModelUrl() { return 'x'; }
+        async _trySelectors() { return { click: async () => {}, fill: async () => {} }; }
+        async _typeText(el, text) { this.captured = text; }
+        async _clickElement() { return true; }
+      }
+      const page = { waitForTimeout: async () => {}, keyboard: { press: async () => {} } };
+      const a = new RecordingAdapter(page, {});
+      a._isFirstMessage = true;
+      await a.sendMessage('USER-TASK-BODY');
+      // The system prompt must NOT be prepended here (prompt.js owns it).
+      expect(a.captured).not.toMatch(/RESPONSE ENVELOPE/);
+      expect(a.captured).not.toMatch(/<<<FORGE_START>>>/);
+      expect(a.captured).toContain('USER-TASK-BODY');
+    });
+
+    test('P2.1: adapter prepends only optional project context', async () => {
+      class RecordingAdapter2 extends BaseAdapter {
+        _getInputSelectors() { return ['#in']; }
+        _getSendSelectors() { return ['#send']; }
+        _getStopSelectors() { return []; }
+        _getNewChatSelectors() { return []; }
+        _getResponseSelectors() { return []; }
+        getModelUrl() { return 'x'; }
+        async _trySelectors() { return { click: async () => {}, fill: async () => {} }; }
+        async _typeText(el, text) { this.captured = text; }
+        async _clickElement() { return true; }
+      }
+      const page = { waitForTimeout: async () => {}, keyboard: { press: async () => {} } };
+      const a = new RecordingAdapter2(page, {});
+      a.setProjectContext('PROJECT-MEMORY');
+      a._isFirstMessage = true;
+      await a.sendMessage('BODY');
+      expect(a.captured).toContain('PROJECT-MEMORY');
+      expect(a.captured).toContain('BODY');
+    });
     test('_trySelectors returns element on success', async () => {
       const base = new BaseAdapter(mockPage, mockConfig);
       const mockEl = { isVisible: jest.fn().mockResolvedValue(true) };
