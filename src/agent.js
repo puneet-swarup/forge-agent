@@ -306,6 +306,14 @@ class DeepSeekAgent {
 
           const noRecentProgress = progress.toolCallCount <= (this._lastToolCallCountAtFailure || 0);
           if (this._emptyStreak >= (config.EMPTY_RESPONSE_THRESHOLD || 4) && noRecentProgress) {
+            // Capture diagnostics before aborting (s.13.2). Best-effort.
+            try {
+              const { captureFailure } = require('./failure-capture');
+              const page = this.browser && this.browser.page;
+              const adapterName = this.browser && this.browser.adapter && this.browser.adapter.constructor
+                ? this.browser.adapter.constructor.name : 'unknown';
+              await captureFailure(page, 'empty-streak-abort', { adapterName });
+            } catch (_) { /* never mask the abort */ }
             logger.error('Stuck in empty response loop without progress — aborting.');
             const summary = progress.buildPartialSummary('stuck in empty response loop');
             this._recordHistory(task, 'failed', startTime, progress, summary, templateName);

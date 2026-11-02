@@ -166,13 +166,14 @@ class DeepSeekBrowser {
         try {
           return await this.adapter.sendMessage(text);
         } catch (secondErr) {
-          // Debug screenshot on final failure, under the model-agnostic Forge
-          // home so it works on Windows too.
+          // Capture a full diagnostic bundle (screenshot + DOM + url + adapter)
+          // on the final failure. Best-effort; never masks the real error.
           try {
-            const debugPath = require('./paths').forgePath('logs', 'selector-debug.png');
-            require('fs').mkdirSync(require('path').dirname(debugPath), { recursive: true });
-            await this.page.screenshot({ path: debugPath });
-            logger.dim(`Debug screenshot saved: ${debugPath}`);
+            const { captureFailure } = require('./failure-capture');
+            const adapterName = this.adapter && this.adapter.constructor
+              ? this.adapter.constructor.name : 'unknown';
+            const dir = await captureFailure(this.page, 'send', { adapterName });
+            if (dir) logger.dim(`Failure bundle saved: ${dir}`);
           } catch (e) { void e; }
           throw secondErr;
         }

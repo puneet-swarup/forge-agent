@@ -62,20 +62,20 @@ genuine remaining gaps. Each already-done item gets a REGRESSION GUARD test.
 - [x] P2.2b Gate: node -c + logger/progress tests green.
 
 ### P2.3 Phase gate
-- [ ] P2.3 Full suite + check-syntax --all green; git status clean.
+- [x] P2.3 Full suite + check-syntax --all green; git status clean.
 
 ---
 
 ## Phase P3 - genuine Tier 2/3 gaps (verified NOT present)
 
 ### P3.1 captureFailure(page,label) diagnostic bundle (s.13.2) - REAL
-- [ ] P3.1a New src/failure-capture.js: screenshot + dom.html + url.txt +
+- [x] P3.1a New src/failure-capture.js: screenshot + dom.html + url.txt +
        adapter.txt under ~/.forge-agent/logs/failures/<ts>-<label>/.
-- [ ] P3.1b Call from browser.sendMessage final failure + agent.js empty-streak
+- [x] P3.1b Call from browser.sendMessage final failure + agent.js empty-streak
        breaker (best-effort, never throws).
-- [ ] P3.1c Edge: dir created; write errors swallowed; label sanitised; temp-dir
+- [x] P3.1c Edge: dir created; write errors swallowed; label sanitised; temp-dir
        test asserts 4 files.
-- [ ] P3.1d Gate: node -c + new tests/failure-capture.test.js green.
+- [x] P3.1d Gate: node -c + new tests/failure-capture.test.js green.
 
 ### P3.2 Image + telemetry blocking (s.13.2) - REAL
 - [ ] P3.2a browser.js launch(): BROWSER_BLOCK_IMAGES (blink arg) +
