@@ -75,8 +75,9 @@ instance.json
 *-out.txt
 test-err.txt
 
-# ── Forge plan file (delete on sign-off; don't track transient plans) ──
-# FORGE_PLAN.md is intentionally NOT ignored — it is the active task plan.
+# ── Forge plan file ──
+# FORGE_PLAN.md IS tracked while active (it is the live task plan) and is
+# deleted in a dedicated commit on user sign-off. See README protocol.
 
 # ── Per-run session summaries (written to session dir, e.g. CWD when --session-dir .) ──
 summary.json
