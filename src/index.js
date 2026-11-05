@@ -93,6 +93,7 @@ function parseArgs(argv) {
     noMemory    : false,
     noCache     : false,
     noTimeout   : false,
+    noPromptPause: false,
     clearMemory : false,
     listPlugins : false,
     listProfiles: false,
@@ -204,6 +205,7 @@ function parseArgs(argv) {
       case '--no-memory':   opts.noMemory    = true;    break;
       case '--no-cache':    opts.noCache     = true;    break;
       case '--no-timeout':  opts.noTimeout   = true;    break;
+      case '--no-prompt-pause': opts.noPromptPause = true; break;
       case '--clear-memory': opts.clearMemory = true;   break;
       case '--list-plugins': opts.listPlugins = true;   break;
       case '--list-profiles': opts.listProfiles = true; break;
@@ -447,6 +449,7 @@ ${c('1;36', 'CONFIGURATION')}
 ${c('1;36', 'DEBUGGING')}
       --debug            Verbose output with raw AI responses
       --headless         Run browser invisibly (no window)
+      --no-prompt-pause  Disable the 10-20s random pause between prompts
       --audio-sync       Speak/alarm synchronously (blocking; default: off)
       --audio-async      Speak/alarm asynchronously via queue (default)
       --parallel-tools   Run independent tool calls concurrently (default: on)
@@ -557,6 +560,7 @@ function applyFlagsToConfig(args, config) {
   if (args.noTui !== undefined && args.noTui !== false) config.NO_TUI = true;
   if (args.compact !== undefined && args.compact !== false) config.COMPACT_OUTPUT = true;
   if (args.debug !== undefined && args.debug !== false) config.DEBUG = true;
+  if (args.noPromptPause !== undefined && args.noPromptPause !== false) config.PROMPT_PAUSE = false;
 
   // Memory / Cache
   if (args.noMemory !== undefined && args.noMemory !== false) config.MEMORY_ENABLED = false;

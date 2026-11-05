@@ -34,6 +34,10 @@ const DEFAULTS = {
   // Audio (Items 3 & 4): async, sequentially-queued speech by default.
   AUDIO_ASYNC            : true,
   AUDIO_SEQUENTIAL       : true,
+  // Anti-block: random pause between consecutive prompts.
+  PROMPT_PAUSE           : true,
+  PROMPT_PAUSE_MIN_MS    : 10_000,
+  PROMPT_PAUSE_MAX_MS    : 20_000,
   SESSION_DIR: process.env.FORGE_SESSION_DIR
     ? path.resolve(process.env.FORGE_SESSION_DIR)
     : paths.forgePath('session'),
@@ -170,6 +174,9 @@ function validateConfigValue(key, value) {
     MAX_PARALLEL_TOOL_CALLS: v => Number.isInteger(v) && v >= 1 && v <= 32,
     AUDIO_ASYNC            : v => typeof v === 'boolean',
     AUDIO_SEQUENTIAL       : v => typeof v === 'boolean',
+    PROMPT_PAUSE           : v => typeof v === 'boolean',
+    PROMPT_PAUSE_MIN_MS    : v => typeof v === 'number' && v >= 0,
+    PROMPT_PAUSE_MAX_MS    : v => typeof v === 'number' && v >= 0,
   };
 
   if (rules[key]) {

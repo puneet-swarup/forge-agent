@@ -1,111 +1,56 @@
-# FORGE_PLAN - active task plan
+# FORGE_PLAN - active task plan (2026-11-05)
 
-> Protocol: each step is a checkbox. Tick only after its gate (node -c + the
-> relevant tests incl. edge cases) passes. One item per commit. Baseline must
-> stay green: `node scripts/run-jest.js` + `node scripts/check-syntax.js --all`.
-> 
-> **IMPORTANT**: Always use `node scripts/run-jest.js` for running tests, NOT `npx jest`.
-> The npx command is unreliable on Windows and causes failures.
+> Protocol: each step is a checkbox. Tick only after its gate passes. One item
+> per commit. Baseline must stay green: `node scripts/run-jest.js` +
+> `node scripts/check-syntax.js --all` + `npm run typecheck`.
+>
+> This plan is TEMPORARY: created at task start, ticked as work lands, DELETED
+> at the end after the user confirms completion. If a run dies midway, this file
+> shows exactly what is done and where to resume.
+>
+> Tick with: `node scripts/plan.js tick <n>` | status: `node scripts/plan.js status`
 
-## IMPORTANT: ARCHITECTURE.md s.14 backlog is STALE
+## Goal
 
-Audit on 2026-11-03 found several s.14 items ALREADY implemented in the
-current tree. Verified present:
-- globToRegex already segment-scoped (`*`->[^/]*, `?`->[^/]) - tools.js:136
-- run_command already async (`exec`, not execSync) - tools.js:549
-- write_files already concurrent (`Promise.all` + assertSafePath) - tools.js:765
-- read_url already has redirects + 5xx retry + 15s timeout + fixed script regex - tools.js:700
-- bare `text` handling already implemented (nudge + counter + cap) - agent.js:677
-
-So the original P1.1-P1.3, P3.3, P2.2 are DONE. This plan lists only the
-genuine remaining gaps. Each already-done item gets a REGRESSION GUARD test.
+First-class anti-block prompt pause (default ON, 10-20s random jitter between
+consecutive prompts, `--no-prompt-pause` disables); document the FORGE_PLAN
+lifecycle protocol in the README; implement the `last-raw-response.txt` file the
+docs already promise; refresh PENDING_WORK/SESSION_CONTEXT/TESTING docs.
+Markers stay (boundaries are useful).
 
 ---
 
-## Phase P1 - regression guards for already-implemented items
+## Phase P1 - prompt pause (anti-block)
 
-### P1.1 Glob segment-scope guard
-- [x] P1.1a Export globToRegex; test `*.js`!match `sub/a.js`, `?`!cross `/`,
-       `**/*.js` matches nested, `a?.js` matches ab.js not a/b.js, literal `.` escaped.
-- [x] P1.1b Gate: node -c + tools.test.js green.
+- [x] P1.1 Config: `PROMPT_PAUSE` (true), `PROMPT_PAUSE_MIN_MS` (10000),
+      `PROMPT_PAUSE_MAX_MS` (20000) in DEFAULTS + validators.
+- [x] P1.2 Helper `sleepWithPause()` in agent.js: random ms in [MIN,MAX] when on.
+- [x] P1.3 Wire: before each `browser.sendMessage` in the loop, call the helper
+      (skips the very first message of a run to avoid startup delay).
+- [x] P1.4 CLI: `--no-prompt-pause` flag sets PROMPT_PAUSE=false; help entry.
+- [x] P1.5 Tests: tests/prompt-pause.test.js - range bounds, disabled=0, env override.
+- [x] P1.6 Gate: node scripts/run-jest.js + typecheck green.
 
-### P1.2 Async run_command guard
-- [x] P1.2a Long command does NOT block a concurrent timer; timeout enforced;
-       maxBuffer overflow classified; non-zero exit classified.
-- [x] P1.2b Gate: node -c + run_command + parallel-tools tests green.
+## Phase P2 - raw response file (docs promise)
 
-### P1.3 Concurrent write_files guard
-- [x] P1.3a Order preserved, Promise.all concurrency, unsafe path rejected,
-       empty array, dup paths, parents created.
-- [x] P1.3b Gate: node -c + write_files tests green.
+- [ ] P2.1 In agent.js DEBUG block, write rawResponse to
+      `~/.forge-agent/logs/last-raw-response.txt` (best-effort, never throws).
+- [ ] P2.2 Test: tests/raw-response-log.test.js - file written under FORGE_HOME.
+- [ ] P2.3 Gate: new test + full suite green.
 
-### P1.4 read_url hardening guard
-- [x] P1.4a 302 followed, 5xx retryable, 15s timeout aborts, script/style
-       stripped, non-HTML passthrough.
-- [x] P1.4b Gate: node -c + read_url tests green.
+## Phase P3 - docs refresh
 
-### P1.5 Phase gate
-- [x] P1.5 Full suite + check-syntax --all green; git status clean.
+- [ ] P3.1 README: add FORGE_PLAN lifecycle protocol section + pause feature row.
+- [ ] P3.2 README: document `--no-prompt-pause` in CLI reference.
+- [ ] P3.3 CHANGELOG: pause feature + raw-response file under [Unreleased].
+- [ ] P3.4 PENDING_WORK: refresh snapshot; mark markers decision = KEEP.
+- [ ] P3.5 Gate: check-syntax --all green; docs.test.js green.
 
----
+## Phase P4 - cleanup
 
-## Phase P2 - genuine gaps from ARCHITECTURE.md s.10
+- [ ] P4.1 Confirm no dangling temp files; git status clean after commits.
+- [ ] P4.2 Ask user to confirm -> then delete this FORGE_PLAN.md.
 
-### P2.1 Unify the two buildSystemPrompt functions (s.10.1) - REAL
-- [x] P2.1a Two buildSystemPrompt exist (prompt.js:18 AND system-prompt.js:10).
-       Pick system-prompt.js canonical; prompt.js delegates; unify tool-call
-       format (fenced vs FORGE markers) into one contract.
-- [x] P2.1b Edge: first-message injection identical from both paths; PLAN mode
-       preserved; profile addition merged once; markers present.
-- [x] P2.1c Gate: node -c + system-prompt + prompt tests green; snapshot prompt.
-
-### P2.2 Normalise logger.finalOutput signature (s.10.4) - verify then fix
-- [x] P2.2a Audit call sites; accept string + ProgressTracker via shim (or
-       normalise). Edge: string, tracker, null/undefined safe.
-- [x] P2.2b Gate: node -c + logger/progress tests green.
-
-### P2.3 Phase gate
-- [x] P2.3 Full suite + check-syntax --all green; git status clean.
-
----
-
-## Phase P3 - genuine Tier 2/3 gaps (verified NOT present)
-
-### P3.1 captureFailure(page,label) diagnostic bundle (s.13.2) - REAL
-- [x] P3.1a New src/failure-capture.js: screenshot + dom.html + url.txt +
-       adapter.txt under ~/.forge-agent/logs/failures/<ts>-<label>/.
-- [x] P3.1b Call from browser.sendMessage final failure + agent.js empty-streak
-       breaker (best-effort, never throws).
-- [x] P3.1c Edge: dir created; write errors swallowed; label sanitised; temp-dir
-       test asserts 4 files.
-- [x] P3.1d Gate: node -c + new tests/failure-capture.test.js green.
-
-### P3.2 Image + telemetry blocking (s.13.2) - REAL
-- [x] P3.2a browser.js launch(): BROWSER_BLOCK_IMAGES (blink arg) +
-       BROWSER_BLOCK_TELEMETRY (page.route abort), config-gated default off.
-- [x] P3.2b Edge: upload chip still uploadable when images blocked (mock smoke);
-       route installed only when flag on; abort list scoped.
-- [x] P3.2c Gate: node -c + new tests/browser-optimizations.test.js green.
-
-### P3.3 isCurrentPageLayout() health predicate (s.13.2) - REAL (Already implemented)
-- [x] P3.3a Adapter predicate; health.js reports layout match/warn (NOT selection).
-       (Already implemented in src/health.js:29-55)
-- [x] P3.3b Edge: matching DOM ok; wrong DOM warn (not fatal); missing DOM safe.
-       (Already tested in tests/health.test.js)
-- [x] P3.3c Gate: node -c + tests/health.test.js green (integrated into existing health tests).
-
-### P3.4 onChunk display-only streaming (s.13.2) - REAL
-- [x] P3.4a onChunk callback in waitForResponse; wire logger.thinking live counter
-       (display ONLY; executor NOT called early).
-- [x] P3.4b Edge: deltas monotonic; no executor call mid-stream; markers gate
-       completion; PAUSE_TEST mid-pause not mistaken for end; disabled path same.
-- [x] P3.4c Gate: node -c + new tests/streaming-display.test.js + protocol-markers green.
-
-### P3.5 Phase gate
-- [x] P3.5 Full suite + check-syntax --all green; git status clean.
-
----
-
-## Non-goals (s.15 Tier 4 - do NOT implement)
-AIAdapterDetector for selection; ChatGPT re-enable; wholesale tools.js swap;
-weaker validator / dropped audit log / dropped cache invalidation.
+## Non-goals
+- Removing response-envelope markers (user chose to KEEP them).
+- Chrome-leak / navigation-fallback-message fixes (separate sprint).

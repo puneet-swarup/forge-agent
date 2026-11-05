@@ -204,7 +204,26 @@ class DeepSeekBrowser {
 
   // ── Sending Messages ───────────────────────────────────────────────────────
 
+  /**
+   * Random anti-block pause between consecutive prompts.
+   * Skips the very first prompt of a run so startup is not delayed.
+   * Uses PROMPT_PAUSE_* config; a no-op when PROMPT_PAUSE is false.
+   */
+  async _promptPause() {
+    this._sendCount = (this._sendCount || 0) + 1;
+    if (this._sendCount === 1) return; // no pause before the first prompt
+    if (config.PROMPT_PAUSE === false) return;
+    const min = Number(config.PROMPT_PAUSE_MIN_MS);
+    const max = Number(config.PROMPT_PAUSE_MAX_MS);
+    const lo = Number.isFinite(min) && min > 0 ? min : 10000;
+    const hi = Number.isFinite(max) && max >= lo ? max : 20000;
+    const waitMs = lo + Math.floor(Math.random() * (hi - lo + 1));
+    logger.dim("  Pausing " + (waitMs / 1000).toFixed(1) + "s before next prompt (anti-block)");
+    await new Promise(function (r) { setTimeout(r, waitMs); });
+  }
+
   async sendMessage(text) {
+    await this._promptPause();
     if (!this.adapter) throw new Error('Browser not initialized');
 
     try {
