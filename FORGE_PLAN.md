@@ -33,10 +33,10 @@ Markers stay (boundaries are useful).
 
 ## Phase P2 - raw response file (docs promise)
 
-- [ ] P2.1 In agent.js DEBUG block, write rawResponse to
+- [x] P2.1 In agent.js DEBUG block, write rawResponse to
       `~/.forge-agent/logs/last-raw-response.txt` (best-effort, never throws).
-- [ ] P2.2 Test: tests/raw-response-log.test.js - file written under FORGE_HOME.
-- [ ] P2.3 Gate: new test + full suite green.
+- [x] P2.2 Test: tests/raw-response-log.test.js - file written under FORGE_HOME.
+- [x] P2.3 Gate: new test + full suite green.
 
 ## Phase P3 - docs refresh
 

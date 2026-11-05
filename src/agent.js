@@ -355,6 +355,9 @@ class DeepSeekAgent {
         if (config.DEBUG) {
           logger.dim(`--- Raw response (${rawResponse.length} chars) ---`);
           logger.dim(rawResponse.slice(0, 400));
+          // Persist the full pre-parse text so protocol compliance can be
+          // inspected offline. Best-effort; never disrupts the run.
+          require('./raw-log').writeRawResponse(rawResponse);
         }
 
         // Record the AI response in conversation history
