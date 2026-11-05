@@ -1,3 +1,4 @@
+// @ts-check
 // src/retry.js — Exponential backoff retry system for Forge Agent
 'use strict';
 

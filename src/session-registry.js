@@ -1,3 +1,4 @@
+// @ts-check
 // src/session-registry.js — Unique session identity + instance registry
 //  (Items 1 & 6)
 //
@@ -173,8 +174,8 @@ function isPidAlive(pid) {
  * instance.json files. Marks each as alive/dead via PID check.
  *
  * @param {Object} opts
- * @param {boolean} opts.includeDead  include records whose PID is gone
- * @param {boolean} opts.prune        delete stale instance.json files
+ * @param {boolean} [opts.includeDead]  include records whose PID is gone
+ * @param {boolean} [opts.prune]        delete stale instance.json files
  * @returns {Array<Object>} sorted by startedAt (newest first)
  */
 function listInstances(opts = {}) {

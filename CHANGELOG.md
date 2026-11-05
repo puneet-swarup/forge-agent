@@ -9,6 +9,7 @@ Versioning: [Semantic Versioning](https://semver.org/)
 ## [Unreleased]
 
 ### Added
+- **Opted parser.js, retry.js, session-registry.js into @ts-check** - incremental type coverage extended to 3 more modules (following paths/run-summary/doctor). tsc immediately surfaced an optional-props JSDoc gap in listInstances(); fixed. No runtime change.
 - **ps shows each agent LAST summary status** - listInstances() now reads the sibling summary.json for each instance (read-only, best-effort) and formatInstanceTable() renders a LAST column (green=completed, yellow=other terminal status, dim dash when no summary yet). Never throws on missing/malformed summaries.
 - **Clarified SPONSOR_TIERS wording** - src/sponsor.js now documents that the tier table is suggested support guidance, not verified Ko-fi/GitHub Sponsors products.
 - **Display-only streaming hook (onChunk)** - BaseAdapter.waitForResponse now accepts an onChunk callback wired through _waitForTextStable. Fires once per net growth, monotonic delta, isolated in try/catch, never triggers execution or early completion. Guard: tests/streaming-display.test.js.

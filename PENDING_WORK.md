@@ -33,7 +33,7 @@
 
 ### Worth considering (not blocking)
 - [x] Qwen/Google added to docs/getting-started.html (prerequisites + model choice, version bumped to v2.0.2, Node 20).
-- [ ] Opt `src/parser.js`, `src/retry.js`, `src/session-registry.js` into `@ts-check` for incremental type coverage.
+- [x] Opted `src/parser.js`, `src/retry.js`, `src/session-registry.js` into `@ts-check` - tsc surfaced an optional-props JSDoc gap in listInstances (fixed).
 - [x] `forge-agent ps` renders a LAST column from the sibling summary.json (green=completed, yellow=other, dash=none). Read-only, never throws; 4 new tests in session-registry.test.js.
 - [x] `SPONSOR_TIERS` documented as suggested guidance, not verified Ko-fi/GitHub products.
 - [ ] Verify real DeepSeek honours `` / `` via `forge-agent --debug "reply pong"` — inspect `~/.forge-agent/logs/last-raw-response.txt`. DOM-quiet fallback already works either way.

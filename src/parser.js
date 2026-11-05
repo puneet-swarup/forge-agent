@@ -1,3 +1,4 @@
+// @ts-check
 // src/parser.js — Parse DeepSeek's text responses to extract tool calls
 'use strict';
 
