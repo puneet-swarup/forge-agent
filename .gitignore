@@ -11,7 +11,7 @@ logs/
 npm-debug.log*
 
 # ── Local config overrides ────────────────────
-deepseek-agent.config.json
+forge-agent.config.json
 
 # ── npm publish artifacts ─────────────────────
 *.tgz

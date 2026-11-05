@@ -601,4 +601,38 @@ mirrors the short form; this table keeps the why and the acceptance test.
   map. `SESSION_CONTEXT.md` is auto-generated and ephemeral — never rely on it.
 - `suggested/` is a design reference only — never import from it, never build it.
 
-_End of document._
+_
+---
+
+## 17. Browser launch: channel and sandbox
+
+### The "unsupported command-line flag" infobar
+
+Branded Google Chrome shows a yellow infobar reading
+"You are using an unsupported command-line flag: --no-sandbox" whenever the
+sandbox is disabled. It is cosmetic, but it looks like a failure.
+
+Rules now enforced in browser.js::buildLaunchOptions():
+
+- Default is Playwright bundled Chromium (channel unset). It never
+ shows that infobar. Set BROWSER_CHANNEL=chrome (or msedge, or the
+ FORGE_BROWSER_CHANNEL env var) only if you specifically want a locally
+ installed branded browser.
+- --no-sandbox is never passed on desktop. On Windows/macOS as a normal
+ user the sandbox works, so the flag is unnecessary.
+- Containers / Linux-as-root genuinely need it. Set BROWSER_NO_SANDBOX=true
+ (or FORGE_NO_SANDBOX=1); that branch adds --no-sandbox,
+ --disable-setuid-sandbox and --test-type (which suppresses the infobar).
+- --enable-automation is always filtered from Playwright defaults so the
+ "controlled by automated test software" bar never appears.
+
+### Why the session directory must not be the project root
+
+SESSION_DIR defaults to ~/.forge-agent/session. If a run ever writes
+Chrome profile files (Local State, Safe Browsing, segmentation_platform,
+component_crx_cache) into the repo root, config.SESSION_DIR has been
+overridden to process.cwd(). Check FORGE_SESSION_DIR and
+forge-agent.config.json first; those artifacts are gitignored but should not
+be created there.
+
+End of document._

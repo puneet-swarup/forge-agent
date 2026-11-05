@@ -2,14 +2,14 @@
 
 **Autonomous AI Coding Agent — No API Key Needed**
 
-Forge Agent drives DeepSeek, ChatGPT, or Gemini through browser
+Forge Agent drives DeepSeek, Gemini, Google, or Qwen through browser
 automation to code, test, and ship software — completely free.
 
 > **This repository is a fork of [Omar-Azam/forge-agent](https://github.com/Omar-Azam/forge-agent)**, substantially extended with session context, TODO automation, a multi-agent supervisor, and a full test/CI suite. Original project is MIT licensed.
 
 [![npm](https://img.shields.io/badge/npm-@puneet--swarup%2Fforge--agent-cb3837?logo=npm&style=flat)](https://www.npmjs.com/package/@puneet-swarup/forge-agent)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-1597%20passing-brightgreen)](#)
+[![Tests](https://img.shields.io/badge/tests-1758%20passing-brightgreen)](#)
 [![Docker](https://img.shields.io/badge/docker-ghcr.io%2Fpuneet--swarup%2Fforge--agent-blue)](https://github.com/puneet-swarup/forge-agent/pkgs/container/forge-agent)
 
 ---
@@ -28,7 +28,7 @@ Forge Agent is free and open source. If it saves you time:
 - **Free** — No API key. Uses DeepSeek, ChatGPT, or Gemini's free web UI.
 - **Autonomous** — Reads files, writes code, runs tests. Loops until done.
 - **Cross-platform** — Linux, macOS, Windows, and Docker.
-- **50 days built** — 37+ tools, 1300+ tests, full docs, security audited.
+- **Battle-tested** — 40+ tools, 1758 tests across 88 suites, full docs, security audited.
 
 ---
 
@@ -66,7 +66,7 @@ fa "add TypeScript to this project"
 
 | Feature | Description |
 |---|---|
-| 🌐 Browser Automation | Drives DeepSeek, ChatGPT, Gemini — no API key |
+| 🌐 Browser Automation | Drives DeepSeek, Gemini, Google, Qwen — no API key |
 | 🔧 37+ Built-in Tools | File I/O, git, shell, search, tests, packages, diff, env, processes |
 | 💾 Persistent Memory | Remembers project tech stack and past tasks |
 | 🎭 Agent Profiles | default, backend, frontend, data-science, devops |
@@ -234,7 +234,7 @@ Full reference: `forge-agent --help` or [docs/cli-reference.html](docs/cli-refer
 ## Configuration
 
 ```json
-// ~/.deepseek-agent/config.json
+// ~/.forge-agent/config.json
 {
   "MODEL": "deepseek",
   "MAX_ITERATIONS": 100,
@@ -249,17 +249,18 @@ Run `forge-agent --setup` for guided configuration.
 
 ---
 
-## Key Stats — v2.0.0
+## Key Stats — v2.0.2
 
-- 🔧 **37+ tools** built in
-- 🧪 **1300+ tests** across 49 suites
+- 🔧 **40+ tools** built in (incl. adapter-agnostic uploads)
+- 🧪 **1758 tests** across 88 suites — all green
 - 📁 **13 docs pages** including full CLI reference
 - 📋 **10 task templates** built in
 - 💡 **10 example projects** in gallery
 - ⚙️ **40+ CLI flags**
 - 🐳 **Docker image** published
 - 🔒 **Security audited** with path sandbox
-- 📦 **50 days** of development
+- 🎯 **Typecheck** clean (`npm run typecheck`)
+- 🧩 **Adapters**: DeepSeek, Gemini, Google, Qwen (ChatGPT gated)
 
 ---
 
