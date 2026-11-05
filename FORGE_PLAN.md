@@ -40,11 +40,11 @@ Markers stay (boundaries are useful).
 
 ## Phase P3 - docs refresh
 
-- [ ] P3.1 README: add FORGE_PLAN lifecycle protocol section + pause feature row.
-- [ ] P3.2 README: document `--no-prompt-pause` in CLI reference.
-- [ ] P3.3 CHANGELOG: pause feature + raw-response file under [Unreleased].
-- [ ] P3.4 PENDING_WORK: refresh snapshot; mark markers decision = KEEP.
-- [ ] P3.5 Gate: check-syntax --all green; docs.test.js green.
+- [x] P3.1 README: add FORGE_PLAN lifecycle protocol section + pause feature row.
+- [x] P3.2 README: document `--no-prompt-pause` in CLI reference.
+- [x] P3.3 CHANGELOG: pause feature + raw-response file under [Unreleased].
+- [x] P3.4 PENDING_WORK: refresh snapshot; mark markers decision = KEEP.
+- [x] P3.5 Gate: check-syntax --all green; docs.test.js green.
 
 ## Phase P4 - cleanup
 

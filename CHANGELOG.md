@@ -9,6 +9,9 @@ Versioning: [Semantic Versioning](https://semver.org/)
 ## [Unreleased]
 
 ### Added
+- **Anti-block prompt pause (default ON)** - a random 10-20s pause is now inserted between consecutive prompts so the model UI does not flag the session as automation. Configurable via `PROMPT_PAUSE` / `PROMPT_PAUSE_MIN_MS` / `PROMPT_PAUSE_MAX_MS`; disable with `--no-prompt-pause`. The first prompt of a run is never delayed. `src/browser.js::_promptPause`; `tests/prompt-pause.test.js`.
+- **`last-raw-response.txt` is now actually written** - the `--debug` path persists the full pre-parse model response to `~/.forge-agent/logs/last-raw-response.txt` (the README/CHANGELOG already told users to inspect it; now it exists). `src/raw-log.js`; `tests/raw-response-log.test.js`.
+- **FORGE_PLAN lifecycle documented** - README now describes the create/tick/delete baby-step plan protocol and the `scripts/plan.js` tooling.
 - **Opted parser.js, retry.js, session-registry.js into @ts-check** - incremental type coverage extended to 3 more modules (following paths/run-summary/doctor). tsc immediately surfaced an optional-props JSDoc gap in listInstances(); fixed. No runtime change.
 - **ps shows each agent LAST summary status** - listInstances() now reads the sibling summary.json for each instance (read-only, best-effort) and formatInstanceTable() renders a LAST column (green=completed, yellow=other terminal status, dim dash when no summary yet). Never throws on missing/malformed summaries.
 - **Clarified SPONSOR_TIERS wording** - src/sponsor.js now documents that the tier table is suggested support guidance, not verified Ko-fi/GitHub Sponsors products.

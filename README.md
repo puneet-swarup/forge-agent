@@ -77,6 +77,7 @@ fa "add TypeScript to this project"
 | 🔒 Security Sandbox | Blocks SSH keys, credentials, path traversal |
 | 🐳 Docker Ready | Official image, no local Node.js setup needed |
 | ⚡ Smart Caching | Skips repeated read-only tool calls |
+| ⏸ Anti-Block Pause | Random 10-20s pause between prompts (default ON; `--no-prompt-pause` disables) |
 | 🗜 Context Compression | Auto-compresses long conversations |
 | 📝 Session Context | Durable, gitignored SESSION_CONTEXT.md survives compaction |
 | ✅ TODO Auto-Run | --auto works through FORGE_TODO.md unattended |
@@ -164,6 +165,29 @@ share files, never the browser.
 
 ---
 
+## FORGE_PLAN Lifecycle Protocol
+
+For multi-step work Forge keeps a temporary **FORGE_PLAN.md** at the project
+root. It is the durable memory of *how far a run got* — if a run dies midway,
+this file shows exactly what is done and where to resume.
+
+- **Created** at task start with checkbox baby steps (`- [ ]`).
+- **Ticked** (`- [x]`) as each step lands, one commit per step.
+- **Inspected** any time with the plan tooling (no new parser — same
+  `- [ ]`/`- [x]` format as FORGE_TODO.md):
+
+  ```bash
+  node scripts/plan.js status     # n/m done + progress bar
+  node scripts/plan.js list       # numbered items
+  node scripts/plan.js tick 3     # mark item 3 done
+  node scripts/plan.js next       # first open item
+  ```
+
+- **Deleted** after the run completes *and the user confirms* — a finished
+  plan is not left lying around to be mistaken for live work.
+
+This is separate from `SESSION_CONTEXT.md` (auto, advisory, gitignored) and
+`FORGE_TODO.md` (human task list consumed by `--auto`).
 ## Docker
 
 ```bash
@@ -220,7 +244,7 @@ Supervisor: spawn_agent  list_agents  kill_agent  (tools)
 Templates: --template  --list-templates  --save-template
 Output:    --format  --output  --no-tui  --compact
 Watch:     --watch  --watch-pattern  --watch-debounce
-Performance: --max-iterations  --timeout  --no-timeout
+Performance: --max-iterations  --timeout  --no-timeout  --no-prompt-pause
 Plugins:   --list-plugins  --new-plugin
 Config:    --setup  --config-path
 Debug:     --debug  --headless  --diagnostics  --security

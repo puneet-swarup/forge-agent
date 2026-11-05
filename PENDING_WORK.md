@@ -7,8 +7,8 @@
 - Repo      : puneet-swarup/forge-agent
 - Branch    : main
 - Package   : @puneet-swarup/forge-agent v2.0.2
-- Tests     : **1758 passing / 88 suites** — all green (`node scripts/run-jest.js`)
-- Syntax    : **168/168 files clean** (`node scripts/check-syntax.js --all`)
+- Tests     : **1772 passing / 90 suites** — all green (`node scripts/run-jest.js`)
+- Syntax    : **172/172 files clean** (`node scripts/check-syntax.js --all`)
 - Typecheck : clean (`npm run typecheck`)
 - FORGE_PLAN: **all phases P1–P3 complete** (see FORGE_PLAN.md)
 
@@ -36,13 +36,13 @@
 - [x] Opted `src/parser.js`, `src/retry.js`, `src/session-registry.js` into `@ts-check` - tsc surfaced an optional-props JSDoc gap in listInstances (fixed).
 - [x] `forge-agent ps` renders a LAST column from the sibling summary.json (green=completed, yellow=other, dash=none). Read-only, never throws; 4 new tests in session-registry.test.js.
 - [x] `SPONSOR_TIERS` documented as suggested guidance, not verified Ko-fi/GitHub products.
-- [ ] Verify real DeepSeek honours `` / `` via `forge-agent --debug "reply pong"` — inspect `~/.forge-agent/logs/last-raw-response.txt`. DOM-quiet fallback already works either way.
+- [x] Verified real DeepSeek via `forge-agent --debug "reply pong"`: it does NOT emit the FORGE markers, but the run completed cleanly on the DOM-quiet fallback. **Decision: KEEP the markers** (they set proper boundaries for models that honour them) and keep the fallback. `last-raw-response.txt` is now actually written so this is reproducible.
 
 ### Considered, not doing now
 - Go/Rust rewrite for speed — bottleneck is remote-model latency, not JS runtime. Incremental TS chosen instead.
 
 ## Decisions deferred
-- Keep response-envelope markers if DeepSeek ignores them? Decide after a `--debug` raw check.
+- RESOLVED: response-envelope markers are KEPT (boundaries are useful; DOM-quiet fallback covers models that ignore them).
 - Legacy `~/.deepseek-agent`: migration COPIES (non-destructive); legacy left as fallback. Prune after one release or keep longer.
 
 ## How to resume
