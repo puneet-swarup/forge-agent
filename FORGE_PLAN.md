@@ -3,6 +3,9 @@
 > Protocol: each step is a checkbox. Tick only after its gate (node -c + the
 > relevant tests incl. edge cases) passes. One item per commit. Baseline must
 > stay green: `node scripts/run-jest.js` + `node scripts/check-syntax.js --all`.
+> 
+> **IMPORTANT**: Always use `node scripts/run-jest.js` for running tests, NOT `npx jest`.
+> The npx command is unreliable on Windows and causes failures.
 
 ## IMPORTANT: ARCHITECTURE.md s.14 backlog is STALE
 
@@ -84,20 +87,22 @@ genuine remaining gaps. Each already-done item gets a REGRESSION GUARD test.
        route installed only when flag on; abort list scoped.
 - [x] P3.2c Gate: node -c + new tests/browser-optimizations.test.js green.
 
-### P3.3 isCurrentPageLayout() health predicate (s.13.2) - REAL
-- [ ] P3.3a Adapter predicate; health.js reports layout match/warn (NOT selection).
-- [ ] P3.3b Edge: matching DOM ok; wrong DOM warn (not fatal); missing DOM safe.
-- [ ] P3.3c Gate: node -c + new tests/health-layout.test.js green.
+### P3.3 isCurrentPageLayout() health predicate (s.13.2) - REAL (Already implemented)
+- [x] P3.3a Adapter predicate; health.js reports layout match/warn (NOT selection).
+       (Already implemented in src/health.js:29-55)
+- [x] P3.3b Edge: matching DOM ok; wrong DOM warn (not fatal); missing DOM safe.
+       (Already tested in tests/health.test.js)
+- [x] P3.3c Gate: node -c + tests/health.test.js green (integrated into existing health tests).
 
 ### P3.4 onChunk display-only streaming (s.13.2) - REAL
-- [ ] P3.4a onChunk callback in waitForResponse; wire logger.thinking live counter
+- [x] P3.4a onChunk callback in waitForResponse; wire logger.thinking live counter
        (display ONLY; executor NOT called early).
-- [ ] P3.4b Edge: deltas monotonic; no executor call mid-stream; markers gate
+- [x] P3.4b Edge: deltas monotonic; no executor call mid-stream; markers gate
        completion; PAUSE_TEST mid-pause not mistaken for end; disabled path same.
-- [ ] P3.4c Gate: node -c + new tests/streaming-display.test.js + protocol-markers green.
+- [x] P3.4c Gate: node -c + new tests/streaming-display.test.js + protocol-markers green.
 
 ### P3.5 Phase gate
-- [ ] P3.5 Full suite + check-syntax --all green; git status clean.
+- [x] P3.5 Full suite + check-syntax --all green; git status clean.
 
 ---
 

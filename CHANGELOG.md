@@ -9,6 +9,9 @@ Versioning: [Semantic Versioning](https://semver.org/)
 ## [Unreleased]
 
 ### Added
+- **Display-only streaming hook (onChunk)** - BaseAdapter.waitForResponse now accepts an onChunk callback wired through _waitForTextStable. Fires once per net growth, monotonic delta, isolated in try/catch, never triggers execution or early completion. Guard: tests/streaming-display.test.js.
+- **Base64 transport regression guard** - tests/base64-transport.test.js locks the is_base64 contract for write_file, append_to_file, replace_in_file, write_files.
+
 - **Parallel TODO pool (`--parallel`)** — `src/worker-pool.js` runs open FORGE_TODO.md items across up to `--max-parallel` child agents at once (each its own session/profile), ticking each success. The biggest throughput win for independent work. New `--parallel` flag + help entry; unit + real-process integration tests.
 - **`forge-agent --doctor`** - one-command health check (Node version, Chromium install, config validity, data-dir writability, browser-profile presence) with PASS/WARN/FAIL output and hints; exits non-zero on failure for CI use. Module `src/doctor.js`; tests in `tests/doctor.test.js`.
 - **`forge-agent --summary [session]`** - surface durable run summaries: list all sessions or print one session's full summary. Backed by `readSummary`/`listSummaries` in `src/run-summary.js`.
