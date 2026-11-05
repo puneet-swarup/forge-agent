@@ -220,3 +220,78 @@ describe('session-registry - canonical heartbeat (ps reliability)', () => {
     }
   });
 });
+
+describe('session-registry - last summary status (ps enrichment)', () => {
+  let reg;
+  const STATUS_TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'forge-reg-status-'));
+
+  beforeAll(() => {
+    process.env.FORGE_HOME = STATUS_TMP;
+  });
+
+  beforeEach(() => {
+    jest.resetModules();
+    reg = require('../src/session-registry');
+  });
+
+  afterAll(() => {
+    try { fs.rmSync(STATUS_TMP, { recursive: true, force: true }); } catch (_) {}
+    delete process.env.FORGE_HOME;
+    delete process.env.FORGE_SESSION_NAME;
+    delete process.env.FORGE_SESSION_DIR;
+  });
+
+  function writeInstanceWithSummary(name, summary) {
+    process.env.FORGE_SESSION_NAME = name;
+    process.env.FORGE_SESSION_DIR = reg.sessionDirFor(name);
+    reg.writeHeartbeat({ model: 'deepseek' });
+    if (summary) {
+      fs.writeFileSync(
+        path.join(process.env.FORGE_SESSION_DIR, 'summary.json'),
+        JSON.stringify(summary),
+        'utf8'
+      );
+    }
+  }
+
+  test('listInstances exposes lastStatus when a sibling summary.json exists', () => {
+    writeInstanceWithSummary('sess-done', { status: 'completed', task: 't' });
+    const list = reg.listInstances({ includeDead: true });
+    const inst = list.find(i => i.name === 'sess-done');
+    expect(inst).toBeTruthy();
+    expect(inst.lastStatus).toBe('completed');
+  });
+
+  test('lastStatus is null when no summary.json exists yet', () => {
+    writeInstanceWithSummary('sess-running', null);
+    const list = reg.listInstances({ includeDead: true });
+    const inst = list.find(i => i.name === 'sess-running');
+    expect(inst).toBeTruthy();
+    expect(inst.lastStatus).toBeNull();
+  });
+
+  test('lastStatus is null when summary.json is malformed (never throws)', () => {
+    process.env.FORGE_SESSION_NAME = 'sess-bad';
+    process.env.FORGE_SESSION_DIR = reg.sessionDirFor('sess-bad');
+    reg.writeHeartbeat({ model: 'deepseek' });
+    fs.writeFileSync(
+      path.join(process.env.FORGE_SESSION_DIR, 'summary.json'),
+      '{ not valid json',
+      'utf8'
+    );
+    const list = reg.listInstances({ includeDead: true });
+    const inst = list.find(i => i.name === 'sess-bad');
+    expect(inst).toBeTruthy();
+    expect(inst.lastStatus).toBeNull();
+  });
+
+  test('formatInstanceTable renders a LAST column and a dash for missing status', () => {
+    writeInstanceWithSummary('sess-tbl-done', { status: 'completed' });
+    const list = reg.listInstances({ includeDead: true }).filter(i => i.name === 'sess-tbl-done');
+    const table = reg.formatInstanceTable(list, false);
+    expect(table).toMatch(/LAST/);
+    expect(table).toMatch(/completed/);
+
+    expect(table).toMatch(/completed/);
+  });
+});

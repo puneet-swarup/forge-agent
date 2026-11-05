@@ -224,11 +224,32 @@ function listInstances(opts = {}) {
       alive,
       uptimeMs: ageMs,
       uptime: _formatDuration(ageMs),
+      lastStatus: _readLastSummaryStatus(record),
     });
   }
 
   out.sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0));
   return out;
+}
+
+/**
+ * Best-effort read of the last run summary status for this instance.
+ * Read-only; never throws into the caller. Returns null when no summary
+ * exists yet (e.g. a still-running agent that has not finished a run).
+ *
+ * @param {Object} record  instance heartbeat record
+ * @returns {string|null}  one of 'completed' | 'failed' | 'timeout' | ...
+ */
+function _readLastSummaryStatus(record) {
+  try {
+    if (!record || !record.sessionDir) return null;
+    const jsonPath = path.join(record.sessionDir, 'summary.json');
+    if (!fs.existsSync(jsonPath)) return null;
+    const summary = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+    return summary && summary.status ? String(summary.status) : null;
+  } catch (_) {
+    return null;
+  }
 }
 
 function _formatDuration(ms) {
@@ -269,6 +290,7 @@ function formatInstanceTable(instances, color = true) {
     { key: 'pid',      label: 'PID',       width: 8 },
     { key: 'status',   label: 'STATUS',    width: 9 },
     { key: 'uptime',   label: 'UPTIME',    width: 10 },
+    { key: 'lastStatus', label: 'LAST',  width: 10 },
     { key: 'model',    label: 'MODEL',     width: 10 },
     { key: 'cwd',      label: 'CWD',       width: 40 },
   ];
@@ -285,6 +307,12 @@ function formatInstanceTable(instances, color = true) {
     const statusText = inst.alive ? c('32', 'running') : c('31', 'dead');
     const row = cols.map(cl => {
       if (cl.key === 'status') return pad(statusText, cl.width + (color ? 9 : 0));
+      if (cl.key === 'lastStatus') {
+        const ls = inst.lastStatus;
+        const txt = ls ? String(ls) : '-';
+        const colored = !ls ? c('90', txt) : (ls === 'completed' ? c('32', txt) : c('33', txt));
+        return pad(colored, cl.width + (color ? 9 : 0));
+      }
       return pad(inst[cl.key], cl.width);
     }).join(' ');
     lines.push(row);

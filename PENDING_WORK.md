@@ -32,10 +32,10 @@
 ## Pending / Next
 
 ### Worth considering (not blocking)
-- [ ] Add a `Qwen` capability paragraph to docs/getting-started.html (adapter shipped, docs only mention DeepSeek/Gemini).
+- [x] Qwen/Google added to docs/getting-started.html (prerequisites + model choice, version bumped to v2.0.2, Node 20).
 - [ ] Opt `src/parser.js`, `src/retry.js`, `src/session-registry.js` into `@ts-check` for incremental type coverage.
-- [ ] `forge-agent ps` should also surface each agent's LAST summary status by reading the sibling `summary.json` (read-only).
-- [ ] Decide `SPONSOR_TIERS` wording in `src/sponsor.js` (currently aspirational).
+- [x] `forge-agent ps` renders a LAST column from the sibling summary.json (green=completed, yellow=other, dash=none). Read-only, never throws; 4 new tests in session-registry.test.js.
+- [x] `SPONSOR_TIERS` documented as suggested guidance, not verified Ko-fi/GitHub products.
 - [ ] Verify real DeepSeek honours `` / `` via `forge-agent --debug "reply pong"` — inspect `~/.forge-agent/logs/last-raw-response.txt`. DOM-quiet fallback already works either way.
 
 ### Considered, not doing now

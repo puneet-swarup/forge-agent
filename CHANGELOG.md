@@ -9,6 +9,8 @@ Versioning: [Semantic Versioning](https://semver.org/)
 ## [Unreleased]
 
 ### Added
+- **ps shows each agent LAST summary status** - listInstances() now reads the sibling summary.json for each instance (read-only, best-effort) and formatInstanceTable() renders a LAST column (green=completed, yellow=other terminal status, dim dash when no summary yet). Never throws on missing/malformed summaries.
+- **Clarified SPONSOR_TIERS wording** - src/sponsor.js now documents that the tier table is suggested support guidance, not verified Ko-fi/GitHub Sponsors products.
 - **Display-only streaming hook (onChunk)** - BaseAdapter.waitForResponse now accepts an onChunk callback wired through _waitForTextStable. Fires once per net growth, monotonic delta, isolated in try/catch, never triggers execution or early completion. Guard: tests/streaming-display.test.js.
 - **Base64 transport regression guard** - tests/base64-transport.test.js locks the is_base64 contract for write_file, append_to_file, replace_in_file, write_files.
 

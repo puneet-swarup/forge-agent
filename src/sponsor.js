@@ -13,6 +13,10 @@ const SPONSOR_URLS = {
   docs:          'https://github.com/puneet-swarup/forge-agent',
 };
 
+// Suggested support levels. These describe how the maintainer intends to
+// recognise different contribution sizes; they are NOT verified products on
+// Ko-fi or GitHub Sponsors. Actual billing tiers live on those platforms.
+// Treat amounts below as illustrative guidance for one-off or recurring support.
 const SPONSOR_TIERS = [
   {
     name: 'Coffee',
