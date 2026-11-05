@@ -232,28 +232,22 @@ class TUI {
    *   ✗  run_command           Error: command not found: npx
    */
   renderToolResult(toolName, result, isError = false) {
-    const width   = getWidth();
-    const nameCol = 22;
+    const width = getWidth();
 
+    // Show the OUTCOME only. The tool name already appeared on the action
+    // line above (renderToolCall), so repeating it here is noise.
     const icon = isError
-      ? colors(['bold', 'lred'],   '  ✗')
-      : colors(['bold', 'lgreen'], '  ✓');
-
-    const name = isError
-      ? color('red',   (toolName || this._lastToolName).padEnd(nameCol))
-      : color('green', (toolName || this._lastToolName).padEnd(nameCol));
+      ? colors(['bold', 'lred'],   '    ✗')
+      : colors(['bold', 'lgreen'], '    ✓');
 
     const resultStr = typeof result === 'string' ? result : String(result);
     const firstLine = resultStr.split('\n')[0];
-    const preview   = truncate(firstLine, width - nameCol - 8);
+    const preview   = truncate(firstLine, width - 10);
 
-    const resultDisplay = isError
-      ? color('lred', preview)
-      : color('gray', preview);
+    const resultDisplay = isError ? color('lred', preview) : color('gray', preview);
+    this._print(`${icon}  ${resultDisplay}`);
 
-    this._print(`${icon} ${name} ${resultDisplay}`);
-
-    // In debug mode: show up to 3 more lines of result
+    // Debug: show up to 3 more lines, aligned under the result.
     if (this.debug && resultStr.split('\n').length > 1) {
       const extra = resultStr.split('\n').slice(1, 4);
       extra.forEach(line => {

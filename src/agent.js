@@ -625,8 +625,11 @@ class DeepSeekAgent {
               logger.getTUI().noColor === false;
 
             if (tuiAvailable) {
-              console.log('\n' + content);
-              logger.finalOutput(formatted);
+              // Show the answer exactly once (markdown-rendered), then the
+              // completion summary box. Previously both raw `content` AND
+              // `formatted` were printed, double-printing the answer.
+              logger.answer(content);
+              logger.getTUI().renderCompletion(progress, 'completed');
             } else if (config.OUTPUT_FILE) {
               this._saveToFile(config.OUTPUT_FILE, formatted);
             } else {

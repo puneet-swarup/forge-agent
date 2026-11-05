@@ -217,3 +217,29 @@ describe('Logger Integration', () => {
     expect(() => logger.banner()).not.toThrow();
   });
 });
+  test('renderToolResult shows the outcome WITHOUT repeating the tool name', () => {
+    const tui = new TUI({ noColor: true });
+    let output = '';
+    const originalPrint = tui._print;
+    tui._print = (s) => { output += s + '\n'; };
+    tui.renderToolResult('write_file', 'Wrote 2.1 KB', false);
+    tui._print = originalPrint;
+    const clean = stripAnsi(output);
+    expect(clean).toContain('✓');
+    expect(clean).toContain('Wrote 2.1 KB');
+    // The tool name must NOT be repeated on the result line.
+    expect(clean).not.toContain('write_file');
+  });
+
+  test('renderToolResult error shows ✗ and outcome only', () => {
+    const tui = new TUI({ noColor: true });
+    let output = '';
+    const originalPrint = tui._print;
+    tui._print = (s) => { output += s + '\n'; };
+    tui.renderToolResult('run_command', 'command not found', true);
+    tui._print = originalPrint;
+    const clean = stripAnsi(output);
+    expect(clean).toContain('✗');
+    expect(clean).toContain('command not found');
+    expect(clean).not.toContain('run_command');
+  });
