@@ -4,17 +4,15 @@
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
-const os = require('os');
-const config = require('./config');
 
 const WIZARD_STEPS = [
   {
     key: 'MODEL',
     question: 'Which AI model should Forge Agent use by default?',
     type: 'choice',
-    choices: ['deepseek', 'chatgpt', 'gemini'],
+    choices: ['deepseek', 'chatgpt', 'gemini', 'qwen', 'google'],
     default: 'deepseek',
-    description: 'DeepSeek is free. ChatGPT and Gemini need you to be logged in.'
+    description: 'DeepSeek, Google is free. ChatGPT, Qwen and Gemini need you to be logged in.'
   },
   {
     key: 'ACTIVE_PROFILE',
@@ -108,8 +106,7 @@ class Wizard {
       for (let i = 0; i < WIZARD_STEPS.length; i++) {
         const step = WIZARD_STEPS[i];
         const currentVal = existingConfig[step.key] !== undefined ? existingConfig[step.key] : step.default;
-        
-        // Handle RESPONSE_TIMEOUT which is stored in ms but asked in seconds
+
         let displayVal = currentVal;
         if (step.key === 'RESPONSE_TIMEOUT' && typeof currentVal === 'number' && currentVal > 1000) {
           displayVal = currentVal / 1000;
@@ -117,7 +114,7 @@ class Wizard {
 
         console.log(`\n[${i + 1}/${WIZARD_STEPS.length}] ${step.question}`);
         if (step.description) console.log(`      \x1b[90m${step.description}\x1b[0m`);
-        
+
         if (step.type === 'choice') {
           step.choices.forEach((c, idx) => console.log(`      ${idx + 1}) ${c}`));
         }

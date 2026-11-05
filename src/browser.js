@@ -5,9 +5,61 @@ const { chromium } = require('playwright');
 const path         = require('path');
 const config       = require('./config');
 const logger       = require('./logger');
-const { Errors }   = require('./errors');
 const { getAdapter, getModelUrl } = require('./adapter-factory');
 const { runHealthCheckWithReAuth } = require('./health');
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Launch-argument builder
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Build the Chromium launch options for the persistent context.
+ *
+ * Why this exists (the "unsupported command-line flag" infobar):
+ *   Google Chrome prints
+ *     "You are using an unsupported command-line flag: --no-sandbox"
+ *   whenever the sandbox is disabled. On Windows/macOS as a normal user the
+ *   sandbox works fine and the flag is unnecessary, so we filter
+ *   --no-sandbox / --disable-setuid-sandbox out of Playwright's defaults.
+ *   In containers or when running as root on Linux Chromium will not start
+ *   without them, so set BROWSER_NO_SANDBOX=true (config) or
+ *   FORGE_NO_SANDBOX=1 (env); in that branch --test-type is added as well to
+ *   suppress the infobar.
+ */
+function buildLaunchOptions() {
+  const noSandbox = !!(config.BROWSER_NO_SANDBOX || process.env.FORGE_NO_SANDBOX === '1');
+
+  const args = [
+    '--disable-blink-features=AutomationControlled',
+    '--start-maximized',
+  ];
+
+  // Never show the "Chrome is being controlled by automated test software"
+  // infobar.
+  const ignoreDefaultArgs = ['--enable-automation'];
+
+  if (noSandbox) {
+    // Required in Docker / as root on Linux. --test-type suppresses the
+    // "unsupported command-line flag" infobar that --no-sandbox triggers.
+    args.push('--no-sandbox', '--disable-setuid-sandbox', '--test-type');
+  } else {
+    // Defensive: drop the sandbox flags from Playwright's default args too,
+    // so the warning cannot appear even if a runtime injects them.
+    ignoreDefaultArgs.push('--no-sandbox', '--disable-setuid-sandbox');
+  }
+
+  if (config.BROWSER_BLOCK_IMAGES) {
+    args.push('--blink-settings=imagesEnabled=false');
+  }
+
+  return {
+ channel : config.BROWSER_CHANNEL || undefined, // bundled Chromium by default (no infobars)
+    headless         : config.HEADLESS,
+    viewport         : null,       // let --start-maximized drive the window size
+    args             : args,
+    ignoreDefaultArgs: ignoreDefaultArgs,
+  };
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  DeepSeekBrowser class
@@ -28,29 +80,7 @@ class DeepSeekBrowser {
 
     const sessionDir = path.resolve(config.SESSION_DIR);
 
-    // Resource args: optionally disable image rendering (ARCHITECTURE s.13.2).
-    const launchArgs = [
-      '--disable-blink-features=AutomationControlled',
-      '--no-first-run',
-      '--disable-default-apps',
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-    ];
-    if (config.BROWSER_BLOCK_IMAGES) {
-      launchArgs.push('--blink-settings=imagesEnabled=false');
-    }
-
-    this.context = await chromium.launchPersistentContext(sessionDir, {
-      headless      : config.HEADLESS,
-      viewport      : { width: 1280, height: 900 },
-      userAgent     : [
-        'Mozilla/5.0 (X11; Linux x86_64)',
-        'AppleWebKit/537.36 (KHTML, like Gecko)',
-        'Chrome/124.0.0.0 Safari/537.36',
-      ].join(' '),
-      args: launchArgs,
-      ignoreDefaultArgs: ['--enable-automation'],
-    });
+    this.context = await chromium.launchPersistentContext(sessionDir, buildLaunchOptions());
 
     // Grab existing page or open a new one
     const pages   = this.context.pages();
@@ -101,6 +131,7 @@ class DeepSeekBrowser {
   async _navigate(url) {
     try {
       await this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: config.BROWSER_TIMEOUT || 90_000 });
+
       // Replace the old blind 3s sleep with a real readiness signal: wait
       // for the chat input to appear. Falls back to a short settle if the
       // adapter/selectors aren't available or don't match in time.
@@ -128,6 +159,7 @@ class DeepSeekBrowser {
       logger.warn(`Navigation warning: ${err.message}`);
     }
   }
+
 
   async newChat() {
     if (!this.adapter) throw new Error('Browser not initialized');
@@ -174,27 +206,29 @@ class DeepSeekBrowser {
 
   async sendMessage(text) {
     if (!this.adapter) throw new Error('Browser not initialized');
-    
+
     try {
       return await this.adapter.sendMessage(text);
     } catch (firstErr) {
-      const msg = firstErr.message.toLowerCase();
+      const msg = String((firstErr && firstErr.message) || firstErr).toLowerCase();
       // If it looks like a selector error or timeout, wait and retry once
       if (msg.includes('not found') || msg.includes('selector') || msg.includes('timeout')) {
         logger.warn('Send failed — waiting 3s and retrying...');
         await this.page.waitForTimeout(3000);
-        
+
         try {
           return await this.adapter.sendMessage(text);
         } catch (secondErr) {
           // Capture a full diagnostic bundle (screenshot + DOM + url + adapter)
           // on the final failure. Best-effort; never masks the real error.
           try {
-            const { captureFailure } = require('./failure-capture');
-            const adapterName = this.adapter && this.adapter.constructor
-              ? this.adapter.constructor.name : 'unknown';
-            const dir = await captureFailure(this.page, 'send', { adapterName });
-            if (dir) logger.dim(`Failure bundle saved: ${dir}`);
+            const fc = require('./failure-capture');
+            if (fc && typeof fc.captureFailure === 'function') {
+              const adapterName = this.adapter && this.adapter.constructor
+                ? this.adapter.constructor.name : 'unknown';
+              const dir = await fc.captureFailure(this.page, 'send', { adapterName });
+              if (dir) logger.dim(`Failure bundle saved: ${dir}`);
+            }
           } catch (e) { void e; }
           throw secondErr;
         }
@@ -264,5 +298,8 @@ class DeepSeekBrowser {
     return target;
   }
 }
+
+// Expose the builder for unit tests without changing the default export shape.
+DeepSeekBrowser.buildLaunchOptions = buildLaunchOptions;
 
 module.exports = DeepSeekBrowser;

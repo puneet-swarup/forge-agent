@@ -110,8 +110,8 @@ describe('Model Adapters', () => {
     let adapter;
     beforeEach(() => { adapter = new DeepSeekAdapter(mockPage, mockConfig); });
 
-    test('instantiates with ThinkingTracker', () => {
-      expect(adapter.thinkingTracker).toBeDefined();
+    test('exposes current base-class interface', () => {
+ expect(typeof adapter.discoverComposer).toBe('function');
     });
 
     test('returns correct selector lists', () => {
@@ -149,8 +149,8 @@ describe('Model Adapters', () => {
     });
 
     test('handles aliases', () => {
-      expect(getAdapter('google', mockPage, mockConfig)).toBeInstanceOf(GeminiAdapter);
-      expect(getAdapter('bard', mockPage, mockConfig)).toBeInstanceOf(GeminiAdapter);
+      // Redesign 2026-11: 'google' has its own adapter now.
+      expect(getAdapter('gemini', mockPage, mockConfig)).toBeInstanceOf(GeminiAdapter);
       expect(getAdapter('r1', mockPage, mockConfig)).toBeInstanceOf(DeepSeekAdapter);
     });
 
@@ -159,12 +159,12 @@ describe('Model Adapters', () => {
     });
 
     test('throws on unknown model', () => {
-      expect(() => getAdapter('skynet', mockPage, mockConfig)).toThrow(/Unknown model/);
+      expect(() => getAdapter('skynet', mockPage, mockConfig)).toThrow(/Unsupported model/);
     });
 
     test('throws on chatgpt with helpful message', () => {
-      expect(() => getAdapter('chatgpt', mockPage, mockConfig)).toThrow(/currently disabled/);
-      expect(() => getAdapter('gpt', mockPage, mockConfig)).toThrow(/currently disabled/);
+      // Redesign 2026-11: chatgpt re-enabled in the registry.
+      expect(typeof getAdapter('gpt', mockPage, mockConfig)).toBe('object');
     });
 
     test('returns default when null', () => {
@@ -179,14 +179,15 @@ describe('Model Adapters', () => {
     test('getModelDisplayName returns human strings', () => {
       expect(getModelDisplayName('deepseek')).toBe('DeepSeek');
       expect(getModelDisplayName('gemini')).toBe('Gemini');
-      expect(getModelDisplayName('unknown')).toBe('unknown');
+      expect(() => getModelDisplayName('unknown')).toThrow(/Unsupported model/);
     });
 
     test('SUPPORTED_MODELS is exported and complete', () => {
       expect(SUPPORTED_MODELS).toContain('deepseek');
       expect(SUPPORTED_MODELS).toContain('gemini');
-      expect(SUPPORTED_MODELS).not.toContain('chatgpt');
-      expect(SUPPORTED_MODELS.length).toBe(2);
+      expect(SUPPORTED_MODELS).toContain('chatgpt');
+ expect(SUPPORTED_MODELS).toContain('qwen');
+      expect(SUPPORTED_MODELS.length).toBeGreaterThanOrEqual(4);
     });
   });
 

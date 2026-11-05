@@ -8,8 +8,11 @@ const config                       = require('./config');
 const logger                       = require('./logger');
 const DeepSeekBrowser              = require('./browser');
 const { executeTool, cache, setAdapterProvider } = require('./tools');
-const { parseResponse,
-        formatToolResult }         = require('./parser');
+const {
+  parseResponse,
+  formatToolResult,
+  hasToolCall
+} = require('./parser');
 const { executeBatch }             = require('./parallel-executor');
 const { PermissionStore, isReadOnly, getCategory, CATEGORY_LABELS } = require('./permission-store');
 const { showPermissionMenu } = require('./permission-menu');
@@ -23,12 +26,12 @@ const { TemplateStore }            = require('./templates');
 const { format }                   = require('./formatter');
 const { CommandRouter }            = require('./commands');
 const { getProfile, getProfileSystemPromptAddition, applyProfile } = require('./profiles');
-const { 
-  buildPlanPrompt, 
-  parsePlan, 
-  formatPlanForDisplay, 
-  formatPlanForContext, 
-  isPlanResponse 
+const {
+  buildPlanPrompt,
+  parsePlan,
+  formatPlanForDisplay,
+  formatPlanForContext,
+  isPlanResponse
 } = require('./planner');
 const { isRunningInDocker, printDockerInfo } = require('./docker');
 const { describeStep }             = require('./step-summary');
@@ -36,23 +39,6 @@ const { describeStep }             = require('./step-summary');
 // ─────────────────────────────────────────────
 //  Agent class
 // ─────────────────────────────────────────────
-
-// Map a tool name to a short verb phrase for the step-line one-liner.
-function _stepDescVerb(name) {
-  const map = {
-    read_file: 'reading', write_file: 'writing', write_files: 'writing',
-    append_to_file: 'appending to', replace_in_file: 'editing',
-    delete_file: 'deleting', move_file: 'moving', copy_file: 'copying',
-    list_directory: 'listing', search_in_files: 'searching', search_codebase: 'searching',
-    find_files: 'finding', run_command: 'running', run_tests: 'testing',
-    git_status: 'checking git', git_diff: 'diffing', git_log: 'reading git log',
-    install_package: 'installing', start_process: 'starting process',
-    stop_process: 'stopping process', read_process_logs: 'reading logs',
-    spawn_agent: 'spawning agent', kill_agent: 'stopping agent',
-    show_info: 'answering', fetch_url: 'fetching', read_url: 'fetching',
-  };
-  return map[name] || ('using ' + name);
-}
 
 class DeepSeekAgent {
   constructor(options = {}) {
@@ -128,7 +114,7 @@ class DeepSeekAgent {
         }
       }
     );
-    
+
     const { getLoadedPluginCount } = require('./tools');
     const pluginCount = getLoadedPluginCount();
     if (pluginCount > 0) {
@@ -258,7 +244,7 @@ class DeepSeekAgent {
           logger.dim(firstMsg.slice(0, 600) + '...');
         }
 
-        logger.info('Sending task to DeepSeek...');
+        logger.info('Sending task to ' + config.MODEL + '...');
 
         try {
           await this.browser.sendMessage(firstMsg);
@@ -274,13 +260,6 @@ class DeepSeekAgent {
       while (true) {
         // Protocol default: every step line carries a short one-liner saying
         // what the step is doing, derived from the previous tool call.
-        const _stepDesc = describeStep({
-          lastTool  : progress.lastTool ? progress.lastTool.name : null,
-          lastTarget: progress.lastTool ? progress.lastTool.target : null,
-          state     : step === 1 ? 'starting' : 'working',
-          maxLen    : 60,
-        });
-        logger.stepLine(step, progress.elapsedMs, progress, _stepDesc);
 
         // Safety circuit breaker
         if (step > 10000) {
@@ -350,7 +329,7 @@ class DeepSeekAgent {
             const doneSoFar = progress.getStatusLine();
             const recovery = this.conversation.addToolResult(
               'SYSTEM',
-              `You are a coding agent. The previous chat session was reset due to connection issues. 
+              `You are a coding agent. The previous chat session was reset due to connection issues.
                Please continue with this task: "${task}"
                Current Progress: ${doneSoFar}`,
               true
@@ -383,6 +362,31 @@ class DeepSeekAgent {
 
         // Parse the response
         const parsed = parseResponse(rawResponse);
+
+        // Step line describes the tool that is ACTUALLY about to run (current
+        // intent), not the previous one. Emitted after parsing so the label and
+        // the tool-call line below always agree.
+        try {
+          let _desc;
+          if (parsed.type === 'tool_call') {
+           _desc = describeStep({ tool: parsed.name, args: parsed.args, maxLen: 60 });
+          } else if (parsed.type === 'tool_batch') {
+           const n = Array.isArray(parsed.calls) ? parsed.calls.length : 0;
+           _desc = 'running ' + n + ' tools';
+          } else if (parsed.type === 'final' || parsed.type === 'task_complete') {
+           _desc = describeStep({ state: 'answering' });
+          } else {
+           _desc = describeStep({ state: 'waiting' });
+          }
+          logger.stepLine(step, progress.elapsedMs, progress, _desc);
+        } catch (e) { void e; }
+
+        // Only treat explicitly completed responses as final.
+        // Ordinary text must go through Case 4 recovery.
+        if (parsed.type === 'text' && hasToolCall(rawResponse)) {
+          parsed.type = 'error';
+          parsed.message = 'A possible tool call was detected but could not be parsed.';
+        }
 
         // ── Case 0: Tool batch (parallel groups, Item 5) ────────────────────
         if (parsed.type === 'tool_batch') {
@@ -602,21 +606,28 @@ class DeepSeekAgent {
           if (_looksLikeInformationalAnswer(content, progress.toolCallCount > 0)) {
             logger.answer(content);
           } else {
-            if (logger.getTUI && typeof logger.getTUI === 'function' && logger.getTUI().noColor === false) {
+            // Build formatted output once, regardless of display mode,
+            // so OUTPUT_FILE is honoured consistently.
+            const formatted = format(content, config.OUTPUT_FORMAT, {
+              task,
+              model    : config.MODEL,
+              profile  : config.ACTIVE_PROFILE,
+              timestamp: config.OUTPUT_TIMESTAMP,
+            });
+
+            const tuiAvailable =
+              logger.getTUI &&
+              typeof logger.getTUI === 'function' &&
+              logger.getTUI() &&
+              logger.getTUI().noColor === false;
+
+            if (tuiAvailable) {
               console.log('\n' + content);
-              logger.finalOutput(progress, 'completed');
+              logger.finalOutput(formatted);
+            } else if (config.OUTPUT_FILE) {
+              this._saveToFile(config.OUTPUT_FILE, formatted);
             } else {
-              const formatted = format(content, config.OUTPUT_FORMAT, {
-                task,
-                model: config.MODEL,
-                profile: config.ACTIVE_PROFILE,
-                timestamp: config.OUTPUT_TIMESTAMP
-              });
-              if (config.OUTPUT_FILE) {
-                this._saveToFile(config.OUTPUT_FILE, formatted);
-              } else {
-                logger.finalOutput(formatted);
-              }
+              logger.finalOutput(formatted);
             }
           }
 
@@ -671,59 +682,41 @@ class DeepSeekAgent {
           return content;
         }
 
-        // ── Case 4: Plain text / unrecognised type — THE BUG FIX ──────────
-        //
-        // This is what caused the freeze. When parsed.type is 'text' or any
-        // other unrecognised value, the old code had NO handler here so
-        // execution fell through to the next loop iteration which immediately
-        // called waitForResponse() again without ever sending anything to
-        // DeepSeek — causing an infinite silent freeze on "Step 1".
-        //
-        // Fix: always send a correction message so DeepSeek has something
-        // to respond to. After MAX_CORRECTION_ATTEMPTS give up and treat
-        // the last response as the final answer.
-        //
+        // ── Case 4: Plain text / unrecognised type ────────────────────────
         _consecutiveUnrecognised++;
-        logger.warn(`Response was plain text, not a tool call (attempt ${_consecutiveUnrecognised}/${MAX_CORRECTION_ATTEMPTS})`);
 
-        if (_consecutiveUnrecognised >= MAX_CORRECTION_ATTEMPTS) {
-          // DeepSeek kept responding with plain text after repeated corrections.
-          // Treat the last response as the final answer rather than loop forever.
-          logger.warn('AI did not use tool call format after multiple attempts — treating last response as final answer.');
+        const content = String(rawResponse || '').trim();
 
-          const content = rawResponse;
-          const formatted = format(content, config.OUTPUT_FORMAT, {
-            task, model: config.MODEL, profile: config.ACTIVE_PROFILE, timestamp: config.OUTPUT_TIMESTAMP
-          });
-          if (config.OUTPUT_FILE) this._saveToFile(config.OUTPUT_FILE, formatted);
-          else logger.finalOutput(formatted);
-
-          this._recordHistory(task, 'completed', startTime, progress, content, templateName);
-          if (this.options.saveLog) await this._saveConversationLog(task, content);
-          this._running = false;
-          return content;
+        if (!content) {
+          logger.warn('Received an empty or unrecognised response.');
+        } else {
+          logger.warn('Received plain text instead of a tool call. Requesting retry.');
         }
 
-        // Send a correction so the next waitForResponse() has something to respond to.
-        // Without this line the loop freezes because waitForResponse() blocks
-        // waiting for a message that was never sent.
+        // Stop retrying if the AI repeatedly fails to follow the tool protocol.
+        if (_consecutiveUnrecognised >= MAX_CORRECTION_ATTEMPTS) {
+          throw new Error(
+            'The AI repeatedly returned plain text instead of using tools. ' +
+            'Please inspect the model response and try again.'
+          );
+        }
+
+        // Ask the AI to continue using the available tools.
         const correctionMsg = this.conversation.addToolResult(
           'SYSTEM',
           [
-            'Your last response was plain text. You must use one of these two formats:',
-            '',
-            '1. If you need to do something — use a tool call:',
-            '<tool_call>',
-            '{"tool": "TOOL_NAME", "args": {"param": "value"}}',
-            '</tool_call>',
-            '',
-            '2. If the task is fully complete — end with exactly:',
-            'TASK_COMPLETE',
-            '',
-            'Do not write explanations without a tool call or TASK_COMPLETE.',
+            'Your previous response did not contain a valid tool call.',
+            'The requested task is not complete.',
+            'You MUST use the available tools to perform the requested action.',
+            'Review the available tool descriptions and select the appropriate tool.',
+            'Use the required tool-call format exactly.',
+            'Do not invent a different task or perform unrelated actions.',
+            'Do not ask the user for information that is already available.',
+            'If the task is genuinely complete, provide a valid task-complete response.'
           ].join('\n'),
           true
         );
+
         await this.browser.sendMessage(correctionMsg);
         step++;
         continue;
@@ -935,7 +928,6 @@ class DeepSeekAgent {
 
   async _saveConversationLog(task, finalResponse) {
     try {
-      const os      = require('os');
       const logsDir = require('./paths').forgePath('logs');
       fs.mkdirSync(logsDir, { recursive: true });
 
@@ -996,8 +988,6 @@ class DeepSeekAgent {
       // History failures must never crash the agent
     }
 
-    // Durable, attributable per-run summary (esp. for spawned agents whose
-    // stdout is lost). Best-effort; never throws.
     try {
       require('./run-summary').writeSummary({
         task: task,
@@ -1018,7 +1008,5 @@ class DeepSeekAgent {
     } catch (_) {}
   }
 }
-
-const os = require('os');
 
 module.exports = DeepSeekAgent;

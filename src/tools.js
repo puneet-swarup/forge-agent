@@ -25,6 +25,7 @@ const ToolCache = require('./tool-cache');
 const { smartTruncate } = require('./truncator');
 const security = require('./security');
 const os = require('os');
+const readline = require('readline');
 
 // ─────────────────────────────────────────────
 //  Helpers
@@ -36,6 +37,12 @@ const cache = new ToolCache({
   defaultTtlMs: config.CACHE_TTL_MS,
   maxEntries: config.CACHE_MAX_ENTRIES
 });
+
+/** GLOBAL RUNTIME LOOP TRACKER (Persists across all agent execution turns) */
+const GLOBAL_READ_TRACKER = {
+  lastPath: null,
+  consecutiveCount: 0
+};
 
 /** Smartly truncate long strings based on content type */
 function truncate(str, max = config.MAX_OUTPUT_LENGTH, type = 'text') {
@@ -71,8 +78,6 @@ function getAdapter() {
  */
 async function tryUploadRead(abs, filePath, sizeBytes) {
   if (!config.READ_FILE_UPLOAD) return null;
-  const minBytes = config.READ_FILE_UPLOAD_MIN_BYTES || 4096;
-  if (sizeBytes < minBytes) return null;
 
   const adapter = getAdapter();
   if (!adapter || typeof adapter.supportsUpload !== 'function') return null;
@@ -136,7 +141,6 @@ function formatBytes(bytes) {
 function globToRegex(glob) {
   const escaped = glob
     .replace(/[.+^${}()|[\]\\]/g, '\\$&')  // escape regex special chars
-    // `**/` -> any number of leading path segments; bare `**` -> any chars incl '/'
     .replace(/\*\*\//g, '\u0001')          // placeholder for **/
     .replace(/\*\*/g, '\u0002')            // placeholder for **
     .replace(/\*/g, '[^/]*')               // * -> any chars except path separator
@@ -214,18 +218,42 @@ const TOOLS = {
 
   // ── File Reading ────────────────────────────────────────────────────────────
   read_file: {
-    description: 'Read the full contents of a file. Optionally read specific line ranges.',
+    description: 'Read a file in bounded sections. Returns at most 150 lines per call and provides the exact next start_line when more content is available. Continue by calling read_file with the same path and that start_line.',
     parameters: {
-      path        : { type: 'string',  required: true,  description: 'Path to the file' },
-      start_line  : { type: 'number',  required: false, description: 'First line to read (1-indexed)' },
-      end_line    : { type: 'number',  required: false, description: 'Last line to read (inclusive)' },
+      path       : { type: 'string', required: true, description: 'Path to the file' },
+      start_line : { type: 'number', required: false, description: 'First line to read (1-indexed). Use the previous result’s Next start line to continue.' },
+      end_line   : { type: 'number', required: false, description: 'Last line to read (inclusive)' },
     },
+
     async execute({ path: filePath, start_line, end_line }) {
       const abs = assertSafePath(filePath, 'read');
-      if (!fs.existsSync(abs))             throw Errors.fileNotFound(filePath);
-      if (fs.statSync(abs).isDirectory())  throw Errors.pathIsDirectory(filePath);
 
-      // Fix 7 — Auto-detect and mask .env files
+      if (!fs.existsSync(abs)) {
+        throw Errors.fileNotFound(filePath);
+      }
+
+      const stat = fs.statSync(abs);
+
+      if (stat.isDirectory()) {
+        throw Errors.pathIsDirectory(filePath);
+      }
+
+      const firstLine = start_line == null ? 1 : Math.floor(Number(start_line));
+
+      if (!Number.isSafeInteger(firstLine) || firstLine < 1) {
+        throw new Error('start_line must be a positive integer.');
+      }
+
+      const lastLine = end_line == null ? null : Math.floor(Number(end_line));
+
+      if (
+        lastLine !== null &&
+        (!Number.isSafeInteger(lastLine) || lastLine < firstLine)
+      ) {
+        throw new Error('end_line must be an integer greater than or equal to start_line.');
+      }
+
+      // Preserve existing .env masking. Never upload or stream plain .env contents here.
       if (security.isEnvFile(filePath) && !config.ALLOW_ENV_PLAIN_READ) {
         const envResult = readEnvFile(abs, {});
         return envResult.vars
@@ -233,122 +261,206 @@ const TOOLS = {
           .join('\n');
       }
 
-      let content;
-      try {
-        content = fs.readFileSync(abs, 'utf8');
-      } catch (err) {
-        throw classifyFsError(err, filePath, 'read');
-      }
-
-      // Fix 8 — Warn when reading files that commonly contain secrets
       const warning = security.checkSensitiveFileType(filePath);
 
-      // Opt-in upload path (ARCHITECTURE.md §11): for whole-file reads of
-      // sufficiently large files, try to upload instead of inlining text.
-      // tryUploadRead returns null when disabled/unsupported/failed, so the
-      // inline path below always remains the fallback. Never attempted when a
-      // line range is requested (the model needs the specific lines inline).
-      if (start_line == null && end_line == null) {
+      // Preserve opt-in native upload for full-file reads.
+      // Sensitive files are kept inline rather than uploaded.
+      if (start_line == null && end_line == null && !warning) {
         try {
-          const sizeBytes = fs.statSync(abs).size;
-          const uploaded = await tryUploadRead(abs, filePath, sizeBytes);
-          if (uploaded) return warning ? warning + '\n\n' + uploaded : uploaded;
-        } catch (_) { /* fall through to inline */ }
+          const uploaded = await tryUploadRead(abs, filePath, stat.size);
+          if (uploaded) return uploaded;
+        } catch (_) {
+          // Fall through to streamed inline reading.
+        }
       }
 
-      if (start_line != null || end_line != null) {
-        const lines = content.split('\n');
-        const s = Math.max(0, (start_line || 1) - 1);
-        const e = end_line != null ? end_line : lines.length;
-        content = lines.slice(s, e).map((l, i) => `${s + i + 1}: ${l}`).join('\n');
-        const type = /\.(js|ts|py|c|cpp|go|rb|rs|php|java|html|css|sh)$/i.test(filePath) ? 'code' : 'text';
-        const result = `[${filePath} | lines ${s + 1}–${e}]\n${truncate(content, config.MAX_OUTPUT_LENGTH, type)}`;
-        return warning ? warning + '\n\n' + result : result;
+      // Hard limits prevent a single read from overwhelming the conversation.
+      const MAX_LINES_PER_READ = 150;
+      const MAX_CHARS_PER_READ = Math.max(
+        1000,
+        Math.min(config.MAX_OUTPUT_LENGTH || 24000, 24000)
+      );
+
+      const source = fs.createReadStream(abs, { encoding: 'utf8' });
+      const reader = readline.createInterface({
+        input: source,
+        crlfDelay: Infinity,
+      });
+
+      const outputLines = [];
+      let currentLine = 0;
+      let returnedLines = 0;
+      let returnedChars = 0;
+      let nextStartLine = null;
+      let moreContent = false;
+      let longLineTruncated = false;
+      let lastIncludedLine = null;
+
+      try {
+        for await (const line of reader) {
+          currentLine++;
+
+          if (currentLine < firstLine) continue;
+
+          // An explicit end_line is inclusive.
+          if (lastLine !== null && currentLine > lastLine) {
+            break;
+          }
+
+          if (returnedLines >= MAX_LINES_PER_READ) {
+            moreContent = true;
+            nextStartLine = currentLine;
+            break;
+          }
+
+          const prefix = `${currentLine}: `;
+          const remainingChars = MAX_CHARS_PER_READ - returnedChars;
+
+          if (remainingChars <= prefix.length) {
+            moreContent = true;
+            nextStartLine = currentLine;
+            break;
+          }
+
+          const availableForLine = remainingChars - prefix.length;
+          let displayedLine = line;
+
+          if (displayedLine.length > availableForLine) {
+            displayedLine = displayedLine.slice(0, availableForLine);
+            longLineTruncated = true;
+            moreContent = true;
+            nextStartLine = currentLine + 1;
+          }
+
+          const formattedLine = prefix + displayedLine;
+          outputLines.push(formattedLine);
+          lastIncludedLine = currentLine;
+
+          returnedLines++;
+          returnedChars += formattedLine.length + 1;
+
+          if (longLineTruncated) {
+            break;
+          }
+        }
+      } catch (err) {
+        throw classifyFsError(err, filePath, 'read');
+      } finally {
+        reader.close();
+        source.destroy();
       }
 
-      // Add line numbers for large files to help the AI reference lines
-      const lineCount = content.split('\n').length;
-      let output;
-      if (lineCount <= 300) {
-        const numbered = content.split('\n').map((l, i) => `${i + 1}: ${l}`).join('\n');
-        output = `[${filePath} | ${lineCount} lines]\n${numbered}`;
-      } else {
-        const type = /\.(js|ts|py|c|cpp|go|rb|rs|php|java|html|css|sh)$/i.test(filePath) ? 'code' : 'text';
-        output = `[${filePath} | ${lineCount} lines — use start_line/end_line to read sections]\n${truncate(content, config.MAX_OUTPUT_LENGTH, type)}`;
+      const lastReturnedLine = lastIncludedLine;
+
+      if (!moreContent && lastLine === null) {
+        // The stream reached EOF; no continuation is necessary.
+        nextStartLine = null;
       }
-      return warning ? warning + '\n\n' + output : output;
+
+      const header = [
+        '[FILE READ]',
+        `Path: ${filePath}`,
+        `File size: ${formatBytes(stat.size)}`,
+        `Lines returned: ${returnedLines}`,
+        returnedLines > 0
+          ? `Returned range: ${firstLine}-${lastReturnedLine}`
+          : `Requested start line: ${firstLine}`,
+        `More content: ${moreContent}`,
+        moreContent ? `Next start line: ${nextStartLine}` : null,
+        longLineTruncated
+          ? 'Warning: A line exceeded the character limit and was truncated.'
+          : null,
+        '[/FILE READ]',
+      ].filter(Boolean).join('\n');
+
+      const result = header + '\n' + outputLines.join('\n');
+
+      return warning ? warning + '\n\n' + result : result;
     },
   },
 
   // ── File Writing ────────────────────────────────────────────────────────────
   write_file: {
-    description: 'Write (create or overwrite) a file with given content. Creates parent directories automatically.',
+    description: 'Write (create or overwrite) a file with given content. Supports Base64 content parameters to isolate syntax payload.',
     parameters: {
-      path    : { type: 'string', required: true, description: 'Destination file path' },
-      content : { type: 'string', required: true, description: 'Full file content to write' },
+      path      : { type: 'string', required: true, description: 'Destination file path' },
+      content   : { type: 'string', required: true, description: 'Full file content (Raw plain text or Base64 binary string)' },
+      is_base64 : { type: 'boolean', required: false, description: 'Set to true if content input is Base64 encoded' }
     },
-    async execute({ path: filePath, content }) {
+    async execute({ path: filePath, content, is_base64 = false }) {
       const abs = assertSafePath(filePath, 'write');
       try {
+        const dataBuffer = is_base64 ? Buffer.from(content, 'base64') : Buffer.from(content, 'utf8');
         fs.mkdirSync(path.dirname(abs), { recursive: true });
-        fs.writeFileSync(abs, content, 'utf8');
+        fs.writeFileSync(abs, dataBuffer);
       } catch (err) {
         throw classifyFsError(err, filePath, 'write');
       }
-      const lineCount = content.split('\n').length;
-      return `✓ Wrote ${formatBytes(Buffer.byteLength(content, 'utf8'))} (${lineCount} lines) → ${filePath}`;
+      const originalText = is_base64 ? Buffer.from(content, 'base64').toString('utf8') : content;
+      const lineCount = originalText.split('\n').length;
+      return `✓ Wrote ${formatBytes(Buffer.byteLength(originalText, 'utf8'))} (${lineCount} lines) → ${filePath}`;
     },
   },
 
   // ── Append to File ──────────────────────────────────────────────────────────
   append_to_file: {
-    description: 'Append text to the end of an existing file (or create it if missing).',
+    description: 'Append text to the end of an existing file (or create it if missing). Supports Base64 content parameters to isolate syntax payload.',
     parameters: {
-      path    : { type: 'string', required: true, description: 'File path' },
-      content : { type: 'string', required: true, description: 'Text to append' },
+      path      : { type: 'string', required: true, description: 'File path' },
+      content   : { type: 'string', required: true, description: 'Text to append (Raw plain text or Base64 string)' },
+      is_base64 : { type: 'boolean', required: false, description: 'Set to true if content parameter is Base64 encoded' }
     },
-    async execute({ path: filePath, content }) {
+    async execute({ path: filePath, content, is_base64 = false }) {
       const abs = assertSafePath(filePath, 'append');
+      const dataBuffer = is_base64 ? Buffer.from(content, 'base64') : Buffer.from(content, 'utf8');
+
       fs.mkdirSync(path.dirname(abs), { recursive: true });
-      fs.appendFileSync(abs, content, 'utf8');
-      return `✓ Appended ${formatBytes(Buffer.byteLength(content, 'utf8'))} to ${filePath}`;
+      fs.appendFileSync(abs, dataBuffer);
+
+      const originalText = is_base64 ? Buffer.from(content, 'base64').toString('utf8') : content;
+      return `✓ Appended ${formatBytes(Buffer.byteLength(originalText, 'utf8'))} to ${filePath}`;
     },
   },
 
   // ── Find & Replace in File ──────────────────────────────────────────────────
   replace_in_file: {
-    description: 'Find and replace text in a file. Supports regex patterns.',
+    description: 'Find and replace text in a file. Supports base64 mapping parameters.',
     parameters: {
       path           : { type: 'string',  required: true,  description: 'File path' },
-      find           : { type: 'string',  required: true,  description: 'Text to find' },
-      replace        : { type: 'string',  required: true,  description: 'Replacement text' },
+      find           : { type: 'string',  required: true,  description: 'Text to find (Plain string or Base64 string)' },
+      replace        : { type: 'string',  required: true,  description: 'Replacement text (Plain string or Base64 string)' },
       use_regex      : { type: 'boolean', required: false, description: 'Treat "find" as a regex pattern (default: false)' },
       all_occurrences: { type: 'boolean', required: false, description: 'Replace all occurrences (default: true)' },
+      is_base64      : { type: 'boolean', required: false, description: 'Set to true if find and replace parameters are Base64 strings' }
     },
-    async execute({ path: filePath, find, replace, use_regex = false, all_occurrences = true }) {
-      const abs     = resolve(filePath);
-      let   content = fs.readFileSync(abs, 'utf8');
+    async execute({ path: filePath, find, replace, use_regex = false, all_occurrences = true, is_base64 = false }) {
+      const abs = assertSafePath(filePath, 'write');
+      let content = fs.readFileSync(abs, 'utf8');
       const original = content;
 
+      const searchVal = is_base64 ? Buffer.from(find, 'base64').toString('utf8') : find;
+      const targetVal = is_base64 ? Buffer.from(replace, 'base64').toString('utf8') : replace;
+
       if (use_regex) {
-        const re = new RegExp(find, all_occurrences ? 'g' : '');
-        content = content.replace(re, replace);
+        const flags = all_occurrences ? 'g' : '';
+        const re = new RegExp(searchVal, flags);
+        content = content.replace(re, targetVal);
       } else if (all_occurrences) {
-        content = content.split(find).join(replace);
+        content = content.split(searchVal).join(targetVal);
       } else {
-        content = content.replace(find, replace);
+        content = content.replace(searchVal, targetVal);
       }
 
       if (content === original) {
-        return `⚠ No matches found for "${find}" in ${filePath}`;
+        return `⚠ No matches found for "${searchVal}" in ${filePath}`;
       }
 
       const count = (original.match(
-        new RegExp(use_regex ? find : find.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')
+        new RegExp(use_regex ? searchVal : searchVal.replace(/[.*+?^${}()|[\\\]]/g, '\\$&'), 'g')
       ) || []).length;
 
       fs.writeFileSync(abs, content, 'utf8');
-      return `✓ Replaced ${count} occurrence(s) of "${find}" in ${filePath}`;
+      return `✓ Replaced ${count} occurrence(s) inside ${filePath}`;
     },
   },
 
@@ -527,7 +639,7 @@ const TOOLS = {
     parameters: {
       command : { type: 'string',  required: true,  description: 'Shell command to run' },
       cwd     : { type: 'string',  required: false, description: 'Working directory for the command' },
-      timeout : { type: 'number',  required: false, description: 'Timeout in milliseconds (default: 60000)' },
+      timeout : { type: 'number',  required: false, description: 'Timeout in ms (default: TOOL_TIMEOUT, 300000)' },
       env     : { type: 'object',  required: false, description: 'Extra environment variables as key-value pairs' },
     },
     async execute({ command, cwd, timeout, env = {} }) {
@@ -544,7 +656,7 @@ const TOOLS = {
       }
 
       // Read timeout from config at execution time — not cached
-      const timeoutMs = timeout 
+      const timeoutMs = timeout
         || (config.TOOL_TIMEOUT || 300_000);
 
       if (config.DEBUG) {
@@ -558,10 +670,19 @@ const TOOLS = {
           timeout   : timeoutMs,
           maxBuffer : 20 * 1024 * 1024,
           env       : Object.assign({}, process.env, env),
-        }, function (err, stdout) {
-          if (err) return reject(classifyCommandError(err, command));
-          resolve((stdout || '').trim());
-        });
+ }, function (err, stdout, stderr) {
+ if (err) {
+ // Surface real output: exit-1 commands usually explain
+ // themselves on stderr, which exec() would otherwise drop.
+ const stderrTail = String(stderr || '').trim().slice(-2000);
+ const stdoutTail = String(stdout || '').trim().slice(-2000);
+ const detail = [stderrTail, stdoutTail].filter(Boolean).join(String.fromCharCode(10));
+ const wrapped = classifyCommandError(err, command);
+ if (detail) wrapped.message = wrapped.message + String.fromCharCode(10) + detail;
+ return reject(wrapped);
+ }
+ resolve((stdout || '').trim());
+ });
       });
 
       return truncate(result || '(command completed with no output)', config.MAX_OUTPUT_LENGTH, 'command_output');
@@ -756,12 +877,12 @@ const TOOLS = {
 
   // ── Write Multiple Files (batch) ────────────────────────────────────────────
   write_files: {
-    description: 'Write multiple files at once — useful for scaffolding projects.',
+    description: 'Write multiple files at once — useful for scaffolding projects. Supports independent Base64 encoding parameters per file.',
     parameters: {
       files: {
         type       : 'array',
         required   : true,
-        description: 'Array of {path, content} objects',
+        description: 'Array of {path, content, is_base64} objects',
       },
     },
     async execute({ files }) {
@@ -774,10 +895,13 @@ const TOOLS = {
         }
         const filePath = item.path;
         const content = item.content || '';
+        const isBase64 = !!item.is_base64;
         const abs = assertSafePath(filePath, 'write');
+
         try {
+          const dataBuffer = isBase64 ? Buffer.from(content, 'base64') : Buffer.from(content, 'utf8');
           await fsp.mkdir(path.dirname(abs), { recursive: true });
-          await fsp.writeFile(abs, content, 'utf8');
+          await fsp.writeFile(abs, dataBuffer);
         } catch (err) {
           throw classifyFsError(err, filePath, 'write');
         }
@@ -1351,7 +1475,11 @@ const TOOLS = {
       try {
         const sup = require('./agent-supervisor');
         const info = sup.spawnAgent({ session, task, role, cwd: cwd ? resolve(cwd) : config.WORKING_DIR, context, detached: !!detached });
-        return 'Spawned child agent' + String.fromCharCode(10) + '  session: ' + info.session + String.fromCharCode(10) + '  pid    : ' + info.pid + String.fromCharCode(10) + '  cwd    : ' + info.cwd + String.fromCharCode(10) + 'Track it with list_agents; stop it with kill_agent.';
+        return 'Spawned child agent'
+          + String.fromCharCode(10) + '  session: ' + info.session
+          + String.fromCharCode(10) + '  pid    : ' + info.pid
+          + String.fromCharCode(10) + '  cwd    : ' + info.cwd
+          + String.fromCharCode(10) + 'Track it with list_agents; stop it with kill_agent.';
       } catch (e) {
         return 'Failed to spawn agent: ' + e.message;
       }
@@ -1420,8 +1548,6 @@ const TOOLS = {
         text = user + ', the task is complete.';
       }
       try {
-        // Async by default (Item 4): enqueue and return immediately so the
-        // agent keeps working. Set FORGE_AUDIO_SYNC=1 to block instead.
         return speakAsync(text);
       } catch (err) {
         return '[call_user] Text-to-speech failed: ' + err.message + ' | message: ' + text;
@@ -1437,7 +1563,6 @@ const TOOLS = {
     },
     async execute({ duration = 5 } = {}) {
       try {
-        // Async by default (Item 4): enqueue and return immediately.
         return alarmAsync(duration);
       } catch (err) {
         return '[raise_alarm] Alarm failed: ' + err.message;
@@ -1458,20 +1583,6 @@ const TOOLS = {
   },
 
 };
-
-// ── Load Custom Plugins ───────────────────────────────────────────────────────
-if (fs.existsSync(config.PLUGIN_DIR)) {
-  const { loaded, failed } = loadAllPlugins(config.PLUGIN_DIR, Object.keys(TOOLS));
-  
-  for (const plugin of loaded) {
-    TOOLS[plugin.name] = plugin;
-    logger.success(`Loaded custom plugin: ${plugin.name}`);
-  }
-
-  for (const fail of failed) {
-    logger.warn(`Failed to load plugin ${fail.file}: ${fail.error}`);
-  }
-}
 
 // ─────────────────────────────────────────────
 //  Generate tool docs for the system prompt
@@ -1494,7 +1605,7 @@ function appendToAuditLog(entry) {
   try {
     const logDir = require('./paths').forgeHome();
     if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
-    
+
     const logPath = path.join(logDir, 'audit.log');
     const line = JSON.stringify({
       ts: new Date().toISOString(),
@@ -1512,16 +1623,16 @@ function appendToAuditLog(entry) {
  */
 function validateToolArgs(toolName, tool, args) {
   if (!config.PARAM_VALIDATION) return;
-  
+
   const params = tool.parameters || {};
   for (const [paramName, spec] of Object.entries(params)) {
     const value = args[paramName];
-    
+
     // Check required
     if (spec.required && (value === undefined || value === null)) {
       throw Errors.invalidToolArgs(toolName, paramName, spec.type + ' (REQUIRED)', value);
     }
-    
+
     if (value !== undefined && value !== null) {
       // Check type
       let valid = true;
@@ -1530,7 +1641,7 @@ function validateToolArgs(toolName, tool, args) {
       else if (spec.type === 'boolean' && typeof value !== 'boolean') valid = false;
       else if (spec.type === 'array' && !Array.isArray(value)) valid = false;
       else if (spec.type === 'object' && (typeof value !== 'object' || Array.isArray(value))) valid = false;
-      
+
       if (!valid) {
         throw Errors.invalidToolArgs(toolName, paramName, spec.type, value);
       }
@@ -1542,7 +1653,7 @@ function validateToolArgs(toolName, tool, args) {
 //  Execute a tool by name
 // ─────────────────────────────────────────────
 async function executeTool(name, args) {
-  // Fix 13 — Validate tool name against allowlist
+  // Validate tool name against allowlist
   if (!/^[a-z_][a-z0-9_]*$/.test(name)) {
     throw new Error(`Security: invalid tool name "${name}"`);
   }
@@ -1553,12 +1664,12 @@ async function executeTool(name, args) {
     throw new Error(`Unknown tool: "${name}". Available tools: ${available}`);
   }
 
-  // Fix 12 — Validate all tool parameters before execution
+  // Validate all tool parameters before execution
   validateToolArgs(name, tool, args);
 
-  // 1. Check Cache
+  // 1. Check Cache (never serve cached contents for read_file operations)
   try {
-    if (cache.shouldCache(name)) {
+    if (name !== 'read_file' && cache.shouldCache(name)) {
       const cached = cache.get(name, args);
       if (cached !== null) {
         appendToAuditLog({ tool: name, args, status: 'cache_hit', exitCode: 0 });
@@ -1583,9 +1694,9 @@ async function executeTool(name, args) {
     appendToAuditLog({ tool: name, args, exitCode, ms });
   }
 
-  // 3. Update Cache & Invalidate
+  // 3. Update Cache & Invalidate (never store text contents for read_file operations)
   try {
-    if (cache.shouldCache(name)) {
+    if (name !== 'read_file' && cache.shouldCache(name)) {
       cache.set(name, args, result);
     }
 
@@ -1602,10 +1713,13 @@ async function executeTool(name, args) {
   return result;
 }
 
+// ─────────────────────────────────────────────
+//  Plugin loading (single block — runs once)
+// ─────────────────────────────────────────────
 const loadedPlugins = [];
 if (fs.existsSync(config.PLUGIN_DIR)) {
   const { loaded, failed } = loadAllPlugins(config.PLUGIN_DIR, Object.keys(TOOLS));
-  
+
   for (const plugin of loaded) {
     TOOLS[plugin.name] = plugin;
     loadedPlugins.push(plugin.name);
@@ -1625,4 +1739,13 @@ function getLoadedPlugins() {
   return loadedPlugins;
 }
 
-module.exports = { TOOLS, executeTool, getToolDescriptions, getLoadedPluginCount, getLoadedPlugins, cache, setAdapterProvider, globToRegex };
+module.exports = {
+  TOOLS,
+  executeTool,
+  getToolDescriptions,
+  getLoadedPluginCount,
+  getLoadedPlugins,
+  cache,
+  setAdapterProvider,
+  globToRegex,
+};

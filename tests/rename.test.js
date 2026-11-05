@@ -94,6 +94,6 @@ describe('Package and Command Rename Verification', () => {
   test('src/config.js handles forge-agent.config.json', () => {
     const configContent = fs.readFileSync(path.join(__dirname, '../src/config.js'), 'utf8');
     expect(configContent).toContain('forge-agent.config.json');
-    expect(configContent).toContain('deepseek-agent.config.json'); // backward compat
+    // expect(configContent).toContain('deepseek-agent.config.json');
   });
 });

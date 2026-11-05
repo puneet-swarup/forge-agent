@@ -135,7 +135,7 @@ describe('launch()', () => {
       expect.stringContaining('dsa-test-session'),
       expect.objectContaining({
         headless : false,
-        viewport : expect.objectContaining({ width: 1280, height: 900 }),
+ viewport : null, // --start-maximized drives window size
       })
     );
   });

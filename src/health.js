@@ -2,12 +2,11 @@
 'use strict';
 
 const logger = require('./logger');
-const { Errors } = require('./errors');
 
 const STATUS = {
-  PASS : 'pass',
-  WARN : 'warn',
-  FAIL : 'fail',
+  PASS: 'pass',
+  WARN: 'warn',
+  FAIL: 'fail',
 };
 
 function result(status, name, message, fix = null) {
@@ -15,13 +14,46 @@ function result(status, name, message, fix = null) {
 }
 
 /**
- * Main health check runner (simplified)
+ * Detect whether the current page is a login/auth screen.
+ * Combines URL heuristics with a check for visible sign-in buttons.
+ */
+async function detectLoginRequired(page) {
+  try {
+    const url = page.url() || '';
+
+    if (/\/(sign[_-]?in|log[_-]?in|auth|signup)\b/i.test(url)) {
+      return true;
+    }
+
+    const promptSelectors = [
+      'button:has-text("Sign in")',
+      'button:has-text("Log in")',
+      'button:has-text("Sign up")',
+      'a[href*="sign_in"]',
+      'a[href*="signin"]',
+      'a[href*="login"]',
+      'a[href*="auth"]',
+    ];
+
+    for (const sel of promptSelectors) {
+      try {
+        const el = await page.$(sel);
+        if (el && await el.isVisible()) return true;
+      } catch (_) { /* ignore and continue */ }
+    }
+  } catch (_) { /* ignore */ }
+
+  return false;
+}
+
+/**
+ * Main health check runner.
  */
 async function runHealthCheck(page, adapter, config, options = {}) {
   const { silent = false } = options;
   const results = [];
 
-  // Check 1: Browser is still connected
+  // ── Check 1: Browser is still connected ──────────────────────────────
   try {
     const url = page.url();
     results.push(result(
@@ -34,7 +66,20 @@ async function runHealthCheck(page, adapter, config, options = {}) {
     results.push(result(STATUS.FAIL, 'Browser', 'Connection lost: ' + e.message, 'Restart forge-agent'));
   }
 
-  // Check 2: Input box is visible (NO RELOAD)
+  // ── Check 2: Logged in ──────────────────────────────────────────────
+  try {
+    const loginRequired = await detectLoginRequired(page);
+    results.push(result(
+      loginRequired ? STATUS.FAIL : STATUS.PASS,
+      'Logged in',
+      loginRequired ? 'Not logged in — sign-in page detected' : 'Session appears authenticated',
+      loginRequired ? 'Sign in via the browser window, then continue' : null
+    ));
+  } catch (e) {
+    results.push(result(STATUS.WARN, 'Logged in', 'Could not check login: ' + e.message));
+  }
+
+  // ── Check 3: Input box is visible ───────────────────────────────────
   try {
     const inputSelectors = adapter._getInputSelectors
       ? adapter._getInputSelectors()
@@ -48,7 +93,7 @@ async function runHealthCheck(page, adapter, config, options = {}) {
           inputFound = true;
           break;
         }
-      } catch {}
+      } catch (_) { /* try next */ }
     }
 
     results.push(result(
@@ -61,7 +106,7 @@ async function runHealthCheck(page, adapter, config, options = {}) {
     results.push(result(STATUS.WARN, 'Input box', 'Could not check input: ' + e.message));
   }
 
-  // Check 3: Page URL is correct
+  // ── Check 4: Page URL matches model ─────────────────────────────────
   try {
     const url = page.url();
     const modelUrl = adapter.getModelUrl ? adapter.getModelUrl() : '';
@@ -75,11 +120,11 @@ async function runHealthCheck(page, adapter, config, options = {}) {
       onCorrectPage ? 'On correct page' : `Unexpected URL: ${url}`,
       onCorrectPage ? null : `Navigate to ${modelUrl}`
     ));
-  } catch {}
+  } catch (_) { /* ignore */ }
 
-  const passed  = results.filter(c => c.status === STATUS.PASS).length;
-  const warned  = results.filter(c => c.status === STATUS.WARN).length;
-  const failed  = results.filter(c => c.status === STATUS.FAIL).length;
+  const passed = results.filter(c => c.status === STATUS.PASS).length;
+  const warned = results.filter(c => c.status === STATUS.WARN).length;
+  const failed = results.filter(c => c.status === STATUS.FAIL).length;
   const healthy = failed === 0;
 
   if (!silent) {
@@ -97,29 +142,30 @@ async function runHealthCheck(page, adapter, config, options = {}) {
 }
 
 async function runHealthCheckWithReAuth(page, adapter, config, reLogin) {
-  const report = await runHealthCheck(page, adapter, config);
+  let report = await runHealthCheck(page, adapter, config);
 
   const loginCheck = report.checks.find(c => c.name === 'Logged in');
-  if (loginCheck && loginCheck.status === STATUS.FAIL) {
+  if (loginCheck && loginCheck.status === STATUS.FAIL && typeof reLogin === 'function') {
     await reLogin();
     await page.waitForTimeout(3000);
-    return await runHealthCheck(page, adapter, config);
+    report = await runHealthCheck(page, adapter, config);
   }
 
   return report;
 }
 
-// Mock individual check functions for backward compatibility if needed by tests
-async function checkPageLoaded(page) { return result(STATUS.PASS, 'Page loaded', 'Check skipped'); }
-async function checkLoggedIn(page) { return result(STATUS.PASS, 'Logged in', 'Check skipped'); }
-async function checkInputAvailable(page) { return result(STATUS.PASS, 'Input box', 'Check skipped'); }
-async function checkNotRateLimited(page) { return result(STATUS.PASS, 'Rate limit', 'Check skipped'); }
-async function checkNetworkConnectivity(page) { return result(STATUS.PASS, 'Network', 'Check skipped'); }
-async function checkModelAvailable(page) { return result(STATUS.PASS, 'Service status', 'Check skipped'); }
+// Backward-compatible stubs for tests
+async function checkPageLoaded()      { return result(STATUS.PASS, 'Page loaded', 'Check skipped'); }
+async function checkLoggedIn()        { return result(STATUS.PASS, 'Logged in', 'Check skipped'); }
+async function checkInputAvailable()  { return result(STATUS.PASS, 'Input box', 'Check skipped'); }
+async function checkNotRateLimited()  { return result(STATUS.PASS, 'Rate limit', 'Check skipped'); }
+async function checkNetworkConnectivity() { return result(STATUS.PASS, 'Network', 'Check skipped'); }
+async function checkModelAvailable()  { return result(STATUS.PASS, 'Service status', 'Check skipped'); }
 
 module.exports = {
   runHealthCheck,
   runHealthCheckWithReAuth,
+  detectLoginRequired,
   STATUS,
   checkPageLoaded,
   checkLoggedIn,

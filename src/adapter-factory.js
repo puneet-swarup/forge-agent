@@ -1,79 +1,137 @@
-// src/adapter-factory.js — Factory for model adapters
+// src/adapter-factory.js — Central adapter registry
 'use strict';
 
-const SUPPORTED_MODELS = ['deepseek', 'gemini'];
+const MODEL_REGISTRY = Object.freeze({
+  deepseek: {
+    displayName: 'DeepSeek',
+    url: 'https://chat.deepseek.com',
+    aliases: ['deepseek', 'deepseek-r1', 'r1'],
+    adapter: './adapters/deepseek-adapter',
+  },
 
-/**
- * Get an adapter instance for the specified model.
- *
- * @param {string} modelName - Name or alias of the model
- * @param {Object} page      - Playwright page object
- * @param {Object} config    - Configuration object
- * @returns {BaseAdapter}
- */
-function getAdapter(modelName, page, config) {
-  const name = (modelName || 'deepseek').toLowerCase().trim();
+  qwen: {
+    displayName: 'Qwen',
+    url: 'https://chat.qwen.ai/',
+    aliases: ['qwen'],
+    adapter: './adapters/qwen-adapter',
+  },
 
-  switch (name) {
-    case 'deepseek':
-    case 'deepseek-r1':
-    case 'r1': {
-      const DeepSeekAdapter = require('./adapters/deepseek-adapter');
-      return new DeepSeekAdapter(page, config);
-    }
-    case 'chatgpt':
-    case 'gpt':
-    case 'openai': {
-      throw new Error(
-        'ChatGPT adapter is currently disabled.\n' +
-        'ChatGPT\'s web UI has aggressive bot detection that causes\n' +
-        'unreliable tool call execution.\n\n' +
-        'Please use DeepSeek (default) or Gemini instead:\n' +
-        '  forge-agent --model=deepseek "your task"\n' +
-        '  forge-agent --model=gemini "your task"'
-      );
-    }
-    case 'gemini':
-    case 'google':
-    case 'bard': {
-      const GeminiAdapter = require('./adapters/gemini-adapter');
-      return new GeminiAdapter(page, config);
-    }
-    default:
-      throw new Error(
-        `Unknown model: "${modelName}"\n` +
-        `Supported models: ${SUPPORTED_MODELS.join(', ')}\n` +
-        `Usage: forge-agent --model=gemini "your task"`
-      );
+  chatgpt: {
+    displayName: 'ChatGPT',
+    url: 'https://chatgpt.com',
+    aliases: ['chatgpt', 'gpt', 'openai'],
+    adapter: './adapters/chatgpt-adapter',
+  },
+
+  gemini: {
+    displayName: 'Gemini',
+    url: 'https://gemini.google.com/app',
+    aliases: ['gemini'],
+    adapter: './adapters/gemini-adapter',
+  },
+  
+  google: {
+	displayName: 'Google',
+    url: 'https://www.google.com',
+    aliases: ['google', 'search', 'goog'],
+    adapter: './adapters/google-adapter',
+  }
+});
+
+// Build alias -> canonical-name lookup once.
+const ALIAS_MAP = new Map();
+
+for (const [canonicalName, definition] of Object.entries(MODEL_REGISTRY)) {
+  for (const alias of definition.aliases) {
+    ALIAS_MAP.set(alias, canonicalName);
   }
 }
 
+const SUPPORTED_MODELS = Object.freeze(
+  Object.keys(MODEL_REGISTRY)
+);
+
 /**
- * Get the homepage URL for a model.
+ * Resolve a supplied model name or alias to its canonical name.
+ *
+ * Examples:
+ *   resolveModelName('GPT')        -> 'chatgpt'
+ *   resolveModelName('deepseek-r1')-> 'deepseek'
+ */
+function resolveModelName(modelName) {
+  const requested = String(modelName || 'deepseek')
+    .trim()
+    .toLowerCase();
+
+  const canonical = ALIAS_MAP.get(requested);
+
+  if (!canonical) {
+    throw new Error(
+      `Unsupported model: "${requested}". ` +
+      `Supported models: ${SUPPORTED_MODELS.join(', ')}`
+    );
+  }
+
+  return canonical;
+}
+
+/**
+ * Construct the adapter for the requested model.
+ *
+ * @param {string} modelName
+ * @param {Object} page Playwright Page
+ * @param {Object} config Application configuration
+ * @returns {BaseAdapter}
+ */
+function getAdapter(modelName, page, config = {}) {
+  const canonicalName = resolveModelName(modelName);
+  const definition = MODEL_REGISTRY[canonicalName];
+
+  // Lazy loading keeps unused model adapters out of the require path.
+  const AdapterClass = require(definition.adapter);
+
+  return new AdapterClass(page, config);
+}
+
+/**
+ * Get the default URL for a model.
  */
 function getModelUrl(modelName) {
-  const name = (modelName || 'deepseek').toLowerCase();
-  const urls = {
-    deepseek: 'https://chat.deepseek.com',
-    gemini  : 'https://gemini.google.com/app',
-  };
-  return urls[name] || urls.deepseek;
+  const canonicalName = resolveModelName(modelName);
+
+  return MODEL_REGISTRY[canonicalName].url;
 }
 
 /**
- * Get the human-readable display name for a model.
+ * Get the human-readable model name.
  */
 function getModelDisplayName(modelName) {
-  const names = {
-    deepseek: 'DeepSeek',
-    gemini  : 'Gemini',
-  };
-  return names[(modelName || '').toLowerCase()] || modelName;
+  const canonicalName = resolveModelName(modelName);
+
+  return MODEL_REGISTRY[canonicalName].displayName;
 }
 
-module.exports = { 
-  getAdapter, 
-  getModelUrl, 
-  getModelDisplayName, 
-  SUPPORTED_MODELS 
+/**
+ * Return metadata for a model.
+ * A copy is returned so callers cannot mutate the registry.
+ */
+function getModelInfo(modelName) {
+  const canonicalName = resolveModelName(modelName);
+  const definition = MODEL_REGISTRY[canonicalName];
+
+  return {
+    name: canonicalName,
+    displayName: definition.displayName,
+    url: definition.url,
+    aliases: [...definition.aliases],
+  };
+}
+
+module.exports = {
+  getAdapter,
+  getModelUrl,
+  getModelDisplayName,
+  getModelInfo,
+  resolveModelName,
+  SUPPORTED_MODELS,
 };

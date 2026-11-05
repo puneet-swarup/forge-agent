@@ -2,14 +2,9 @@
 'use strict';
 
 const os   = require('os');
-const path = require('path');
 const { getToolDescriptions } = require('./tools');
 const config = require('./config');
-const { 
-  estimateTokenCount, 
-  shouldCompress, 
-  compressConversation 
-} = require('./compressor');
+const { estimateTokenCount, shouldCompress, compressConversation } = require('./compressor');
 
 // ─────────────────────────────────────────────
 //  System prompt — sent as the first message
@@ -21,11 +16,6 @@ function buildSystemPrompt(profileName = 'default', profileAddition = '') {
   const platform = os.platform() + ' ' + os.release();
   const nodeVer  = process.version;
   const now      = new Date().toISOString();
-
-  // NOTE: We intentionally avoid a single template literal for the full prompt
-  // because the tool-call example contains triple backticks which would
-  // terminate the template literal early and cause a SyntaxError.
-  // We build the string with an array join + a FENCE variable instead.
 
   const FENCE = '```';
 
@@ -64,21 +54,43 @@ function buildSystemPrompt(profileName = 'default', profileAddition = '') {
     '',
     'CRITICAL RULES:',
     '- Output ONLY the tool_call block — no prose, no greeting, nothing else.',
-    '- ONE tool call per response. Never multiple.',
+    '- Use ONE tool call per response.',
     '- Content must be valid JSON with exactly "name" and "args" keys.',
-    '- After receiving a tool result, call another tool OR give your final response.',
+    '- After receiving a tool result, inspect it before deciding what to do next.',
+    '- If a tool result indicates that more content is available, use its continuation instructions when more content is needed.',
+    '- Do not claim that an operation succeeded unless the tool result confirms success.',
     '- Only write plain prose (no code block) when the task is 100% complete.',
+    '- BASE64 TRANSPORT INTERCEPT INTERFACE PROTOCOL (CRITICAL MANDATORY):',
+    '  When calling code-modification tools ("write_file", "write_files", "replace_in_file",',
+    '  "append_to_file") with contents that feature complex programming symbols, dynamic string',
+    '  expressions, or syntax blocks (`$`, `{`, `}`, `\``), you MUST Base64 encode the value fields',
+    '  (like "content", "find", or "replace") and supply the boolean argument "is_base64": true.',
+    '  This ensures the transport pipe layers read your payloads without character drops.',
     '',
     'WHEN TO STOP',
     '────────────',
-    'When fully done, respond with a clear natural language summary.',
-    'Do NOT wrap it in any tags or code blocks. Just plain text.',
+    'When the task is 100% complete and verified:',
+    '  1. Write a short 2–5 line summary of what you did (files created/changed,',
+    '     commands run, tests passed).',
+    '  2. On a NEW line, write exactly: TASK_COMPLETE',
+    'Do NOT wrap the summary in tags or code blocks. The literal token',
+    '"TASK_COMPLETE" must appear verbatim on its own line — that is the signal',
+    'that terminates the autonomous loop. Do not output it until all work is done',
+    'and tested.',
     '',
     'CODING GUIDELINES (CRITICAL)',
     '────────────────────────────',
     '- **DEFAULT TECH STACK**: Unless the user explicitly requests a framework (like React, Angular) or a language (like Python), ALWAYS default to vanilla web technologies (HTML, CSS, vanilla JavaScript). Prefer zero-install solutions that can run directly in a browser.',
     '- **AVOID TRUNCATION**: You are communicating through an interface with a strict output token limit. If you need to write a large file (e.g., more than 150 lines), DO NOT use `write_file` for the entire file at once because your output will be truncated. Instead, use `write_file` to scaffold the basic structure, and then use multiple `append_to_file` tool calls to build the file in safe chunks.',
     '- Always read existing files before modifying them.',
+    '- FILE READING: read_file returns bounded sections, not necessarily the entire file.',
+    '- Always inspect the [FILE READ] header.',
+    '- If More content is true, the file has not been fully read.',
+    '- To continue, call read_file with the same path and the exact Next start line.',
+    '- Read additional sections only when needed to understand or safely modify the relevant code.',
+    '- Never assume a file is fully read when More content is true.',
+    '- Do not repeat an already-read range unless you need to verify it.',
+    '- When modifying a file, ensure you have read the complete relevant function or section, including surrounding code needed to preserve behavior.',
     '- Always check the directory structure before creating new files.',
     '- Write complete, production-quality code — no TODOs, no placeholders.',
     '- Include proper error handling in all code you write.',
@@ -108,6 +120,7 @@ function buildSystemPrompt(profileName = 'default', profileAddition = '') {
     '2. Plan what changes need to be made',
     '3. Make changes systematically, chunking large files to bypass output limits',
     '4. Test / verify the result',
+    '5. When fully done, write a short summary and emit TASK_COMPLETE',
     '',
     'AVAILABLE TOOLS',
     '───────────────',
@@ -124,7 +137,7 @@ function buildSystemPrompt(profileName = 'default', profileAddition = '') {
 
   lines.push('Remember: You are running autonomously. Be thorough, be precise, and complete');
   lines.push('the task fully. If something is ambiguous, make a sensible decision and note');
-  lines.push('it in your final response.');
+  lines.push('it in your final response. Only emit TASK_COMPLETE once all work is verified.');
 
   return lines.join('\n');
 }
@@ -139,10 +152,6 @@ class ConversationManager {
     this._systemPrompt = null;
   }
 
-  /**
-   * Build the very first user message that includes the system prompt,
-   * working-directory context, and the user's task.
-   */
   buildFirstMessage(task, workingDirListing, profileName = 'default', profileAddition = '') {
     this._systemPrompt = buildSystemPrompt(profileName, profileAddition);
 
@@ -169,18 +178,12 @@ class ConversationManager {
     return firstMessage;
   }
 
-  /**
-   * Prepend memory context to the first user message.
-   */
   prependMemoryContext(memoryText) {
     if (this.messages.length > 0 && this.messages[0].role === 'user') {
-        this.messages[0].content = memoryText + '\n\n' + this.messages[0].content;
+      this.messages[0].content = memoryText + '\n\n' + this.messages[0].content;
     }
   }
 
-  /**
-   * Add a tool result as a user-turn message (feeding results back to the AI).
-   */
   addToolResult(toolName, result, isError) {
     const status  = isError ? 'ERROR' : 'SUCCESS';
     const content = [
@@ -191,59 +194,38 @@ class ConversationManager {
       'Continue with the next step, or provide your final response if the task is complete.',
     ].join('\n');
 
-    this.messages.push({ role: 'user', content: content });
+    this.messages.push({ role: 'user', content });
     return content;
   }
 
-  /**
-   * Add an assistant message (the AI's raw response).
-   */
   addAssistantMessage(content) {
-    this.messages.push({ role: 'assistant', content: content });
+    this.messages.push({ role: 'assistant', content });
   }
 
-  /**
-   * Get the most recent user message content.
-   */
   getLatestUserMessage() {
-    const userMessages = this.messages.filter(function(m) { return m.role === 'user'; });
+    const userMessages = this.messages.filter(m => m.role === 'user');
     return userMessages.length > 0 ? userMessages[userMessages.length - 1].content : '';
   }
 
-  /**
-   * How many assistant turns have happened.
-   */
   get turnCount() {
-    return this.messages.filter(function(m) { return m.role === 'assistant'; }).length;
+    return this.messages.filter(m => m.role === 'assistant').length;
   }
 
-  /**
-   * Export the full conversation as a readable text log.
-   */
   exportLog() {
-    return this.messages.map(function(m) {
+    return this.messages.map(m => {
       const header = m.role === 'user' ? 'USER' : 'ASSISTANT';
       return '\n' + '─'.repeat(40) + '\n' + header + '\n' + '─'.repeat(40) + '\n' + m.content;
     }).join('\n');
   }
 
-  /**
-   * Compress conversation history if needed.
-   */
   compress(opts = {}) {
     this.messages = compressConversation(this.messages, opts);
   }
 
-  /**
-   * Return estimated total token count of all messages.
-   */
   estimatedTokens() {
     return this.messages.reduce((sum, msg) => sum + estimateTokenCount(msg.content), 0);
   }
 
-  /**
-   * Returns true if over threshold.
-   */
   shouldCompress(threshold) {
     return shouldCompress(this.messages, threshold);
   }

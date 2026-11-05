@@ -5,9 +5,7 @@ const fs   = require('fs');
 const os   = require('os');
 const paths = require('./paths');
 
-// One-time migration from legacy ~/.deepseek-agent to model-agnostic
-// ~/.forge-agent (non-destructive copy; best-effort).
-try { paths.migrateIfNeeded(); } catch (_) { /* never block startup */ }
+
 
 // ─────────────────────────────────────────────
 //  Default values
@@ -51,9 +49,14 @@ const DEFAULTS = {
   // Browser resource optimisation (default OFF; see ARCHITECTURE.md s.13.2)
   BROWSER_BLOCK_IMAGES    : false,
   BROWSER_BLOCK_TELEMETRY : false,
+ BROWSER_NO_SANDBOX : process.env.FORGE_NO_SANDBOX === '1',
 
   // Display
   HEADLESS           : false,
+
+ // Chromium channel: empty = Playwright bundled Chromium (no infobars).
+ // Set to 'chrome' or 'msedge' to use a locally installed browser.
+ BROWSER_CHANNEL : process.env.FORGE_BROWSER_CHANNEL || '',
   DEBUG              : false,
   NO_TUI             : false,
   COMPACT_OUTPUT     : false,
@@ -134,10 +137,7 @@ function loadJsonSafe(filePath) {
 }
 
 const globalConfigPath  = paths.resolveExisting('config.json');
-const projectConfigPath =
-  fs.existsSync(path.join(process.cwd(), 'forge-agent.config.json'))
-    ? path.join(process.cwd(), 'forge-agent.config.json')
-    : path.join(process.cwd(), 'deepseek-agent.config.json'); // backward compat
+const projectConfigPath = path.join(process.cwd(), 'forge-agent.config.json');
 
 const fileOverrides = {
   ...loadJsonSafe(globalConfigPath),
@@ -155,7 +155,7 @@ function validateConfigValue(key, value) {
     SEND_DELAY        : v => typeof v === 'number' && v >= 100 && v <= 5000,
     GENERATION_POLL   : v => typeof v === 'number' && v >= 100 && v <= 5000,
     TOOL_TIMEOUT      : v => typeof v === 'number' && v >= 1000,
-    MODEL             : v => ['deepseek','gemini'].includes(String(v).toLowerCase()),
+    MODEL             : v => ['deepseek','gemini','qwen','chatgpt','google'].includes(String(v).toLowerCase()),
     ACTIVE_PROFILE    : v => ['default','backend','frontend','data-science','devops'].includes(v),
     OUTPUT_FORMAT     : v => ['text','markdown','json','json-raw','minimal','silent'].includes(v),
     HEADLESS          : v => typeof v === 'boolean',
@@ -337,6 +337,27 @@ function saveSessionOverrides() {
 // ─────────────────────────────────────────────
 //  Exports
 // ─────────────────────────────────────────────
+
+// Native structural parameter sync: Ensure command-line arguments override hardcoded profile settings.
+try {
+  const processArgs = process.argv;
+  
+  // 1. Check for manual inline model assignment flags (--model=XYZ)
+  const modelMatch = processArgs.find(arg => arg.startsWith('--model='));
+  if (modelMatch) {
+    const passedModel = modelMatch.split('=')[1].toLowerCase().trim();
+    if (['deepseek', 'gemini', 'qwen', 'chatgpt','google'].includes(passedModel)) {
+      _raw.MODEL = passedModel;
+    }
+  }
+
+  // 2. Check for manual calibration invocation flags (--calibrate)
+  if (processArgs.includes('--calibrate')) {
+    _raw.PLANNING_MODE = false; // Safeguard calibration execution runs
+  }
+} catch (err) {
+  // Safe operational boundary check fallback
+}
 
 // The config proxy is the default export (backward compatible)
 module.exports = config;

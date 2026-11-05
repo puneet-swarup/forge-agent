@@ -240,19 +240,21 @@ describe('Security Module', () => {
         .rejects.toThrow(/Invalid argument for read_file: "path"/);
     });
 
-    test('validateToolArgs passes for valid parameters', async () => {
-      const spy = jest.spyOn(fs, 'existsSync').mockReturnValue(true);
-      const spyStat = jest.spyOn(fs, 'statSync').mockReturnValue({ isDirectory: () => false, size: 100 });
-      const spyRead = jest.spyOn(fs, 'readFileSync').mockReturnValue('content');
-      const spyReal = jest.spyOn(fs, 'realpathSync').mockImplementation(p => p);
-      
-      const result = await executeTool('read_file', { path: 'test.txt' });
-      expect(result).toContain('test.txt');
-      
-      spy.mockRestore();
-      spyStat.mockRestore();
-      spyRead.mockRestore();
-      spyReal.mockRestore();
-    });
+ test('validateToolArgs passes for valid parameters', async () => {
+  // Use a real temp file: tools.js captures fs at require time, so
+  // jest.spyOn(fs, ...) cannot intercept its calls.
+  const os2 = require('os');
+  const fs2 = require('fs');
+  const path2 = require('path');
+  const dir = fs2.mkdtempSync(path2.join(os2.tmpdir(), 'forge-sec-'));
+  const target = path2.join(dir, 'test.txt');
+  fs2.writeFileSync(target, 'content', 'utf8');
+  try {
+  const result = await executeTool('read_file', { path: target });
+  expect(result).toContain('test.txt');
+  } finally {
+  try { fs2.rmSync(dir, { recursive: true, force: true }); } catch (e) { void e; }
+  }
+ });
   });
 });

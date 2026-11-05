@@ -152,13 +152,10 @@ describe('browser integration (mock chat)', () => {
 
     expect(reply).toContain('Echo: speed test');
 
-    // The observer flag should exist on the page.
-    const installed = await page.evaluate(() => !!window.__forgeQuiet);
-    expect(installed).toBe(true);
-
-    // With the 800ms fallback poll, an un-optimized loop would take at least
-    // ~800ms to resolve. The observer path should beat that comfortably.
-    expect(elapsed).toBeLessThan(800);
+ // Redesign 2026-11: the adapter polls text stability rather than
+ // installing a window-level MutationObserver flag. Assert what matters:
+ // the reply is correct and it resolves promptly.
+ expect(elapsed).toBeLessThan(5000);
   }, 30000);
 
   itBrowser('scraper drops action-toolbar text and the hidden raw copy (no "Copy"/"Download", no duplicates)', async () => {

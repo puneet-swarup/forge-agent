@@ -1,30 +1,24 @@
-// src/adapters/gemini-adapter.js — Gemini model adapter
+
 'use strict';
 
 const BaseAdapter = require('./base-adapter');
-const logger      = require('../logger');
+const logger = require('../logger');
 
-/**
- * Adapter for gemini.google.com
- */
 class GeminiAdapter extends BaseAdapter {
-  constructor(page, config) {
+  constructor(page, config = {}) {
     super(page, config);
+    this._isFirstMessage = true;
   }
-
-  // ── Implement Abstract Methods ─────────────────────────────────────────────
 
   _getInputSelectors() {
     return [
-      'rich-textarea .ql-editor',           // Quill editor inside rich-textarea
-      'rich-textarea div[contenteditable]',  // contenteditable inside component
-      '.ql-editor[contenteditable="true"]',  // Direct Quill editor
+      'rich-textarea .ql-editor',
+      'rich-textarea [contenteditable="true"]',
+      '.ql-editor[contenteditable="true"]',
       'div[contenteditable="true"][data-placeholder]',
-      'div[contenteditable="true"]',
-      'textarea[aria-label*="Enter a prompt" i]',
-      'textarea[placeholder*="Enter a prompt" i]',
+      'div[contenteditable="true"][role="textbox"]',
       'textarea[aria-label*="prompt" i]',
-      '[jsname="YPqjbf"]',                  // Common Gemini jsname
+      'textarea[placeholder*="prompt" i]',
       'textarea',
     ];
   }
@@ -32,24 +26,22 @@ class GeminiAdapter extends BaseAdapter {
   _getSendSelectors() {
     return [
       'button[aria-label*="Send message" i]',
-      'button[aria-label*="send message" i]',
-      'button[jsname*="send" i]',
-      '[data-test-id="send-button"]',
+      'button[aria-label="Send"]',
+      'button[data-test-id="send-button"]',
       'button.send-button',
-      'button[aria-label="Send" i]',
       'button[mattooltip*="Send" i]',
-      'button:has(mat-icon):not([disabled])',
-      '.send-message-button',
+      'button.send-message-button',
+      'button:has(mat-icon:text-is("send"))',
     ];
   }
 
   _getStopSelectors() {
     return [
       'button[aria-label*="Stop" i]',
-      'button[aria-label*="stop" i]',
-      'button[jsname*="stop" i]',
-      '.stop-button',
-      'button:has(mat-icon[data-mat-icon-name="stop"])',
+      'button[aria-label*="Pause" i]',
+      'button[data-test-id*="stop" i]',
+      'button.stop-button',
+      'button:has(mat-icon:text-is("stop"))',
     ];
   }
 
@@ -57,12 +49,10 @@ class GeminiAdapter extends BaseAdapter {
     return [
       'a[href="/app"]',
       'button[aria-label*="New chat" i]',
-      'button[aria-label*="new chat" i]',
-      '[data-test-id="new-conversation-button"]',
-      'c-wiz a[href="/app"]',
-      '.new-conversation-button',
-      'a[jsname*="new" i]',
+      'button[data-test-id*="new-chat" i]',
+      'button.new-conversation-button',
       'button[mattooltip*="New chat" i]',
+      'button:has(mat-icon:text-is("add"))',
     ];
   }
 
@@ -79,94 +69,221 @@ class GeminiAdapter extends BaseAdapter {
   }
 
   getModelUrl() {
-    return 'https://gemini.google.com/app';
+    return this.config.GEMINI_URL || 'https://gemini.google.com/app';
   }
 
-  // ── Overrides ──────────────────────────────────────────────────────────────
+  async discoverComposer() {
+    for (const selector of this._getInputSelectors()) {
+      try {
+        const locator = this.page.locator(selector).last();
+
+        if (
+          await locator.count() &&
+          await locator.isVisible() &&
+          await locator.isEnabled()
+        ) {
+          return locator;
+        }
+      } catch (_) {
+        // Try the next selector.
+      }
+    }
+
+    return null;
+  }
+
+  async discoverSendButton() {
+    for (const selector of this._getSendSelectors()) {
+      try {
+        const locator = this.page.locator(selector).last();
+
+        if (
+          await locator.count() &&
+          await locator.isVisible() &&
+          await locator.isEnabled()
+        ) {
+          return locator;
+        }
+      } catch (_) {
+        // Try the next selector.
+      }
+    }
+
+    return null;
+  }
+
+  async discoverLatestResponse() {
+    for (const selector of this._getResponseSelectors()) {
+      try {
+        const locator = this.page.locator(selector).last();
+
+        if (!(await locator.count()) || !(await locator.isVisible())) {
+          continue;
+        }
+
+        const text = await locator.innerText().catch(() => '');
+
+        if (text && text.trim()) {
+          return locator;
+        }
+      } catch (_) {
+        // Try the next selector.
+      }
+    }
+
+    return null;
+  }
+
+  async getGenerationState() {
+    return await this.page.evaluate(() => {
+      const visible = (element) => {
+        if (!element) return false;
+
+        const style = getComputedStyle(element);
+
+        return (
+          style.display !== 'none' &&
+          style.visibility !== 'hidden' &&
+          style.opacity !== '0' &&
+          element.getClientRects().length > 0
+        );
+      };
+
+      const stopSelectors = [
+        'button[aria-label*="Stop" i]',
+        'button[aria-label*="Pause" i]',
+        'button[data-test-id*="stop" i]',
+        'button.stop-button',
+      ];
+
+      for (const selector of stopSelectors) {
+        for (const element of document.querySelectorAll(selector)) {
+          if (visible(element)) return { ok: true, method: 'setInputFiles' };
+        }
+      }
+
+      const loadingSelectors = [
+        'mat-progress-bar',
+        'mat-spinner',
+        '[role="progressbar"]',
+        '[class*="loading"]',
+        '[class*="streaming"]',
+        '[class*="generating"]',
+      ];
+
+      for (const selector of loadingSelectors) {
+        for (const element of document.querySelectorAll(selector)) {
+          if (visible(element)) return { ok: true, method: 'setInputFiles' };
+        }
+      }
+
+      return false;
+    });
+  }
 
   async newChat() {
     this._isFirstMessage = true;
+
     try {
       await this.page.goto(this.getModelUrl(), {
         waitUntil: 'domcontentloaded',
-        timeout: this.config.BROWSER_TIMEOUT || 30_000,
+        timeout: this.config.NAVIGATION_TIMEOUT || 60000,
       });
-      await this.page.waitForTimeout(2000);
-    } catch (err) {
-      logger.warn(`Gemini navigation failed: ${err.message}. Trying selector fallback.`);
-      // Fallback: click new chat button
-      await this._clickElement(this._getNewChatSelectors(), { timeout: 10000 });
-      await this.page.waitForTimeout(2000);
+
+      await this.page.waitForTimeout(1500);
+
+      if (await this.discoverComposer()) {
+        logger.debug('[Gemini] New chat page ready');
+        return { ok: true, method: 'setInputFiles' };
+      }
+    } catch (error) {
+      logger.warn('[Gemini] Navigation fallback:', error.message);
     }
+
+    for (const selector of this._getNewChatSelectors()) {
+      try {
+        const button = this.page.locator(selector).first();
+
+        if (await button.count() && await button.isVisible()) {
+          await button.click({ timeout: 3000 });
+          await this.page.waitForTimeout(1500);
+          return { ok: true, method: 'setInputFiles' };
+        }
+      } catch (_) {
+        // Try the next selector.
+      }
+    }
+
+    return false;
   }
 
-  // ── Upload capability (ARCHITECTURE.md §11) ────────────────────────────────
-
-  /**
-   * Selectors for Gemini native file-attach input.
-   * Gemini usually exposes a hidden input[type=file] behind an "Add files"
-   * material button/menu. Always probed via supportsUpload() before use.
-   */
   _getUploadSelectors() {
     return [
       'input[type="file"]',
       'input[type="file"][accept]',
-      '[class*="upload"] input[type="file"]',
-      'uploader input[type="file"]',
-      'input[type="file"][name*="file"]',
+      'input.upload-file-input',
+      'input[name="file"]',
     ];
   }
 
-  /**
-   * Upload a local file to Gemini chat as a native attachment.
-   * Tries setInputFiles first; falls back to a filechooser event. Any failure
-   * throws — the caller (read_file) treats a throw as "fall back to text".
-   */
-  async uploadFile(absPath, opts = {}) {
+  async uploadFile(filePath) {
     const fs = require('fs');
-    const timeoutMs = opts.timeoutMs || (this.config.READ_FILE_UPLOAD_TIMEOUT_MS || 15000);
 
-    if (!absPath || !fs.existsSync(absPath)) {
-      throw new Error('uploadFile: file not found: ' + absPath);
+    if (!fs.existsSync(filePath)) {
+      throw new Error(`File not found: ${filePath}`);
     }
 
-    const selectors = this._getUploadSelectors();
-    for (const selector of selectors) {
+    for (const selector of this._getUploadSelectors()) {
       try {
-        const handle = await this.page.$(selector);
-        if (!handle) continue;
-        await handle.setInputFiles(absPath, { timeout: timeoutMs });
-        return { ok: true, method: 'setInputFiles', selector };
-      } catch (err) {
-        logger.warn('uploadFile(gemini): setInputFiles failed for ' + selector + ': ' + err.message);
-      }
-    }
+        const input = this.page.locator(selector).first();
 
-    const chooserTriggers = [
-      'button[aria-label*="Add files" i]',
-      'button[aria-label*="attach" i]',
-      'button[aria-label*="upload" i]',
-      'button[mattooltip*="Add files" i]',
-      'button[aria-label*="Add" i]',
-      '[class*="upload"]',
-      '[class*="attach"]',
-    ];
-    for (const trigger of chooserTriggers) {
-      try {
-        const el = await this.page.$(trigger);
-        if (!el) continue;
-        const [chooser] = await Promise.all([
-          this.page.waitForEvent('filechooser', { timeout: Math.min(timeoutMs, 5000) }),
-          el.click({ timeout: 3000 }),
-        ]);
-        await chooser.setFiles(absPath);
-        return { ok: true, method: 'filechooser', selector: trigger };
+        if (await input.count()) {
+          await input.setInputFiles(filePath);
+          logger.info('[Gemini] File uploaded:', filePath);
+          return { ok: true, method: 'setInputFiles' };
+        }
       } catch (_) {
-        continue;
+        // Try file chooser fallback.
       }
     }
 
-    throw new Error('uploadFile(gemini): no usable file input or attach affordance found');
+    try {
+      const chooserPromise = this.page.waitForEvent('filechooser', {
+        timeout: 5000,
+      });
+
+      const uploadButtons = [
+        'button[aria-label*="Upload" i]',
+        'button[aria-label*="Attach" i]',
+        'button[mattooltip*="Upload" i]',
+        'button[mattooltip*="Add file" i]',
+      ];
+
+      let clicked = false;
+
+      for (const selector of uploadButtons) {
+        const button = this.page.locator(selector).first();
+
+        if (await button.count() && await button.isVisible()) {
+          await button.click();
+          clicked = true;
+          break;
+        }
+      }
+
+      if (!clicked) {
+        throw new Error('Gemini upload button not found');
+      }
+
+      const chooser = await chooserPromise;
+      await chooser.setFiles(filePath);
+
+      logger.info('[Gemini] File uploaded using file chooser');
+      return { ok: true, method: 'filechooser' };
+    } catch (error) {
+      logger.error('[Gemini] File upload failed:', error.message);
+      throw error;
+    }
   }
 }
 

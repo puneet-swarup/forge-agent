@@ -68,26 +68,27 @@ describe('Bug Fixes — Verification', () => {
     });
   });
 
-  describe('ThinkingTracker Safety', () => {
-    let adapter;
+ describe('Adapter interface safety', () => {
+ let adapter;
 
-    beforeEach(() => {
-      adapter = new DeepSeekAdapter(null, config);
-    });
+ beforeEach(() => {
+ adapter = new DeepSeekAdapter(null, config);
+ });
 
-    test('_ensureThinkingTracker() creates tracker when undefined', () => {
-      adapter.thinkingTracker = undefined;
-      adapter._ensureThinkingTracker();
-      expect(adapter.thinkingTracker).toBeDefined();
-      expect(typeof adapter.thinkingTracker.reset).toBe('function');
-    });
+ // Redesign 2026-11: _ensureThinkingTracker/thinkingTracker were removed
+ // when the adapter base class was rewritten. Guard the replacement
+ // interface so a future refactor cannot silently drop it.
+ test('exposes the composer/generation interface', () => {
+ expect(typeof adapter.discoverComposer).toBe('function');
+ expect(typeof adapter.getGenerationState).toBe('function');
+ expect(typeof adapter._cleanText).toBe('function');
+ });
 
-    test('thinkingTracker methods never throw', () => {
-      adapter._ensureThinkingTracker();
-      expect(() => adapter.thinkingTracker.reset()).not.toThrow();
-      expect(() => adapter.thinkingTracker.update(null)).not.toThrow();
-      expect(() => adapter.thinkingTracker.update(undefined)).not.toThrow();
-    });
+ test('_cleanText never throws on odd input', () => {
+ expect(() => adapter._cleanText(null)).not.toThrow();
+ expect(() => adapter._cleanText(undefined)).not.toThrow();
+ expect(adapter._cleanText(null)).toBe('');
+ });
   });
 
   describe('Profile Application', () => {
