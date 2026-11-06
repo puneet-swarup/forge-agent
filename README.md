@@ -9,7 +9,7 @@ automation to code, test, and ship software — completely free.
 
 [![npm](https://img.shields.io/badge/npm-@puneet--swarup%2Fforge--agent-cb3837?logo=npm&style=flat)](https://www.npmjs.com/package/@puneet-swarup/forge-agent)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-1758%20passing-brightgreen)](#)
+[![Tests](https://img.shields.io/badge/tests-1774%20passing-brightgreen)](#)
 [![Docker](https://img.shields.io/badge/docker-ghcr.io%2Fpuneet--swarup%2Fforge--agent-blue)](https://github.com/puneet-swarup/forge-agent/pkgs/container/forge-agent)
 
 ---
@@ -28,7 +28,7 @@ Forge Agent is free and open source. If it saves you time:
 - **Free** — No API key. Uses DeepSeek, ChatGPT, or Gemini's free web UI.
 - **Autonomous** — Reads files, writes code, runs tests. Loops until done.
 - **Cross-platform** — Linux, macOS, Windows, and Docker.
-- **Battle-tested** — 40+ tools, 1758 tests across 88 suites, full docs, security audited.
+- **Battle-tested** — 40+ tools, 1774 tests across 90 suites, full docs, security audited.
 
 ---
 
@@ -276,7 +276,7 @@ Run `forge-agent --setup` for guided configuration.
 ## Key Stats — v2.0.2
 
 - 🔧 **40+ tools** built in (incl. adapter-agnostic uploads)
-- 🧪 **1758 tests** across 88 suites — all green
+- 🧪 **1774 tests** across 90 suites — all green
 - 📁 **13 docs pages** including full CLI reference
 - 📋 **10 task templates** built in
 - 💡 **10 example projects** in gallery

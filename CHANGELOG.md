@@ -8,6 +8,9 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ## [Unreleased]
 
+### Changed
+- **Refreshed test/suite counts in README** - the badge and Key Stats now reflect the actual current baseline (1774 tests across 90 suites, up from the stale 1758/88). Removed the completed `PENDING_WORK.md` backlog (all items were checked off; durable notes now live in CHANGELOG + git history).
+
 ### Added
 - **Anti-block prompt pause (default ON)** - a random 10-20s pause is now inserted between consecutive prompts so the model UI does not flag the session as automation. Configurable via `PROMPT_PAUSE` / `PROMPT_PAUSE_MIN_MS` / `PROMPT_PAUSE_MAX_MS`; disable with `--no-prompt-pause`. The first prompt of a run is never delayed. `src/browser.js::_promptPause`; `tests/prompt-pause.test.js`.
 - **`last-raw-response.txt` is now actually written** - the `--debug` path persists the full pre-parse model response to `~/.forge-agent/logs/last-raw-response.txt` (the README/CHANGELOG already told users to inspect it; now it exists). `src/raw-log.js`; `tests/raw-response-log.test.js`.
