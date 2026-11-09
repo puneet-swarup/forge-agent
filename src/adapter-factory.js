@@ -2,6 +2,22 @@
 'use strict';
 
 const MODEL_REGISTRY = Object.freeze({
+  local: {
+    displayName: 'Local Ollama Chat',
+ dedicated: true,
+    url: 'file://' + __dirname + '/html/local-ollama-chat.html',
+    aliases: ['local', 'ollama', 'local-chat'],
+    adapter: './adapters/local-chat-adapter',
+  },
+
+ ollama: {
+ displayName: 'Local Ollama',
+ dedicated: true,
+ url: 'http://localhost:11434',
+ aliases: ['local-ollama', 'ollama-local'],
+ adapter: './adapters/ollama-adapter',
+ },
+  
   deepseek: {
     displayName: 'DeepSeek',
     url: 'https://chat.deepseek.com',
@@ -124,6 +140,7 @@ function getModelInfo(modelName) {
     displayName: definition.displayName,
     url: definition.url,
     aliases: [...definition.aliases],
+ dedicated: definition.dedicated === true,
   };
 }
 

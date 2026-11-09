@@ -151,6 +151,19 @@ class BaseAdapter {
 
   // ── Send message ────────────────────────────────────────────────────────
 
+ /**
+ * Delay (ms) between typing a prompt and pressing send.
+ * Returns 0 for dedicated instances so local/self-hosted models are not
+ * artificially slowed. Shared public UIs keep SEND_DELAY.
+ */
+ _sendDelayMs() {
+ const dedicated = this.config.DEDICATED_INSTANCE === true ||
+ this.constructor.DEDICATED_INSTANCE === true ||
+ process.env.FORGE_DEDICATED_INSTANCE === '1';
+ if (dedicated) return 0;
+ return Number(this.config.SEND_DELAY ?? 600);
+ }
+
   async sendMessage(text) {
     if (typeof text !== 'string' || !text.trim()) {
       throw new Error('sendMessage: message must be a non-empty string');
@@ -183,7 +196,10 @@ class BaseAdapter {
 
     await this._typeText(input, fullText);
 
-    const delay = Number(this.config.SEND_DELAY ?? 600);
+ // Shared web UIs need a small pause between prompts so we do not look
+ // like a flood and get throttled. Dedicated instances (local Ollama,
+ // Colab tunnel, self-hosted) are ours alone: answer immediately.
+ const delay = this._sendDelayMs();
 
     if (delay > 0) {
       await this.page.waitForTimeout(delay);

@@ -47,6 +47,30 @@ Rules:
 - Keep the markers verbatim (all caps, triple angle brackets).
 
 ═══════════════════════════════════════════
+
+TOOL-CALL CONTRACT (ABSOLUTE - every model, every turn)
+------------------------------------------------------
+A turn is EITHER a tool call OR a final answer. Nothing else is valid.
+
+1. To act, your ENTIRE reply is one block and nothing else:
+
+ <tool_call>
+ {"tool": "read_file", "args": {"path": "package.json"}}
+ </tool_call>
+
+2. NEVER describe the call in prose. NEVER say you will read the file.
+ Either emit the block, or answer. Explaining instead of calling is a
+ protocol violation and the run will be retried against you.
+3. EXACTLY ONE tool call per reply, unless two are fully independent.
+4. args is always a JSON object. Use the exact parameter names from
+ AVAILABLE TOOLS. Never rename them, never nest them.
+5. After the closing tag STOP. No text after it.
+6. Only when the whole task is done and verified, reply with plain prose
+ ending in a line that says exactly: TASK_COMPLETE
+
+If you are a smaller model: follow the shape above literally. Do not
+improvise a different format, do not use markdown fences, do not explain.
+
 HOW TO USE TOOLS
 ═══════════════════════════════════════════
 
@@ -100,6 +124,34 @@ RULES FOR TOOL CALLS:
     bypasses browser text-extraction compression issues.
 
 ═══════════════════════════════════════════
+
+FILE PURPOSES - DO NOT CONFUSE THESE
+-----------------------------------
+Each markdown file has exactly one job. Never write to a file that is not
+yours to write, and never invent a new file when one of these already fits.
+
+ FORGE_PLAN.md YOU write this. Your own step-by-step plan for the
+ CURRENT task. Tick a box only after that step is
+ verified. Delete it when the task is signed off.
+
+ FORGE_TODO.md The HUMAN writes this. The durable backlog across
+ sessions. You may tick an item done, but do not add
+ new product ideas to it.
+
+ SESSION_CONTEXT.md The AGENT writes this automatically (task, progress,
+ current state). It is ephemeral and regenerated. Do not
+ treat it as durable memory and do not hand-edit it.
+
+ PENDING_WORK.md The HUMAN maintains this. A narrative backlog of
+ deferred decisions. Read it for context; do not rewrite it.
+
+ ARCHITECTURE.md The as-built map of the system. Update it only when a
+ module boundary, the agent loop, or the tool protocol
+ actually changed.
+
+If you are unsure which file to write, you are almost certainly looking
+for FORGE_PLAN.md (your plan) or nothing at all (just report in chat).
+
 AVAILABLE TOOLS
 ═══════════════════════════════════════════
 

@@ -635,4 +635,35 @@ overridden to process.cwd(). Check FORGE_SESSION_DIR and
 forge-agent.config.json first; those artifacts are gitignored but should not
 be created there.
 
+
+---
+
+## 18. Local models and dedicated instances
+
+Two adapters exist for self-hosted inference:
+
+- `local-chat-adapter.js` - a PROXY. Starts a local HTTP
+ server (port 1337) serving a chat UI and forwarding the chat route
+ to an OpenAI-compatible endpoint (default: a Colab/ngrok tunnel).
+ Env: OLLAMA_BASE_URL, OLLAMA_MODEL, LOCAL_CHAT_PORT.
+ Aliases: local, ollama, local-chat.
+- `ollama-adapter.js` - a TRUE local daemon client, normally
+ http://localhost:11434. Env: OLLAMA_BASE_URL, OLLAMA_MODEL, OLLAMA_UI_URL.
+ Aliases: local-ollama, ollama-local.
+
+### Dedicated vs shared instances
+
+A dedicated instance is one we alone consume (our GPU, our tunnel).
+Shared instances are public web UIs where others are also active.
+
+Enforced in BaseAdapter._sendDelayMs():
+
+- dedicated -> 0 ms between prompts, no artificial throttle.
+- shared -> config.SEND_DELAY (default 250 ms).
+
+Opt in with any of: static DEDICATED_INSTANCE = true on the adapter
+class, config.DEDICATED_INSTANCE, or FORGE_DEDICATED_INSTANCE=1.
+Both local adapters declare the static flag; every public UI adapter
+does not, so they keep their throttle automatically.
+
 End of document._

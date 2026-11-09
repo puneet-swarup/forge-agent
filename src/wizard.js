@@ -10,7 +10,7 @@ const WIZARD_STEPS = [
     key: 'MODEL',
     question: 'Which AI model should Forge Agent use by default?',
     type: 'choice',
-    choices: ['deepseek', 'chatgpt', 'gemini', 'qwen', 'google'],
+    choices: ['deepseek', 'chatgpt', 'gemini', 'qwen', 'google','local'],
     default: 'deepseek',
     description: 'DeepSeek, Google is free. ChatGPT, Qwen and Gemini need you to be logged in.'
   },
