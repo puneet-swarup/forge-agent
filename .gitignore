@@ -34,6 +34,8 @@ desktop.ini
 .env
 .env.local
 .env.*
+# Keep the template committed so users know which vars to set.
+!.env.example
 
 # ── Debug screenshots (from --calibrate) ──────
 *.png

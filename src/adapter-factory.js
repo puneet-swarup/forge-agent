@@ -6,7 +6,7 @@ const MODEL_REGISTRY = Object.freeze({
     displayName: 'Local Ollama Chat',
  dedicated: true,
     url: 'file://' + __dirname + '/html/local-ollama-chat.html',
-    aliases: ['local', 'ollama', 'local-chat'],
+    aliases: ['local', 'local-chat'],
     adapter: './adapters/local-chat-adapter',
   },
 
@@ -14,10 +14,18 @@ const MODEL_REGISTRY = Object.freeze({
  displayName: 'Local Ollama',
  dedicated: true,
  url: 'http://localhost:11434',
- aliases: ['local-ollama', 'ollama-local'],
+ aliases: ['ollama', 'local-ollama', 'ollama-local'],
  adapter: './adapters/ollama-adapter',
- },
-  
+  },
+
+  colab: {
+    displayName: 'Colab / Remote Tunnel',
+    dedicated: true,
+    url: 'https://qualm-buzz-blah.ngrok-free.dev',
+    aliases: ['colab', 'tunnel', 'ngrok', 'remote-ollama'],
+    adapter: './adapters/colab-adapter',
+  },
+
   deepseek: {
     displayName: 'DeepSeek',
     url: 'https://chat.deepseek.com',

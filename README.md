@@ -86,6 +86,50 @@ fa "add TypeScript to this project"
 
 ---
 
+## Local & Self-Hosted Models
+
+Forge Agent can talk to models you run yourself instead of (or alongside)
+the browser-driven public UIs. Three adapters cover the self-hosted cases:
+
+| Flag | Adapter | Use when | Endpoint |
+|---|---|---|---|
+| `--model=ollama` | ollama-adapter | Ollama installed on this machine | `http://localhost:11434` |
+| `--model=colab` | colab-adapter | Remote Colab/ngrok tunnel | your tunnel URL |
+| `--model=local` | local-chat-adapter | Any OpenAI-compatible endpoint | `OLLAMA_BASE_URL` |
+
+**Using a locally installed model (e.g. Ollama):**
+
+```bash
+ollama serve                 # start the daemon (listens on :11434)
+ollama pull deepseek-r1:8b   # install a model
+forge-agent --model=ollama --local-model deepseek-r1:8b "your task"
+```
+
+No tunnel or API key required — the adapter talks straight to the daemon.
+
+**Using a remote Colab / ngrok tunnel:**
+
+```bash
+forge-agent --model=colab \
+  --model-url https://your-tunnel.ngrok-free.dev \
+  --api-key "$COLAB_API_KEY" "your task"
+```
+
+Or put the values in a gitignored `.env` (see `.env.example`):
+
+```dotenv
+OLLAMA_BASE_URL=https://your-tunnel.ngrok-free.dev
+OLLAMA_API_KEY=your-key
+OLLAMA_MODEL=deepseek-r1-16k:latest
+```
+
+Then simply: `forge-agent --model=colab "your task"`.
+
+Configuration precedence: CLI flags > environment variables > `.env` file >
+`forge-agent.config.json` > built-in defaults. Secrets are never hard-coded.
+
+---
+
 ## Built-in Tools (37+)
 
 **File:** read_file · write_file · append_to_file · replace_in_file · delete_file · move_file · copy_file · create_directory · list_directory · get_file_info · write_files

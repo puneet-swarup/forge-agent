@@ -640,16 +640,46 @@ be created there.
 
 ## 18. Local models and dedicated instances
 
-Two adapters exist for self-hosted inference:
+Three adapters exist for self-hosted inference:
 
 - `local-chat-adapter.js` - a PROXY. Starts a local HTTP
  server (port 1337) serving a chat UI and forwarding the chat route
  to an OpenAI-compatible endpoint (default: a Colab/ngrok tunnel).
  Env: OLLAMA_BASE_URL, OLLAMA_MODEL, LOCAL_CHAT_PORT.
- Aliases: local, ollama, local-chat.
+ Aliases: local, local-chat.
 - `ollama-adapter.js` - a TRUE local daemon client, normally
  http://localhost:11434. Env: OLLAMA_BASE_URL, OLLAMA_MODEL, OLLAMA_UI_URL.
- Aliases: local-ollama, ollama-local.
+ Aliases: ollama, local-ollama, ollama-local.
+
+- `colab-adapter.js` - a dedicated adapter for a REMOTE Colab / ngrok /
+ self-hosted OpenAI-compatible endpoint. Reuses the proxy UI from
+ local-chat-adapter but hard-requires a remote URL and emits clear
+ configuration warnings instead of silently falling back to localhost.
+ Env: OLLAMA_BASE_URL, OLLAMA_API_KEY, OLLAMA_MODEL, LOCAL_CHAT_PORT.
+ Aliases: colab, tunnel, ngrok, remote-ollama.
+
+### Which adapter should I use?
+
+| Scenario | Flag | Adapter | Endpoint |
+| --- | --- | --- | --- |
+| Ollama installed on your machine | `--model=ollama` | ollama-adapter | http://localhost:11434 |
+| Colab notebook exposed via ngrok | `--model=colab` | colab-adapter | your ngrok URL |
+| Generic OpenAI-compatible tunnel | `--model=local` | local-chat-adapter | whatever OLLAMA_BASE_URL points at |
+
+Installing a local model (the `ollama` path): run `ollama serve`, then
+`ollama pull <model>`. The daemon listens on http://localhost:11434 and
+Forge Agent reaches it directly through `ollama-adapter.js` via
+`/v1/chat/completions`; `getModelUrl()` points the embedded UI at the
+daemon. No tunnel, no API key.
+
+Configuring the remote (Colab) endpoint: precedence is CLI flags > real env
+vars > .env file > forge-agent.config.json > defaults. The API key lives in
+a gitignored .env (see .env.example) and is never hard-coded.
+
+```bash
+forge-agent --model=colab --model-url https://your-tunnel.ngrok-free.dev \
+  --api-key "$COLAB_API_KEY" "your task"
+```
 
 ### Dedicated vs shared instances
 
@@ -663,7 +693,7 @@ Enforced in BaseAdapter._sendDelayMs():
 
 Opt in with any of: static DEDICATED_INSTANCE = true on the adapter
 class, config.DEDICATED_INSTANCE, or FORGE_DEDICATED_INSTANCE=1.
-Both local adapters declare the static flag; every public UI adapter
+All self-hosted adapters (ollama, colab, local-chat) declare the static flag; every public UI adapter
 does not, so they keep their throttle automatically.
 
 End of document._

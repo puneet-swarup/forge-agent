@@ -164,6 +164,10 @@ function parseArgs(argv) {
     auto: null,
     resumeWork: null,
     parallel: null,
+    modelUrl: null,
+    apiKey: null,
+    localModel: null,
+    localPort: null,
     };
 
     let i = 0;
@@ -269,6 +273,24 @@ function parseArgs(argv) {
         opts.role = args[++i];
         break;
 
+      case '--model-url':
+      case '--ollama-url':
+        opts.modelUrl = args[++i];
+        break;
+
+      case '--api-key':
+      case '--ollama-api-key':
+        opts.apiKey = args[++i];
+        break;
+
+      case '--local-model':
+        opts.localModel = args[++i];
+        break;
+
+      case '--local-port':
+        opts.localPort = args[++i];
+        break;
+
       case '-d':
       case '--dir':
         opts.workingDir = args[++i];
@@ -324,6 +346,18 @@ function parseArgs(argv) {
           opts.sessionDir = a.split('=')[1];
         } else if (a && a.startsWith('--role=')) {
           opts.role = a.split('=')[1];
+        } else if (a && a.startsWith('--model-url=')) {
+          opts.modelUrl = a.slice('--model-url='.length);
+        } else if (a && a.startsWith('--ollama-url=')) {
+          opts.modelUrl = a.slice('--ollama-url='.length);
+        } else if (a && a.startsWith('--api-key=')) {
+          opts.apiKey = a.slice('--api-key='.length);
+        } else if (a && a.startsWith('--ollama-api-key=')) {
+          opts.apiKey = a.slice('--ollama-api-key='.length);
+        } else if (a && a.startsWith('--local-model=')) {
+          opts.localModel = a.slice('--local-model='.length);
+        } else if (a && a.startsWith('--local-port=')) {
+          opts.localPort = a.slice('--local-port='.length);
         } else if (a && a.startsWith('--max-parallel=')) {
           opts.maxParallel = a.split('=')[1];
         } else if (a && a.startsWith('--test-model=')) {
@@ -368,7 +402,12 @@ ${c('1;36', 'QUICK START')}
 ${c('1;36', 'CORE OPTIONS')}
   -i, --interactive      Multiple tasks with shared AI context
       --dir <path>       Set working directory (default: current dir)
-      --model <name>     AI model: deepseek (default) | gemini
+      --model <name>     AI model: deepseek (default) | gemini | qwen | chatgpt | google
+                           | local | ollama | colab
+      --model-url <url>  Colab/Ollama endpoint for --model=colab|local (alias: --ollama-url)
+      --api-key <key>    Bearer token for that endpoint (alias: --ollama-api-key)
+      --local-model <n>  Model name passed to the endpoint
+      --local-port <n>   Local proxy port (default: 1337)
       --profile <name>   Profile: default | backend | frontend |
                          data-science | devops
       --plan             Show execution plan before acting
@@ -521,6 +560,25 @@ function applyFlagsToConfig(args, config) {
         config.MODEL = model;
       }
     } catch (e) {}
+  }
+
+  // Local / Colab (Ollama-compatible) adapter configuration
+  // These map onto the env vars the adapter already understands, so the
+  // adapter stays the single source of truth.
+  if (args.modelUrl) {
+    config.OLLAMA_BASE_URL = String(args.modelUrl).trim();
+    process.env.OLLAMA_BASE_URL = config.OLLAMA_BASE_URL;
+  }
+  if (args.apiKey) {
+    config.OLLAMA_API_KEY = String(args.apiKey).trim();
+    process.env.OLLAMA_API_KEY = config.OLLAMA_API_KEY;
+  }
+  if (args.localModel) {
+    config.OLLAMA_MODEL = String(args.localModel).trim();
+    process.env.OLLAMA_MODEL = config.OLLAMA_MODEL;
+  }
+  if (args.localPort) {
+    config.LOCAL_CHAT_PORT = Number(args.localPort);
   }
 
   // Profile - APPLY PROFILE FIRST so flags can override it

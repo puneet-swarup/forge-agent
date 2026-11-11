@@ -23,11 +23,13 @@ class LocalChatAdapter extends BaseAdapter {
       1337
     );
 
-    // Use the Colab tunnel URL, or local Ollama as a fallback.
+    // Colab tunnel / OpenAI-compatible endpoint. Configurable via
+    // --model-url, OLLAMA_BASE_URL env var, a .env file, or
+    // forge-agent.config.json — no need to edit this file.
     this._ollamaBaseUrl =
       process.env.OLLAMA_BASE_URL ||
       config.OLLAMA_BASE_URL ||
-	  'https://qualm-buzz-blah.ngrok-free.dev';
+      'http://localhost:11434';
 
     this._model =
       process.env.OLLAMA_MODEL ||
@@ -49,7 +51,10 @@ class LocalChatAdapter extends BaseAdapter {
 
     res.writeHead(statusCode, {
       'Content-Type': 'application/json; charset=utf-8',
-      'Cache-Control': 'no-store'
+      'Cache-Control': 'no-store',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'
     });
 
     res.end(JSON.stringify(payload));
@@ -80,6 +85,18 @@ class LocalChatAdapter extends BaseAdapter {
         req.url,
         `http://127.0.0.1:${this._serverPort}`
       );
+
+      // CORS preflight — the chat UI and any external tool may probe
+      // the proxy cross-origin.
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204, {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'
+        });
+        res.end();
+        return;
+      }
 
       if (
         requestUrl.pathname === '/health' &&
@@ -237,6 +254,9 @@ class LocalChatAdapter extends BaseAdapter {
         'Accept': payload.stream
           ? 'text/event-stream'
           : 'application/json',
+        // ngrok free tunnels serve an HTML interstitial unless this is set.
+        'ngrok-skip-browser-warning': '1',
+        'User-Agent': 'forge-agent/local-chat-adapter',
         'Content-Length': Buffer.byteLength(upstreamBody)
       };
 

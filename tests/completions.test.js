@@ -50,7 +50,7 @@ describe('Shell Completions', () => {
 
   test('--model flag has expected values', () => {
     const model = ALL_FLAGS.find(f => f.flag === '--model');
-    expect(model.values).toEqual(['deepseek', 'chatgpt', 'gemini']);
+    expect(model.values).toEqual(['deepseek', 'chatgpt', 'gemini', 'qwen', 'google', 'local', 'ollama', 'colab']);
   });
 
   test('--profile flag has expected values', () => {

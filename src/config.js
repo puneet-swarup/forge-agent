@@ -5,7 +5,60 @@ const fs   = require('fs');
 const os   = require('os');
 const paths = require('./paths');
 
+// ─────────────────────────────────────────────
+//  Minimal zero-dependency .env loader
+//  Loaded once, before DEFAULTS / file overrides are read, so that
+//  OLLAMA_BASE_URL / OLLAMA_API_KEY etc. can live in a gitignored .env
+//  instead of being hard-coded in the adapter. Real environment variables
+//  always win over .env files.
+// ─────────────────────────────────────────────
+function loadDotEnv() {
+  const candidates = [
+    path.join(process.cwd(), '.env'),
+    paths.resolveExisting('.env'),
+  ].filter(Boolean);
 
+  const seen = new Set();
+
+  for (const file of candidates) {
+    if (seen.has(file)) continue;
+    seen.add(file);
+
+    let raw;
+    try {
+      if (!fs.existsSync(file)) continue;
+      raw = fs.readFileSync(file, 'utf8');
+    } catch {
+      continue;
+    }
+
+    for (const line of raw.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+
+      const eq = trimmed.indexOf('=');
+      if (eq === -1) continue;
+
+      const key = trimmed.slice(0, eq).trim();
+      let value = trimmed.slice(eq + 1).trim();
+
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) continue;
+
+      if (
+        (value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'"))
+      ) {
+        value = value.slice(1, -1);
+      }
+
+      if (process.env[key] === undefined) {
+        process.env[key] = value;
+      }
+    }
+  }
+}
+
+loadDotEnv();
 
 // ─────────────────────────────────────────────
 //  Default values
@@ -15,6 +68,16 @@ const DEFAULTS = {
   // AI Model
   MODEL              : 'deepseek',
   DEEPSEEK_URL       : 'https://chat.deepseek.com',
+
+  // Local / Colab (Ollama-compatible) adapter.
+  // Populate via CLI flags (--model-url / --api-key), a .env file, or
+  // forge-agent.config.json — no need to edit the adapter source.
+  OLLAMA_BASE_URL    : process.env.OLLAMA_BASE_URL || '',
+  OLLAMA_API_KEY     : process.env.OLLAMA_API_KEY  || '',
+  OLLAMA_MODEL       : process.env.OLLAMA_MODEL    || 'deepseek-r1-16k:latest',
+  LOCAL_CHAT_PORT    : process.env.LOCAL_CHAT_PORT
+    ? Number(process.env.LOCAL_CHAT_PORT)
+    : 1337,
 
   // Timing (tuned for slow connections)
   RESPONSE_TIMEOUT   : 600_000,   // 10 min total wait
@@ -159,7 +222,11 @@ function validateConfigValue(key, value) {
     SEND_DELAY        : v => typeof v === 'number' && v >= 100 && v <= 5000,
     GENERATION_POLL   : v => typeof v === 'number' && v >= 100 && v <= 5000,
     TOOL_TIMEOUT      : v => typeof v === 'number' && v >= 1000,
-    MODEL             : v => ['deepseek','gemini','qwen','chatgpt','google','local'].includes(String(v).toLowerCase()),
+    MODEL             : v => ['deepseek','gemini','qwen','chatgpt','google','local','ollama','colab'].includes(String(v).toLowerCase()),
+    OLLAMA_BASE_URL   : v => typeof v === 'string',
+    OLLAMA_API_KEY    : v => typeof v === 'string',
+    OLLAMA_MODEL      : v => typeof v === 'string' && v.length > 0,
+    LOCAL_CHAT_PORT   : v => Number.isInteger(v) && v > 0 && v < 65536,
     ACTIVE_PROFILE    : v => ['default','backend','frontend','data-science','devops'].includes(v),
     OUTPUT_FORMAT     : v => ['text','markdown','json','json-raw','minimal','silent'].includes(v),
     HEADLESS          : v => typeof v === 'boolean',
@@ -353,12 +420,53 @@ try {
   const modelMatch = processArgs.find(arg => arg.startsWith('--model='));
   if (modelMatch) {
     const passedModel = modelMatch.split('=')[1].toLowerCase().trim();
-    if (['deepseek', 'gemini', 'qwen', 'chatgpt','google'].includes(passedModel)) {
+    if (['deepseek', 'gemini', 'qwen', 'chatgpt', 'google', 'local', 'ollama', 'colab'].includes(passedModel)) {
       _raw.MODEL = passedModel;
     }
   }
 
-  // 2. Check for manual calibration invocation flags (--calibrate)
+  // 2. Early sync of local/Colab adapter flags (--model-url / --api-key /
+  //    --local-model / --local-port), both "=" and space-separated forms.
+  //    Kept in sync with applyFlagsToConfig() in index.js.
+  const readFlag = (names) => {
+    for (const n of names) {
+      const inline = processArgs.find(a => a.startsWith(n + '='));
+      if (inline) return inline.slice(n.length + 1);
+      const idx = processArgs.indexOf(n);
+      if (idx !== -1 && processArgs[idx + 1] && !processArgs[idx + 1].startsWith('-')) {
+        return processArgs[idx + 1];
+      }
+    }
+    return null;
+  };
+
+  const urlFlag = readFlag(['--model-url', '--ollama-url']);
+  if (urlFlag) {
+    _raw.OLLAMA_BASE_URL = urlFlag.trim();
+    process.env.OLLAMA_BASE_URL = _raw.OLLAMA_BASE_URL;
+  }
+
+  const keyFlag = readFlag(['--api-key', '--ollama-api-key']);
+  if (keyFlag) {
+    _raw.OLLAMA_API_KEY = keyFlag.trim();
+    process.env.OLLAMA_API_KEY = _raw.OLLAMA_API_KEY;
+  }
+
+  const lmFlag = readFlag(['--local-model']);
+  if (lmFlag) {
+    _raw.OLLAMA_MODEL = lmFlag.trim();
+    process.env.OLLAMA_MODEL = _raw.OLLAMA_MODEL;
+  }
+
+  const lpFlag = readFlag(['--local-port']);
+  if (lpFlag) {
+    const port = Number(lpFlag);
+    if (Number.isInteger(port) && port > 0 && port < 65536) {
+      _raw.LOCAL_CHAT_PORT = port;
+    }
+  }
+
+  // 3. Check for manual calibration invocation flags (--calibrate)
   if (processArgs.includes('--calibrate')) {
     _raw.PLANNING_MODE = false; // Safeguard calibration execution runs
   }
