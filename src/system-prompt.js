@@ -1,6 +1,7 @@
 'use strict';
 
 const { TOOLS } = require('./tools');
+const { renderArtifactTable } = require('./lifecycle');
 
 // ─────────────────────────────────────────────
 //  Build the complete agent system prompt
@@ -17,6 +18,7 @@ function buildSystemPrompt(opts = {}) {
   } = opts;
 
   const toolDocs = buildToolDocumentation();
+  const artifactTable = renderArtifactTable();
 
   let prompt = `You are Forge Agent — an autonomous AI coding assistant.
 Your job is to complete coding tasks by using tools to read files,
@@ -125,32 +127,28 @@ RULES FOR TOOL CALLS:
 
 ═══════════════════════════════════════════
 
-FILE PURPOSES - DO NOT CONFUSE THESE
------------------------------------
-Each markdown file has exactly one job. Never write to a file that is not
-yours to write, and never invent a new file when one of these already fits.
+═══════════════════════════════════════════
+MANDATORY ARTIFACTS PROTOCOL (ENFORCED)
+═══════════════════════════════════════════
 
- FORGE_PLAN.md YOU write this. Your own step-by-step plan for the
- CURRENT task. Tick a box only after that step is
- verified. Delete it when the task is signed off.
+Each project has a fixed set of markdown artifacts. Each has exactly ONE
+owner, ONE purpose, and ONE phase in the task lifecycle. This protocol is
+enforced by the runtime (scripts/lifecycle.js) — it is NOT advisory.
 
- FORGE_TODO.md The HUMAN writes this. The durable backlog across
- sessions. You may tick an item done, but do not add
- new product ideas to it.
+${artifactTable}
 
- SESSION_CONTEXT.md The AGENT writes this automatically (task, progress,
- current state). It is ephemeral and regenerated. Do not
- treat it as durable memory and do not hand-edit it.
+NON-NEGOTIABLE RULES
+1. BEFORE your first write/edit/command of a multi-step task you MUST create
+   FORGE_PLAN.md with \`- [ ]\` checkbox steps. One checkbox per concrete step.
+   No plan file = protocol violation; the run will be rejected.
+2. AFTER each step is verified you MUST tick it (\`- [x]\`) in FORGE_PLAN.md
+   before moving on. Do not batch ticks at the end.
+3. You MUST NOT write TASK_COMPLETE while FORGE_PLAN.md has unchecked items.
+4. Delete FORGE_PLAN.md only after the user signs off.
+5. Never write files you do not own (see table above). Never invent a new
+   artifact when one of these already fits.
 
- PENDING_WORK.md The HUMAN maintains this. A narrative backlog of
- deferred decisions. Read it for context; do not rewrite it.
-
- ARCHITECTURE.md The as-built map of the system. Update it only when a
- module boundary, the agent loop, or the tool protocol
- actually changed.
-
-If you are unsure which file to write, you are almost certainly looking
-for FORGE_PLAN.md (your plan) or nothing at all (just report in chat).
+If you are unsure which file to write, you are looking for FORGE_PLAN.md.
 
 AVAILABLE TOOLS
 ═══════════════════════════════════════════

@@ -165,29 +165,46 @@ share files, never the browser.
 
 ---
 
-## FORGE_PLAN Lifecycle Protocol
+## Mandatory Artifacts Protocol (enforced)
 
-For multi-step work Forge keeps a temporary **FORGE_PLAN.md** at the project
-root. It is the durable memory of *how far a run got* — if a run dies midway,
-this file shows exactly what is done and where to resume.
+Every Forge project has a fixed set of markdown artifacts. Each artifact has
+exactly **one owner, one purpose, and one phase** in the task lifecycle. The
+contract lives in `src/lifecycle.js` and is enforced by `scripts/lifecycle.js`;
+the same table is rendered into the agent system prompt so the rules and docs
+cannot drift.
 
-- **Created** at task start with checkbox baby steps (`- [ ]`).
-- **Ticked** (`- [x]`) as each step lands, one commit per step.
-- **Inspected** any time with the plan tooling (no new parser — same
-  `- [ ]`/`- [x]` format as FORGE_TODO.md):
+| Artifact | Owner | Purpose | Phase |
+| --- | --- | --- | --- |
+| `FORGE_PLAN.md` | agent | Step-by-step plan for the current task | Created at task start → ticked per step → deleted at sign-off |
+| `FORGE_TODO.md` | human | Durable backlog across sessions | Ongoing; agent may tick items but never adds ideas |
+| `SESSION_CONTEXT.md` | framework | Ephemeral working memory (task, progress, state) | Ongoing; auto-generated, never hand-edited |
+| `PENDING_WORK.md` | human | Narrative backlog of deferred decisions | Ongoing; read-only for the agent |
+| `ARCHITECTURE.md` | agent | As-built map of the system | Updated only when a module boundary or tool protocol changes |
 
-  ```bash
-  node scripts/plan.js status     # n/m done + progress bar
-  node scripts/plan.js list       # numbered items
-  node scripts/plan.js tick 3     # mark item 3 done
-  node scripts/plan.js next       # first open item
-  ```
+### Lifecycle
 
-- **Deleted** after the run completes *and the user confirms* — a finished
-  plan is not left lying around to be mistaken for live work.
+1. **Task start** — before the first write/edit/command of a multi-step task the
+   agent must create `FORGE_PLAN.md` with `- [ ]` checkbox steps. Enforced by
+   `node scripts/lifecycle.js check-start` (missing plan = violation).
+2. **Per step** — after a step is verified the agent ticks it (`- [x]`) before
+   moving on. Do not batch ticks at the end.
+3. **Sign-off** — `TASK_COMPLETE` is rejected while `FORGE_PLAN.md` still has
+   unchecked steps. Enforced by `node scripts/lifecycle.js check-end`.
+4. **Cleanup** — delete `FORGE_PLAN.md` only after the user confirms; a finished
+   plan is not left lying around to be mistaken for live work.
 
-This is separate from `SESSION_CONTEXT.md` (auto, advisory, gitignored) and
-`FORGE_TODO.md` (human task list consumed by `--auto`).
+### Tooling
+
+```bash
+node scripts/plan.js status            # n/m done + progress bar
+node scripts/plan.js list              # numbered items
+node scripts/plan.js tick 3            # mark item 3 done
+node scripts/plan.js next              # first open item
+node scripts/lifecycle.js list         # print the artifact contract
+node scripts/lifecycle.js check-start  # task-start gate
+node scripts/lifecycle.js check-end    # TASK_COMPLETE gate
+node scripts/verify-prompt.js          # assert the prompt contains the protocol
+```
 ## Docker
 
 ```bash
