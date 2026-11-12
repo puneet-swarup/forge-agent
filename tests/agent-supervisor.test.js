@@ -31,8 +31,8 @@ describe('agent-supervisor', () => {
     expect(fs.existsSync(sup.entryPoint())).toBe(true);
   });
 
-  test('killChild reports an error for an unknown instance', () => {
-    const res = sup.killChild('does-not-exist-xyz');
+  test('killChild reports an error for an unknown instance', async () => {
+    const res = await sup.killChild('does-not-exist-xyz');
     expect(res.ok).toBe(false);
     expect(res.error).toMatch(/No matching/);
   });

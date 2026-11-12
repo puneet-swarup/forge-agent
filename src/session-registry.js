@@ -96,12 +96,22 @@ function writeHeartbeat(info = {}) {
   const sessionDir = info.sessionDir
     || process.env.FORGE_SESSION_DIR
     || sessionDirFor(process.env.FORGE_SESSION_NAME || 'default');
+  const name = process.env.FORGE_SESSION_NAME || info.name || 'default';
+  const parentPid = parseInt(process.env.FORGE_PARENT_PID, 10) || null;
+  const parentId = process.env.FORGE_PARENT_ID || null;
+  const identifier = process.env.FORGE_CHILD_ID || info.identifier || name;
   const record = {
-    id: process.env.FORGE_SESSION_NAME || info.name || 'default',
-    name: process.env.FORGE_SESSION_NAME || info.name || 'default',
-    role: process.env.FORGE_ROLE || null,
+    id: name,
+    name: name,
+    identifier: identifier,
+    role: process.env.FORGE_ROLE || info.role || null,
     pid: process.pid,
     ppid: process.ppid || null,
+    parentId: parentId,
+    parentPid: parentPid,
+    isChild: !!(parentId || parentPid),
+    taskFile: process.env.FORGE_TASK_FILE || info.taskFile || null,
+    window: process.env.FORGE_SPAWN_WINDOW || info.window || null,
     cwd: process.cwd(),
     model: info.model || null,
     profile: info.profile || null,
@@ -111,7 +121,6 @@ function writeHeartbeat(info = {}) {
     sessionDir,
     argv: process.argv.slice(2).join(' ').slice(0, 300),
   };
-  const name = record.id;
   const json = JSON.stringify(record, null, 2);
   // 1) Canonical heartbeat file - always discoverable by `ps`.
   try {
@@ -208,29 +217,98 @@ function listInstances(opts = {}) {
     }
   } catch (_) {}
 
+  const ttl = heartbeatTtlMs();
+  const now = Date.now();
   const out = [];
   for (const entry of seen.values()) {
     const record = entry.record;
     const file = entry.file;
     const alive = isPidAlive(record.pid);
-    if (!alive && prune) {
+    const state = classifyInstance(record, { alive, now, ttl });
+    if (state === 'dead' && prune) {
       try { fs.unlinkSync(file); } catch (__) {}
       if (!includeDead) continue;
     }
-    if (!alive && !includeDead) continue;
+    if (state === 'dead' && !includeDead) continue;
 
-    const ageMs = Date.now() - (record.startedAt || record.lastHeartbeat || Date.now());
+    const ageMs = now - (record.startedAt || record.lastHeartbeat || now);
+    const beatAgeMs = record.lastHeartbeat ? (now - record.lastHeartbeat) : null;
     out.push({
       ...record,
       alive,
+      state,
       uptimeMs: ageMs,
       uptime: _formatDuration(ageMs),
+      beatAgeMs,
+      beatAge: beatAgeMs == null ? '-' : _formatDuration(beatAgeMs),
       lastStatus: _readLastSummaryStatus(record),
     });
   }
 
   out.sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0));
   return out;
+}
+
+// ─────────────────────────────────────────────
+//  Liveness classification (protocol §5 / §6)
+// ─────────────────────────────────────────────
+
+/** Heartbeat interval used by child agents (ms). */
+function heartbeatIntervalMs() {
+  const v = parseInt(process.env.FORGE_HEARTBEAT_INTERVAL_MS, 10);
+  return Number.isFinite(v) && v > 0 ? v : 5000;
+}
+
+/** Heartbeat TTL: older than this ⇒ unresponsive (ms). */
+function heartbeatTtlMs() {
+  const v = parseInt(process.env.FORGE_HEARTBEAT_TTL_MS, 10);
+  return Number.isFinite(v) && v > 0 ? v : 20000;
+}
+
+/**
+ * Classify an instance as 'running' | 'unresponsive' | 'dead'.
+ * @param {Object} record
+ * @param {Object} [ctx]  { alive, now, ttl } — precomputed values (optional)
+ */
+function classifyInstance(record, ctx = {}) {
+  if (!record) return 'dead';
+  const alive = ctx.alive != null ? ctx.alive : isPidAlive(record.pid);
+  if (!alive) return 'dead';
+  const ttl = ctx.ttl != null ? ctx.ttl : heartbeatTtlMs();
+  const now = ctx.now != null ? ctx.now : Date.now();
+  const beat = record.lastHeartbeat || record.startedAt || 0;
+  if (!beat) return 'running';
+  return (now - beat) > ttl ? 'unresponsive' : 'running';
+}
+
+/**
+ * Build a parent→child tree from a flat instance list (for UI consumption).
+ * Returns an array of root nodes; each node is { record, children: [...] }.
+ * A record is a child if its pid === some other record's parentPid, or its
+ * parentId matches another record's id.
+ */
+function buildInstanceTree(instances) {
+  const list = Array.isArray(instances) ? instances : [];
+  const byPid = new Map();
+  const byId = new Map();
+  for (const rec of list) {
+    if (rec.pid) byPid.set(rec.pid, rec);
+    if (rec.id) byId.set(rec.id, rec);
+  }
+  const nodes = new Map();
+  for (const rec of list) nodes.set(rec, { record: rec, children: [] });
+  const roots = [];
+  for (const rec of list) {
+    const node = nodes.get(rec);
+    const parent = (rec.parentPid && byPid.get(rec.parentPid)) ||
+                   (rec.parentId && byId.get(rec.parentId)) || null;
+    if (parent && parent !== rec && nodes.has(parent)) {
+      nodes.get(parent).children.push(node);
+    } else {
+      roots.push(node);
+    }
+  }
+  return roots;
 }
 
 /**
@@ -286,14 +364,14 @@ function formatInstanceTable(instances, color = true) {
   }
 
   const cols = [
-    { key: 'id',       label: 'ID/NAME',   width: 22 },
-    { key: 'role',     label: 'ROLE',      width: 16 },
-    { key: 'pid',      label: 'PID',       width: 8 },
-    { key: 'status',   label: 'STATUS',    width: 9 },
-    { key: 'uptime',   label: 'UPTIME',    width: 10 },
-    { key: 'lastStatus', label: 'LAST',  width: 10 },
-    { key: 'model',    label: 'MODEL',     width: 10 },
-    { key: 'cwd',      label: 'CWD',       width: 40 },
+    { key: 'id',         label: 'ID/NAME',  width: 22 },
+    { key: 'role',       label: 'ROLE',     width: 14 },
+    { key: 'pid',        label: 'PID',      width: 8  },
+    { key: 'parent',     label: 'PARENT',   width: 18 },
+    { key: 'status',     label: 'STATUS',   width: 12 },
+    { key: 'beatAge',    label: 'BEAT',     width: 6  },
+    { key: 'lastStatus', label: 'LAST',     width: 10 },
+    { key: 'cwd',        label: 'CWD',      width: 36 },
   ];
 
   const pad = (s, w) => {
@@ -305,9 +383,17 @@ function formatInstanceTable(instances, color = true) {
   const lines = [c('1;36', header)];
 
   for (const inst of instances) {
-    const statusText = inst.alive ? c('32', 'running') : c('31', 'dead');
+    const state = inst.state || (inst.alive ? 'running' : 'dead');
+    let statusText;
+    if (state === 'running') statusText = c('32', 'running');
+    else if (state === 'unresponsive') statusText = c('33', 'unresponsive');
+    else statusText = c('31', 'dead');
+
+    const parentTxt = inst.parentId || (inst.parentPid ? ('pid ' + inst.parentPid) : '-');
     const row = cols.map(cl => {
       if (cl.key === 'status') return pad(statusText, cl.width + (color ? 9 : 0));
+      if (cl.key === 'parent') return pad(parentTxt, cl.width);
+      if (cl.key === 'beatAge') return pad(inst.beatAge == null ? '-' : inst.beatAge, cl.width);
       if (cl.key === 'lastStatus') {
         const ls = inst.lastStatus;
         const txt = ls ? String(ls) : '-';
@@ -320,7 +406,10 @@ function formatInstanceTable(instances, color = true) {
   }
 
   lines.push('');
-  lines.push(c('90', instances.length + ' instance(s). Use: forge-agent ps --json for machine output.'));
+  const parents = instances.filter(i => !i.parentId && !i.parentPid).length;
+  const children = instances.length - parents;
+  lines.push(c('90', instances.length + ' instance(s) (' + parents + ' root, ' + children +
+    ' child). Use: forge-agent ps --json for machine output.'));
   return lines.join('\n');
 }
 
@@ -338,4 +427,8 @@ module.exports = {
   findInstance,
   isPidAlive,
   formatInstanceTable,
+  classifyInstance,
+  heartbeatIntervalMs,
+  heartbeatTtlMs,
+  buildInstanceTree,
 };

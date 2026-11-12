@@ -264,6 +264,8 @@ function buildToolDocumentation() {
     'Git': ['git_status','git_log','git_diff','git_branches','git_show','git_blame'],
     'Development': ['run_tests','install_package','diff_files','patch_file'],
     'Environment': ['read_env','set_env_var','delete_env_var','list_env_files','check_env_vars'],
+    'Agents (parallel instances)': ['spawn_agent','list_agents','read_agent_task','kill_agent'],
+    'Agents (parallel instances)': ['spawn_agent','list_agents','read_agent_task','kill_agent'],
   };
 
   for (const [category, toolNames] of Object.entries(categories)) {

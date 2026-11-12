@@ -84,3 +84,6 @@ test-err.txt
 # ── Per-run session summaries (written to session dir, e.g. CWD when --session-dir .) ──
 summary.json
 summary.md
+
+# Forge Agent child task (never commit)
+SESSION_TASK.md

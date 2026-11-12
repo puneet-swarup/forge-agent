@@ -37,10 +37,13 @@ describe('supervisor end-to-end', () => {
       cwd,
       extraArgs: [],
       detached: true,
+      noWindow: true,
     });
 
     expect(info.pid).toBeGreaterThan(0);
     expect(info.session).toBe(session);
+    expect(info.identifier).toMatch(/^forge-/);
+    expect(fs.existsSync(info.taskFile)).toBe(true);
 
     // The session dir must exist (registry dir created by spawnAgent).
     expect(fs.existsSync(registry.sessionDirFor(session))).toBe(true);
@@ -51,7 +54,7 @@ describe('supervisor end-to-end', () => {
     // killChild should succeed whether the child is still alive or already gone
     // (SIGTERM to a dead PID throws, so accept either a clean kill or a
     // "no matching instance" result).
-    const kill = sup.killChild(session);
+    const kill = await sup.killChild(session, { graceMs: 3000 });
     expect(typeof kill.ok).toBe('boolean');
 
     try { fs.rmSync(cwd, { recursive: true, force: true }); } catch (_) {}

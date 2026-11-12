@@ -40,6 +40,7 @@ const VERBS = {
   spawn_agent: 'spawning agent',
   kill_agent: 'stopping agent',
   list_agents: 'listing agents',
+  read_agent_task: 'reading agent task',
   show_info: 'answering',
   fetch_url: 'fetching',
   read_url: 'fetching',

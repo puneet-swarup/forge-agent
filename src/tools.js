@@ -1462,24 +1462,34 @@ const TOOLS = {
   },
 
   spawn_agent: {
-    description: 'Spawn a child Forge Agent instance to work on a task in parallel. Each child gets its OWN session (own Chromium profile) so instances never share a browser. Returns the child PID and session name.',
+    description: 'Spawn a child Forge Agent instance in its OWN new terminal window to work on a limited task in parallel. Each child gets its OWN session (own Chromium profile) and its OWN per-instance SESSION_TASK.md (inside its session dir, never shared with siblings). Returns the child PID, unique identifier (forge-<session>-<pid>), and task-file path.',
     parameters: {
       session: { type: 'string', required: true,  description: 'Unique session name for the child (e.g. worker-auth)' },
       task   : { type: 'string', required: true,  description: 'Task string for the child to run' },
       role   : { type: 'string', required: false, description: 'Role label (defaults to the session name)' },
       cwd    : { type: 'string', required: false, description: 'Working directory for the child (default: current)' },
-      context: { type: 'string', required: false, description: 'Extra context handed off to the child (written to its SESSION_CONTEXT.md)' },
+      context: { type: 'string', required: false, description: 'Extra context handed off to the child (written to its SESSION_CONTEXT.md and SESSION_TASK.md)' },
+      subtasks: { type: 'array', required: false, description: 'Explicit subtasks for SESSION_TASK.md (strings)' },
       detached: { type: 'boolean', required: false, description: 'Detach so the child outlives this process' },
+      noWindow: { type: 'boolean', required: false, description: 'Force headless (no new window) — used for tests' },
     },
-    async execute({ session, task, role, cwd, context, detached } = {}) {
+    async execute({ session, task, role, cwd, context, subtasks, detached, noWindow } = {}) {
       try {
         const sup = require('./agent-supervisor');
-        const info = sup.spawnAgent({ session, task, role, cwd: cwd ? resolve(cwd) : config.WORKING_DIR, context, detached: !!detached });
+        const info = sup.spawnAgent({
+          session, task, role,
+          cwd: cwd ? resolve(cwd) : config.WORKING_DIR,
+          context, subtasks: Array.isArray(subtasks) ? subtasks : undefined,
+          detached: !!detached, noWindow: !!noWindow,
+        });
+        const NL = String.fromCharCode(10);
         return 'Spawned child agent'
-          + String.fromCharCode(10) + '  session: ' + info.session
-          + String.fromCharCode(10) + '  pid    : ' + info.pid
-          + String.fromCharCode(10) + '  cwd    : ' + info.cwd
-          + String.fromCharCode(10) + 'Track it with list_agents; stop it with kill_agent.';
+          + NL + '  identifier: ' + info.identifier
+          + NL + '  session   : ' + info.session
+          + NL + '  pid       : ' + info.pid
+          + NL + '  window    : ' + info.mode
+          + NL + '  task file : ' + info.taskFile
+          + NL + 'Track it with list_agents; stop it with kill_agent.';
       } catch (e) {
         return 'Failed to spawn agent: ' + e.message;
       }
@@ -1487,28 +1497,61 @@ const TOOLS = {
   },
 
   list_agents: {
-    description: 'List running Forge Agent instances (parent + children) using the session registry heartbeats.',
+    description: 'List running Forge Agent instances (parents + children) with their parent-child relationship, liveness state, and heartbeat age.',
     parameters: {
       includeDead: { type: 'boolean', required: false, description: 'Include instances whose process is gone' },
+      json:        { type: 'boolean', required: false, description: 'Return machine-readable JSON (for UI)' },
     },
-    async execute({ includeDead } = {}) {
+    async execute({ includeDead, json } = {}) {
       const sup = require('./agent-supervisor');
       const reg = require('./session-registry');
       const instances = sup.listChildren({ includeDead: !!includeDead, prune: !includeDead });
+      if (json) return JSON.stringify(instances, null, 2);
       return reg.formatInstanceTable(instances, false);
     },
   },
 
   kill_agent: {
-    description: 'Stop a child Forge Agent instance by its session name or PID.',
+    description: 'Stop a child Forge Agent instance by its identifier, session name, or PID. Graceful terminate first, escalating to force kill after a grace period.',
     parameters: {
-      name: { type: 'string', required: true, description: 'Session name (or unique prefix) of the child to stop' },
+      name: { type: 'string', required: true, description: 'Identifier, session name (or unique prefix), or PID of the child to stop' },
+      force: { type: 'boolean', required: false, description: 'Allow killing a PID that is not a known Forge instance' },
+    },
+    async execute({ name, force } = {}) {
+      const sup = require('./agent-supervisor');
+      const numeric = /^\d+$/.test(String(name)) ? Number(name) : name;
+      const res = await sup.killChild(numeric, { force: !!force });
+      if (res.ok) {
+        return 'Stopped child agent (pid ' + res.pid + ')' +
+          (res.escalated ? ' [force]' : '') +
+          (res.alreadyDead ? ' [already gone]' : '') + '.';
+      }
+      return 'Could not stop child: ' + (res.error || 'unknown error');
+    },
+  },
+
+  read_agent_task: {
+    description: 'Read a child agent\'s progress from its per-instance SESSION_TASK.md — checked-off subtasks, progress log lines, and whether the assigned task is complete. Use this to monitor what a spawned child has actually done (liveness is separate, via list_agents).',
+    parameters: {
+      name: { type: 'string', required: true, description: 'Identifier, session name, or unique prefix of the child' },
     },
     async execute({ name } = {}) {
       const sup = require('./agent-supervisor');
-      const res = sup.killChild(name);
-      if (res.ok) return 'Stopped child agent (pid ' + res.pid + ').';
-      return 'Could not stop child: ' + (res.error || 'unknown error');
+      const info = sup.readChildTask(name);
+      if (!info) return 'No task file found for child: ' + name + ' (unknown child, or it has no SESSION_TASK.md yet).';
+      const NL = String.fromCharCode(10);
+      const lines = [];
+      lines.push('Task file: ' + info.file);
+      lines.push('Progress : ' + info.done + '/' + info.total + ' subtasks done' + (info.complete ? ' [COMPLETE]' : ''));
+      if (info.subtasks && info.subtasks.length) {
+        lines.push('Subtasks :');
+        for (const s of info.subtasks) lines.push('  ' + (s.done ? '[x] ' : '[ ] ') + s.text);
+      }
+      if (info.progress && info.progress.length) {
+        lines.push('Log      :');
+        for (const p of info.progress.slice(-10)) lines.push('  ' + p);
+      }
+      return lines.join(NL);
     },
   },
 

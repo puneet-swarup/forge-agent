@@ -24,7 +24,7 @@ const READ_ONLY_TOOLS = new Set([
   'list_env_files', 'check_env_vars', 'read_env',
   'list_processes', 'read_process_logs', 'read_clipboard',
   'diff_files', 'run_tests', 'read_url',
-  'show_info',
+  'show_info', 'list_agents', 'read_agent_task',
 ]);
 
 const CATEGORY_LABELS = {

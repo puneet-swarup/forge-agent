@@ -348,9 +348,9 @@ describe('Process manager tool registration', () => {
     expect(Object.keys(TOOLS)).toContain('read_process_logs');
   });
 
-  test('total tool count is now 44', () => {
+  test('total tool count is now 45', () => {
     const { TOOLS } = require('../src/tools');
-    expect(Object.keys(TOOLS).length).toBe(44);
+    expect(Object.keys(TOOLS).length).toBe(45);
   });
 
   test('start_process description mentions wait_for', () => {

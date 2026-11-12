@@ -203,8 +203,14 @@ success, and halts on the first failure. Auto mode applies to FORGE_TODO.md only
 Interactive commands: /context (show|clear|seed) and
 /todo (add <text> | done <n> | clear-done).
 
-Multi-Agent (Supervisor Mode): a supervisor can spawn_agent, list_agents, and
-kill_agent. Each child uses its own --session (own Chromium profile); children
+Multi-Agent (Supervisor Mode): a supervisor can spawn_agent, list_agents,
+read_agent_task, and kill_agent. Each child runs in its OWN terminal window with
+its own --session (own Chromium profile) and its OWN per-instance SESSION_TASK.md
+(inside its session dir, never shared with siblings). The supervisor tracks each
+child by heartbeat (running / unresponsive / dead), reads its subtask progress
+with read_agent_task, and stops it gracefully (then force) with kill_agent; dead
+children's artifacts are cleaned up automatically. See docs/SPAWN_PROTOCOL.md
+(§10 has a full worked example). Children coordinate via files + registry, never the browser.
 share files, never the browser.
 
 ---
@@ -301,7 +307,7 @@ forge-agent [OPTIONS] [TASK]
 Core:      --interactive -i  --dir  --model  --profile  --plan  --think
 Sessions:  --resume  --rerun  --history  --no-memory  --session  --session-dir
 TODO:      --auto  --resume-work
-Supervisor: spawn_agent  list_agents  kill_agent  (tools)
+Supervisor: spawn_agent  list_agents  read_agent_task  kill_agent  (tools)
 Templates: --template  --list-templates  --save-template
 Output:    --format  --output  --no-tui  --compact
 Watch:     --watch  --watch-pattern  --watch-debounce

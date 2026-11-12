@@ -1727,7 +1727,14 @@ async function main() {
   // ── Graceful shutdown handler ──────────────────────────────────────────────
   const shutdown = async (code = 0) => {
     logger.info('\nShutting down...');
+    try { if (heartbeatHandle) heartbeatHandle.stop(); } catch (_) {}
+    try { require('./heartbeat').stop(); } catch (_) {}
     try { require('./session-registry').removeHeartbeat(); } catch (_) {}
+    // Child instance: remove its own per-instance task file on clean exit.
+    try {
+      const tf = process.env.FORGE_TASK_FILE;
+      if (tf) require("./spawn-task").cleanupTaskFile(tf);
+    } catch (_) {}
     try { await agent.shutdown(); } catch {}
     process.exit(code);
   };
@@ -1773,15 +1780,16 @@ async function main() {
     if (config.DEBUG) console.error('Pending-work check failed:', err.message);
   }
 
+  let heartbeatHandle = null;
+
   // -- Launch browser ─────────────────────────────────────────────────────────
   try {
     await agent.init();
     try {
-      require('./session-registry').writeHeartbeat({
-        model: config.MODEL,
-        profile: config.ACTIVE_PROFILE,
+      const heartbeat = require('./heartbeat');
+      heartbeatHandle = heartbeat.start({
         status: 'running',
-        startedAt: Date.now(),
+        extra: { model: config.MODEL, profile: config.ACTIVE_PROFILE },
       });
     } catch (_) {}
   } catch (err) {

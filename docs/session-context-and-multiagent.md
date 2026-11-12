@@ -219,24 +219,31 @@ Short answer: **not safely, no** - and it's usually the wrong design.
 **Recommendation:** keep one Chromium profile per session; share *data*
 (files, `SESSION_CONTEXT.md`, `FORGE_TODO.md`), not the browser.
 
-### 6.3 Proposed supervisor/child model (aligns with ROADMAP v2.0 "Supervisor Mode")
+### 6.3 Supervisor/child model — IMPLEMENTED (see SPAWN_PROTOCOL.md)
+
+The supervisor/child model is now implemented and normative. The full contract
+lives in **[SPAWN_PROTOCOL.md](./SPAWN_PROTOCOL.md)**. Summary:
 
     Supervisor agent (session: boss)
       - spawn child A (session: worker-a) : task "write tests"
+        -> opens in its OWN new terminal window (title = child id)
+        -> writes SESSION_TASK.md with checkable subtasks
+        -> returns PID + identifier forge-<session>-<pid>
       - spawn child B (session: worker-b) : task "refactor auth"
-      - wait / poll child heartbeats (session-registry.listInstances)
-      - read each child's SESSION_CONTEXT.md for progress
-      - kill children when their FORGE_TODO slice is done
+      - monitor via heartbeats (list_agents / ps, running|unresponsive|dead)
+      - read each child's SESSION_TASK.md for progress checkboxes
+      - kill children gracefully (SIGTERM -> SIGKILL) by id / session / PID
 
-Lifecycle primitives needed:
+Lifecycle primitives (implemented):
 
 | Action | Primitive | Notes |
 |---|---|---|
-| create | spawn({ session, task, role }) | shell out / child_process; distinct profile |
-| provide context | write a scoped SESSION_CONTEXT.md or pass FORGE_TODO.md slice | file-based handoff |
-| monitor | listInstances() + read child SESSION_CONTEXT.md | already partially available |
-| kill | stopProcess(name) / kill PID from instance.json | PID is recorded |
-| cleanup | each child deletes its own SESSION_CONTEXT.md at end | |
+| create | `spawn_agent` tool / `agent-supervisor.spawnAgent` | new window; distinct profile; returns PID + id |
+| task/context | `SESSION_TASK.md` (+ `SESSION_CONTEXT.md`) | file-based handoff; subtasks `- [ ]`/`- [x]` |
+| monitor | `list_agents` / `forge-agent ps` (`--json` for UI) | running / unresponsive / dead + parent-child tree |
+| heartbeat | `src/heartbeat.js` (interval/TTL) | stale beat => unresponsive; dead PID => dead |
+| kill | `kill_agent` tool / `killChild` | graceful then force by id/session/PID |
+| cleanup | each child removes its own files at end | |
 
 ### 6.4 Answer to "share Chromium window and session?"
 
@@ -268,3 +275,15 @@ Lifecycle primitives needed:
 5. **`-a` / `--auto`** - TODO-only unattended execution with halt-on-failure.
 6. **Supervisor spawning** - a thin `spawn_agent` tool wrapping child_process +
    `session-registry`, with monitor/kill - matches ROADMAP v2.0.
+
+
+---
+
+## 9. Parallelism in practice
+
+Forge Agent parallelizes in two ways: (A) parallel, dependency-aware tool calls
+inside one agent (`src/parallel-executor.js`, up to `MAX_PARALLEL_TOOL_CALLS`,
+default 4), and (B) multiple child agents running concurrently via
+`spawn_agent`. A full worked example (splitting add-tests / fix-a-bug /
+write-docs across three children, monitored with `list_agents` +
+`read_agent_task`, stopped with `kill_agent`) is in SPAWN_PROTOCOL.md section 10.
