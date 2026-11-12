@@ -88,6 +88,15 @@ function formatMs(ms) {
   return `${m}m${s}s`;
 }
 
+/** Local wall-clock time as zero-padded HH:MM:SS (per-step timestamp). */
+function formatClock(ts) {
+  const d = ts instanceof Date ? ts : new Date(ts || Date.now());
+  if (isNaN(d.getTime())) return '--:--:--';
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  const ss = String(d.getSeconds()).padStart(2, '0');
+  return hh + ':' + mm + ':' + ss;
+}
 function formatElapsed(startTime) {
   return formatMs(Date.now() - startTime);
 }
@@ -169,7 +178,10 @@ class TUI {
 
     // Protocol default: every step line carries a short one-liner describing
     // what the step is doing, so the human always knows the intent.
-    let _stepLabel = `Step ${stepNum}`;
+    // Each step also carries the wall-clock time it fired, so the user can
+    // tell how long ago the last action was taken.
+    const _ts = formatClock(Date.now());
+    let _stepLabel = `[${_ts}] Step ${stepNum}`;
     if (descriptor && String(descriptor).trim()) {
       const desc = String(descriptor).trim();
       const budget = Math.max(20, width - 34);
@@ -586,4 +598,4 @@ class TUI {
 //  Exports
 // ─────────────────────────────────────────────
 
-module.exports = { TUI, color, colors, stripAnsi, truncate, padEnd, formatMs, formatElapsed, getWidth, supportsColor };
+module.exports = { TUI, color, colors, stripAnsi, truncate, padEnd, formatMs, formatElapsed, formatClock, getWidth, supportsColor };

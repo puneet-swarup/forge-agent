@@ -1,6 +1,6 @@
 'use strict';
 
-const { TUI, color, colors, stripAnsi, truncate, padEnd, formatMs, getWidth, supportsColor } = require('../src/tui');
+const { TUI, color, colors, stripAnsi, truncate, padEnd, formatMs, formatClock, getWidth, supportsColor } = require('../src/tui');
 const logger = require('../src/logger');
 
 describe('TUI Utility Functions', () => {
@@ -75,6 +75,17 @@ describe('TUI Utility Functions', () => {
     expect(formatMs(59000)).toBe('59.0s');
   });
 
+  test('formatClock returns zero-padded HH:MM:SS local time', () => {
+    const d = new Date(2026, 0, 2, 3, 4, 5); // 03:04:05 local
+    expect(formatClock(d)).toBe('03:04:05');
+    expect(formatClock(d.getTime())).toBe('03:04:05');
+  });
+
+  test('formatClock tolerates an invalid input with a placeholder', () => {
+    expect(formatClock(new Date('not-a-date'))).toBe('--:--:--');
+    expect(formatClock(NaN)).toMatch(/^\d{2}:\d{2}:\d{2}$/);
+  });
+
   test('formatMs shows m for values >= 60000', () => {
     expect(formatMs(65000)).toBe('1m5s');
     expect(formatMs(125000)).toBe('2m5s');
@@ -126,6 +137,8 @@ describe('TUI Class', () => {
     tui._print = originalPrint;
     expect(output).toContain('Step 5');
     expect(output).not.toContain('/100');
+    // Every step line carries a [HH:MM:SS] wall-clock timestamp.
+    expect(stripAnsi(output)).toMatch(/\[\d{2}:\d{2}:\d{2}\] Step 5/);
   });
 
   test('renderToolCall does not throw', () => {

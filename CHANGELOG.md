@@ -9,6 +9,7 @@ Versioning: [Semantic Versioning](https://semver.org/)
 ## [2.1.0] - 2026-11-12
 
 ### Changed
+- **Step lines now show a wall-clock timestamp** - every displayed step line is prefixed with `[HH:MM:SS]` local time (e.g. `[14:32:07] Step 3 — writing src/app.js`), so the user can see exactly when the last action was taken. Rendered centrally in `TUI.renderStepLine` (new exported `formatClock` helper in `src/tui.js`), so it applies to every mode. Tests in `tests/tui.test.js`.
 - **Refreshed test/suite counts in README** - the badge and Key Stats now reflect the actual current baseline (1774 tests across 90 suites, up from the stale 1758/88). Removed the completed `PENDING_WORK.md` backlog (all items were checked off; durable notes now live in CHANGELOG + git history).
 
 ### Added
