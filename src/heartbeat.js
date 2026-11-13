@@ -21,7 +21,7 @@ let _extra = {};
  * @param {number} [opts.intervalMs]  override interval (default from registry)
  * @param {string} [opts.status]      initial status (default 'running')
  * @param {Object} [opts.extra]       extra fields merged into the record
- * @returns {{ stop:Function, beat:Function }}
+ * @returns {{ stop: Function, beat: Function, setStatus: Function }}
  */
 function start(opts = {}) {
   stop();

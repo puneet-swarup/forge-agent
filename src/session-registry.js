@@ -88,10 +88,23 @@ function instanceFileFor(sessionDir) {
   return path.join(sessionDir, INSTANCE_FILE);
 }
 
-function atomicWrite(file, data) {
+/**
+ * Write `data` to `file` atomically via a temp file + rename.
+ *
+ * @param {string} file
+ * @param {string|Buffer} data
+ * @param {BufferEncoding} [encoding]
+ * @returns {void}
+ */
+function atomicWrite(file, data, encoding) {
+  const enc = encoding || 'utf8';
   const tmp = file + '.tmp.' + process.pid + '.' + Date.now();
   try {
-    fs.writeFileSync(tmp, data, 'utf8');
+    if (typeof data === 'string') {
+      fs.writeFileSync(tmp, data, /** @type {BufferEncoding} */ (enc));
+    } else {
+      fs.writeFileSync(tmp, data);
+    }
     fs.renameSync(tmp, file);
   } catch (err) {
     try { fs.unlinkSync(tmp); } catch (_) {}

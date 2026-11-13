@@ -63,7 +63,8 @@ function safeTitle(title) {
  * @param {string} opts.title     window title (contains the child identifier)
  * @param {Object} opts.env       environment for the child
  * @param {string} [opts.platform] override platform (tests)
- * @returns {{ command:string, args:string[], options:Object, mode:string }}
+ * @param {boolean} [opts.forceHeadless] force the headless path (CI / tests)
+ * @returns {{ command:string, args:string[], options:Object, mode:string, inner?:string }}
  */
 function buildWindowCommand(opts) {
   const platform = opts.platform || process.platform;

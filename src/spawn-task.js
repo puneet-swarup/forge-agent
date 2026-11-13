@@ -86,8 +86,8 @@ function ensureGitignored(projectDir) {
  * Render the markdown content for a child's task file.
  *
  * @param {Object} opts
- * @param {string} opts.identifier  full child id (forge-<session>-<pid>)
- * @param {string} opts.session     child session name
+ * @param {string} [opts.identifier]  full child id (defaults to 'forge-child')
+ * @param {string} [opts.session]     child session name (defaults to identifier)
  * @param {string} [opts.parentId]  parent session name
  * @param {number} [opts.parentPid] parent pid
  * @param {string} [opts.role]      role label
@@ -156,6 +156,19 @@ function renderTaskFile(opts = {}) {
 /**
  * Write the child's task file to disk.
  *
+ * @param {Object} [opts]
+ * @param {string} [opts.taskFile]
+ * @param {string} [opts.sessionDir]
+ * @param {string} [opts.dir]
+ * @param {string} [opts.cwd]
+ * @param {string} [opts.identifier]
+ * @param {string} [opts.session]
+ * @param {string} [opts.role]
+ * @param {number} [opts.parentPid]
+ * @param {string} [opts.parentId]
+ * @param {string} [opts.task]
+ * @param {string[]} [opts.subtasks]
+ * @param {string} [opts.context]
  * @returns {{ ok:boolean, path:string, error?:string }}
  */
 function writeTaskFile(opts = {}) {
