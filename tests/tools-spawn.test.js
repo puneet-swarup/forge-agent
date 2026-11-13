@@ -8,6 +8,17 @@ const path = require('path');
 const TMP_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'forge-toolhome-'));
 const TMP_WORK = fs.mkdtempSync(path.join(os.tmpdir(), 'forge-toolwork-'));
 
+async function waitForHeartbeat(session, TOOLS, sleep, timeoutMs = 8000) {
+  const start = Date.now();
+  let last = '';
+  while (Date.now() - start < timeoutMs) {
+    last = await TOOLS.list_agents.execute({});
+    if (last.includes(session)) return last;
+    await sleep(150);
+  }
+  return last; // return whatever we last saw; the assertion will fail with a real reason
+}
+
 process.env.FORGE_HOME = TMP_HOME;
 process.env.FORGE_SPAWN_NO_WINDOW = '1';
 process.env._DSA_TEST_DIR = TMP_WORK;
@@ -58,19 +69,27 @@ describe('list_agents tool', () => {
   test('renders a table including PARENT and BEAT columns', async () => {
     const session = 'tool-list-' + Date.now().toString(36);
     sup.spawnAgent({ session, task: '--help', noWindow: true });
-    await sleep(500);
-    const table = await TOOLS.list_agents.execute({});
+    const table = await waitForHeartbeat(session, TOOLS, sleep);
     expect(table).toMatch(/PARENT/);
     expect(table).toMatch(/BEAT/);
+    expect(table).toContain(session);
     await sup.killChild(session, { graceMs: 3000 });
   }, 30000);
 
   test('json:true emits machine-readable records with parent fields', async () => {
     const session = 'tool-json-' + Date.now().toString(36);
     sup.spawnAgent({ session, task: '--help', noWindow: true });
-    await sleep(500);
-    const raw = await TOOLS.list_agents.execute({ json: true });
-    const arr = JSON.parse(raw);
+    // Poll until the child's heartbeat is visible (same reason as above).
+    {
+      const start = Date.now();
+      while (Date.now() - start < 8000) {
+        const probe = JSON.parse(await TOOLS.list_agents.execute({ json: true }));
+        if (Array.isArray(probe) && probe.some(r => r.id === session)) break;
+        await sleep(150);
+      }
+    }
+    const out = await TOOLS.list_agents.execute({ json: true });
+    const arr = JSON.parse(out);
     expect(Array.isArray(arr)).toBe(true);
     const rec = arr.find(r => r.id === session);
     expect(rec).toBeTruthy();
