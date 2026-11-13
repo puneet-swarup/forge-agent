@@ -126,38 +126,65 @@ class DeepSeekAgent {
   async shutdown() {
     if (this._closed) return;
     this._closed = true;
-    // Phase 1: session-end cleanup - remove the ephemeral SESSION_CONTEXT.md.
-    this._sessionCtxDestroy();
+    if (typeof this._sessionCtxUpdate  === 'function') this._sessionCtxUpdate();
+    if (typeof this._sessionCtxVerify  === 'function') this._sessionCtxVerify();
+    if (typeof this._sessionCtxDestroy === 'function') this._sessionCtxDestroy();
     await this.browser.close();
   }
 
   // -- Phase 1: session context helpers --
 
   /** Create (or resume) the durable SESSION_CONTEXT.md for this task. */
-  _sessionCtxStart(task) {
+  _sessionCtxUpdate() {
     if (!this.sessionContext) return;
     try {
-      this.sessionContext.data.task = (task || '').replace(/\s+/g, ' ').trim();
-      this.sessionContext.data.goal = this.sessionContext.data.task;
-      const res = this.sessionContext.create();
-      if (res && res.ok) {
-        logger.dim(`  Session context: ${this.sessionContext.file}`);
-      }
+      this.sessionContext.update();
     } catch (err) {
-      logger.warn(`Session context init failed: ${err.message}`);
+      logger.warn(`Session context update FAILED: ${err.message}`);
     }
   }
 
   /** Refresh the on-disk context after tool batches / git operations. */
   _sessionCtxUpdate() {
     if (!this.sessionContext) return;
-    try { this.sessionContext.update(); } catch (_) { /* best-effort */ }
+    try {
+      this.sessionContext.update();
+    } catch (err) {
+      logger.warn(`Session context update FAILED: ${err.message}`);
+    }
   }
 
   /** Delete the ephemeral context file at session end. */
   _sessionCtxDestroy() {
     if (!this.sessionContext) return;
-    try { this.sessionContext.destroy(); } catch (_) { /* best-effort */ }
+    try {
+      this.sessionContext.destroy();
+    } catch (err) {
+      logger.warn(`Session context destroy FAILED: ${err.message}`);
+    }
+  }
+  
+  /**
+   * Tripwire: verify that SESSION_CONTEXT.md exists on disk. Called at the end
+   * of run() and in shutdown(). A missing file is a WARN, not a throw — the task
+   * result is still returned — but the operator now sees the failure instead of
+   * discovering it weeks later.
+   */
+  _sessionCtxVerify() {
+    if (!this.sessionContext) {
+      logger.warn('Session context: disabled (no instance) — SESSION_CONTEXT.md will not exist');
+      return false;
+    }
+    try {
+      if (!this.sessionContext.exists()) {
+        logger.warn(`Session context MISSING at ${this.sessionContext.file} — state was not written`);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      logger.warn(`Session context verify FAILED: ${err.message}`);
+      return false;
+    }
   }
 
   /**
@@ -177,7 +204,12 @@ class DeepSeekAgent {
     const progress  = new ProgressTracker(task);
 
     // Phase 1: open the durable session context for this task.
-    this._sessionCtxStart(task);
+    // Defensive: callers that construct a partial agent (parallel executor,
+    // spawn stubs, tests) may not have this helper. State tracking is
+    // best-effort and must never abort a task.
+    if (typeof this._sessionCtxStart === 'function') {
+      this._sessionCtxStart(task);
+    }
 
     // Track consecutive plain-text / unrecognised responses
     // so we can send a correction rather than freezing.
@@ -535,7 +567,17 @@ class DeepSeekAgent {
           const feedbackMsg = this.conversation.addToolResult(parsed.name, result, isError);
 
           // Phase 1: refresh durable session context after each tool result.
-          this._sessionCtxUpdate();
+          if (typeof this._sessionCtxUpdate === 'function') {
+            this._sessionCtxUpdate();
+            if (this.sessionContext && !this.sessionContext.exists()) {
+              logger.warn('SESSION_CONTEXT.md disappeared after a tool call — re-creating');
+              if (typeof this._sessionCtxStart === 'function') this._sessionCtxStart(task);
+            }
+          }
+          if (!this.sessionContext || !this.sessionContext.exists()) {
+            logger.warn('SESSION_CONTEXT.md disappeared after a tool call — re-creating');
+            this._sessionCtxStart(task);
+          }
 
           const estimatedTokens = this.conversation.messages
             .reduce((sum, m) => sum + Math.ceil(
@@ -731,8 +773,11 @@ class DeepSeekAgent {
       return '';
     } catch (err) {
       this._running = false;
+      this._sessionCtxVerify();   // tripwire: warn if state file missing on failure
       this._recordHistory(task, 'failed', startTime, progress, err.message, templateName);
       throw err;
+    } finally {
+	  if (typeof this._sessionCtxVerify === 'function') this._sessionCtxVerify();	   // tripwire: warn if state file missing on ANY exit
     }
   }
 

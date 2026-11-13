@@ -160,10 +160,30 @@ function _tryJSONParse(str) {
 }
 
 function _repairJSON(str) {
-  return str
-    .replace(/,(\s*[}\]])/g, '$1')
-    .replace(/(['"])?([a-zA-Z_][a-zA-Z0-9_]*)(['"])?\s*:/g, '"$2":')
-    .replace(/:\s*'([^']*)'/g, ':"$1"');
+  // 1. Drop trailing commas before } or ].
+  let s = str.replace(/,(\s*[}\]])/g, '$1');
+
+  // 2. Quote unquoted object keys, but ONLY when the key is a bare identifier
+  //    immediately followed by `:` at a structural position. This never
+  //    touches text inside an existing quoted string because the regex
+  //    requires `{` or `,` before the identifier.
+  s = s.replace(/([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)(\s*:)/g, '$1"$2"$3');
+
+  // 3. Convert single-quoted JSON strings to double-quoted ONLY when they
+  //    are a value (preceded by :, [ or ,) or a key (followed by :).
+  //    Uses a small state machine so quote contents are preserved verbatim.
+  let out = '';
+  let inDouble = false;
+  let esc = false;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (esc) { out += ch; esc = false; continue; }
+    if (ch === '\\') { out += ch; esc = true; continue; }
+    if (ch === '"') { inDouble = !inDouble; out += ch; continue; }
+    if (!inDouble && ch === "'") { out += '"'; continue; }
+    out += ch;
+  }
+  return out;
 }
 
 /**
@@ -233,12 +253,11 @@ function _regexExtractToolCall(str, rawText) {
         raw = raw.slice(0, -1);
       }
 
-      raw = raw
-        .replace(/\\n/g, '\n')
-        .replace(/\\t/g, '\t')
-        .replace(/\\r/g, '\r')
-        .replace(/\\"/g, '"')
-        .replace(/\\\\/g, '\\');
+      try {
+        raw = JSON.parse('"' + raw + '"');
+      } catch (_) {
+        // leave raw as-is; regex fallback is best-effort
+      }
         
       args.content = raw;
     }

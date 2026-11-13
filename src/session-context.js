@@ -160,26 +160,26 @@ class SessionContext {
    * memory first (so a resumed session keeps its history), then rewritten.
    */
   create() {
-    try {
-      if (this.autoGitignore) {
+    if (this.autoGitignore) {
+      // A .gitignore failure must never block context creation.
+      try {
         this.gitignore = ensureGitignored(this.projectDir);
+      } catch (err) {
+        this.gitignore = { status: 'error', error: err.message };
       }
-      if (this.exists()) {
-        const prior = this.read();
-        if (prior && prior.data) {
-          // Preserve prior decisions/progress/open questions, keep new task.
-          this.data.decisions = prior.data.decisions || [];
-          this.data.progress  = prior.data.progress  || [];
-          this.data.open      = prior.data.open      || [];
-          this.data.started   = prior.data.started   || this.data.started;
-        }
-      }
-      this.refreshGit();
-      this._write();
-      return { ok: true, file: this.file, resumed: this._resumed };
-    } catch (e) {
-      return { ok: false, error: e.message, file: this.file };
     }
+    if (this.exists()) {
+      const prior = this.read();
+      if (prior && prior.ok && prior.data) {
+        this.data.decisions = prior.data.decisions || [];
+        this.data.progress  = prior.data.progress  || [];
+        this.data.open      = prior.data.open      || [];
+        this.data.started   = prior.data.started   || this.data.started;
+      }
+    }
+    this.refreshGit();
+    this._write();                 // throws on failure — caller must handle
+    return { ok: true, file: this.file, resumed: this._resumed };
   }
 
   /** Refresh git state from the repo. */
@@ -218,13 +218,9 @@ class SessionContext {
 
   /** Persist current state to disk. */
   update() {
-    try {
-      this.refreshGit();
-      this._write();
-      return { ok: true, file: this.file };
-    } catch (e) {
-      return { ok: false, error: e.message, file: this.file };
-    }
+    this.refreshGit();
+    this._write();                 // throws on failure — caller must handle
+    return { ok: true, file: this.file };
   }
 
   /** Read the file from disk back into memory. */
@@ -258,7 +254,14 @@ class SessionContext {
   // ── internals ────────────────────────────────────────────────────────────
 
   _write() {
-    fs.writeFileSync(this.file, this._render(), 'utf8');
+    const tmp = this.file + '.tmp.' + process.pid + '.' + Date.now();
+    try {
+      fs.writeFileSync(tmp, this._render(), 'utf8');
+      fs.renameSync(tmp, this.file);      // atomic on same volume (incl. Windows)
+    } catch (err) {
+      try { fs.unlinkSync(tmp); } catch (_) {}
+      throw err;
+    }
   }
 
   _render() {

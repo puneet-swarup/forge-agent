@@ -158,7 +158,14 @@ class ProjectContextManager {
   save() {
     try {
       const file = projectFilePath(this.projectPath);
-      fs.writeFileSync(file, JSON.stringify(this._data, null, 2) + '\n', 'utf8');
+	  const tmp = file + '.tmp.' + process.pid + '.' + Date.now();
+      try {
+        fs.writeFileSync(tmp, JSON.stringify(this._data, null, 2) + '\n', 'utf8');
+        fs.renameSync(tmp, file);
+      } catch (err) {
+        try { fs.unlinkSync(tmp); } catch (_) {}
+        throw err;
+      }
       return true;
     } catch {
       return false;

@@ -82,11 +82,22 @@ describe('Base64 transport - write_file / append_to_file / replace_in_file / wri
     expect(fs.readFileSync(b, 'utf8')).toBe('plain {b}');
   });
 
-  test('write_file treats invalid base64 as best-effort (no crash)', async () => {
+  // Changed contract: invalid base64 must fail loudly, not write garbage.
+  // This is the fix for docs/AGENT_TRANSPORT_DIAGNOSTIC.md Defect 3.
+  test('write_file rejects invalid base64 loudly and writes nothing', async () => {
     const target = path.join(tmpDir, 'invalid.txt');
     await expect(
       TOOLS.write_file.execute({ path: target, content: '!!!not base64!!!', is_base64: true })
-    ).resolves.toBeDefined();
-    expect(fs.existsSync(target)).toBe(true);
+    ).rejects.toThrow(/not valid base64/);
+    expect(fs.existsSync(target)).toBe(false);
+  });
+
+  // Sanity: whitespace-padded base64 (MIME style) must still succeed.
+  test('write_file tolerates MIME-wrapped base64', async () => {
+    const target = path.join(tmpDir, 'mime.txt');
+    const raw = 'hello\nworld';
+    const wrapped = Buffer.from(raw, 'utf8').toString('base64').replace(/(.{4})/g, '$1\n');
+    await TOOLS.write_file.execute({ path: target, content: wrapped, is_base64: true });
+    expect(fs.readFileSync(target, 'utf8')).toBe(raw);
   });
 });

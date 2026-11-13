@@ -88,6 +88,17 @@ function instanceFileFor(sessionDir) {
   return path.join(sessionDir, INSTANCE_FILE);
 }
 
+function atomicWrite(file, data) {
+  const tmp = file + '.tmp.' + process.pid + '.' + Date.now();
+  try {
+    fs.writeFileSync(tmp, data, 'utf8');
+    fs.renameSync(tmp, file);
+  } catch (err) {
+    try { fs.unlinkSync(tmp); } catch (_) {}
+    throw err;
+  }
+}
+
 /**
  * Write (or refresh) this process's heartbeat into its session dir.
  * Safe to call repeatedly; failures never throw into the agent.
@@ -125,12 +136,12 @@ function writeHeartbeat(info = {}) {
   // 1) Canonical heartbeat file - always discoverable by `ps`.
   try {
     fs.mkdirSync(instancesRoot(), { recursive: true });
-    fs.writeFileSync(heartbeatFileFor(name), json, 'utf8');
+    atomicWrite(heartbeatFileFor(name), json, 'utf8');
   } catch (_) { /* best-effort */ }
   // 2) Legacy session-dir copy - keeps older tooling working.
   try {
     fs.mkdirSync(sessionDir, { recursive: true });
-    fs.writeFileSync(instanceFileFor(sessionDir), json, 'utf8');
+    atomicWrite(instanceFileFor(sessionDir), json, 'utf8');
   } catch (_) { /* best-effort */ }
   return record;
 }
@@ -144,9 +155,9 @@ function updateHeartbeat(status) {
     existing.status = status || existing.status;
     existing.lastHeartbeat = Date.now();
     const json = JSON.stringify(existing, null, 2);
-    fs.writeFileSync(file, json, 'utf8');
+    atomicWrite(file, json, 'utf8');
     // Keep the legacy session-dir copy in sync too.
-    try { fs.writeFileSync(instanceFileFor(existing.sessionDir), json, 'utf8'); } catch (_) {}
+    try { atomicWrite(instanceFileFor(existing.sessionDir), json, 'utf8'); } catch (_) {}
     return existing;
   } catch (_) {
     return null;

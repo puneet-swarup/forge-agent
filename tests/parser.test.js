@@ -6,6 +6,16 @@ const { parseResponse, hasToolCall, containsTaskComplete, extractLeadingText } =
 describe('Parser Module', () => {
 
   describe('parseResponse', () => {
+	  
+	test('does not strip punctuation from write_file content', () => {
+      const content = '[![b](i.svg)](u)\n```js\nconst x={a:1};\n```\n`${y}` $var';
+      const input = '<tool_call>' +
+        JSON.stringify({ tool: 'write_file', args: { path: 'x', content } }) +
+        '</tool_call>';
+      const r = parseResponse(input);
+      expect(r.type).toBe('tool_call');
+      expect(r.args.content).toBe(content);
+    });
     
     test('Case 1: Pure tool call (no surrounding text)', () => {
       const input = `<tool_call>

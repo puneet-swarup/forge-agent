@@ -549,6 +549,57 @@ describe('search_in_files', () => {
 //  write_files (batch)
 // ─────────────────────────────────────────────────────────
 
+describe('write_file — transport hardening (Diagnostic Defect 2 & 3)', () => {
+  test('preserves punctuation: badges, fences, dollar, braces', async () => {
+    const content = [
+      '[![badge](img.svg)](https://example.com)',
+      '```js',
+      'const x = { a: 1 };',
+      '```',
+      'const t = `${x}`; $var $ {y}',
+      '  four leading spaces',
+    ].join('\n');
+    await executeTool('write_file', { path: tmp('punct.md'), content });
+    expect(fs.readFileSync(tmp('punct.md'), 'utf8')).toBe(content);
+  });
+
+  test('base64 round-trips a 10 KB random payload byte-exactly', async () => {
+    const raw = require('crypto').randomBytes(10 * 1024);
+    const b64 = raw.toString('base64');
+    await executeTool('write_file', { path: tmp('rand.bin'), content: b64, is_base64: true });
+    const read = fs.readFileSync(tmp('rand.bin'));
+    expect(read.equals(raw)).toBe(true);
+  });
+
+  test('base64 tolerates MIME newlines', async () => {
+    const raw = Buffer.from('hello\nworld');
+    const b64 = raw.toString('base64').replace(/(.{4})/g, '$1\n');
+    await executeTool('write_file', { path: tmp('mime.txt'), content: b64, is_base64: true });
+    expect(fs.readFileSync(tmp('mime.txt'), 'utf8')).toBe('hello\nworld');
+  });
+
+  test('base64 tolerates missing padding', async () => {
+    const raw = Buffer.from('ab');
+    const b64 = raw.toString('base64').replace(/=+$/, '');
+    await executeTool('write_file', { path: tmp('nopad.bin'), content: b64, is_base64: true });
+    expect(fs.readFileSync(tmp('nopad.bin')).equals(raw)).toBe(true);
+  });
+
+  test('invalid base64 fails loudly and does NOT create the file', async () => {
+    await expect(
+      executeTool('write_file', { path: tmp('bad.bin'), content: '!!!!', is_base64: true })
+    ).rejects.toThrow(/not valid base64/);
+    expect(fs.existsSync(tmp('bad.bin'))).toBe(false);
+  });
+
+  test('append_to_file with base64 appends decoded bytes', async () => {
+    await writeTemp('app.bin', 'A');
+    const b64 = Buffer.from('BC').toString('base64');
+    await executeTool('append_to_file', { path: tmp('app.bin'), content: b64, is_base64: true });
+    expect(fs.readFileSync(tmp('app.bin'), 'utf8')).toBe('ABC');
+  });
+});
+
 describe('write_files', () => {
   test('writes multiple files at once', async () => {
     const result = await executeTool('write_files', {

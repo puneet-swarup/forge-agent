@@ -26,6 +26,7 @@ const { smartTruncate } = require('./truncator');
 const security = require('./security');
 const os = require('os');
 const readline = require('readline');
+const { decodeTransportArg } = require('./transport');
 
 // ─────────────────────────────────────────────
 //  Helpers
@@ -389,16 +390,15 @@ const TOOLS = {
     },
     async execute({ path: filePath, content, is_base64 = false }) {
       const abs = assertSafePath(filePath, 'write');
+      const decoded = decodeTransportArg(content, is_base64, 'content');
       try {
-        const dataBuffer = is_base64 ? Buffer.from(content, 'base64') : Buffer.from(content, 'utf8');
         fs.mkdirSync(path.dirname(abs), { recursive: true });
-        fs.writeFileSync(abs, dataBuffer);
+        fs.writeFileSync(abs, decoded.buffer);
       } catch (err) {
         throw classifyFsError(err, filePath, 'write');
       }
-      const originalText = is_base64 ? Buffer.from(content, 'base64').toString('utf8') : content;
-      const lineCount = originalText.split('\n').length;
-      return `✓ Wrote ${formatBytes(Buffer.byteLength(originalText, 'utf8'))} (${lineCount} lines) → ${filePath}`;
+      const lineCount = decoded.text.split('\n').length;
+      return `✓ Wrote ${formatBytes(decoded.buffer.length)} (${lineCount} lines) → ${filePath}`;
     },
   },
 
@@ -412,13 +412,14 @@ const TOOLS = {
     },
     async execute({ path: filePath, content, is_base64 = false }) {
       const abs = assertSafePath(filePath, 'append');
-      const dataBuffer = is_base64 ? Buffer.from(content, 'base64') : Buffer.from(content, 'utf8');
-
-      fs.mkdirSync(path.dirname(abs), { recursive: true });
-      fs.appendFileSync(abs, dataBuffer);
-
-      const originalText = is_base64 ? Buffer.from(content, 'base64').toString('utf8') : content;
-      return `✓ Appended ${formatBytes(Buffer.byteLength(originalText, 'utf8'))} to ${filePath}`;
+      const decoded = decodeTransportArg(content, is_base64, 'content');
+      try {
+        fs.mkdirSync(path.dirname(abs), { recursive: true });
+        fs.appendFileSync(abs, decoded.buffer);
+      } catch (err) {
+        throw classifyFsError(err, filePath, 'append');
+      }
+      return `✓ Appended ${formatBytes(decoded.buffer.length)} to ${filePath}`;
     },
   },
 
@@ -438,8 +439,8 @@ const TOOLS = {
       let content = fs.readFileSync(abs, 'utf8');
       const original = content;
 
-      const searchVal = is_base64 ? Buffer.from(find, 'base64').toString('utf8') : find;
-      const targetVal = is_base64 ? Buffer.from(replace, 'base64').toString('utf8') : replace;
+      const searchVal = decodeTransportArg(find, is_base64, 'find').text;
+      const targetVal = decodeTransportArg(replace, is_base64, 'replace').text;
 
       if (use_regex) {
         const flags = all_occurrences ? 'g' : '';
@@ -452,7 +453,7 @@ const TOOLS = {
       }
 
       if (content === original) {
-        return `⚠ No matches found for "${searchVal}" in ${filePath}`;
+        return `⚠ No matches found for ${JSON.stringify(searchVal)} in ${filePath}`;
       }
 
       const count = (original.match(
@@ -895,13 +896,13 @@ const TOOLS = {
         }
         const filePath = item.path;
         const content = item.content || '';
-        const isBase64 = !!item.is_base64;
         const abs = assertSafePath(filePath, 'write');
 
-        try {
-          const dataBuffer = isBase64 ? Buffer.from(content, 'base64') : Buffer.from(content, 'utf8');
+		try {
+          const isBase64 = !!item.is_base64;
+          const decoded = decodeTransportArg(content, isBase64, `files[].content (${filePath})`);
           await fsp.mkdir(path.dirname(abs), { recursive: true });
-          await fsp.writeFile(abs, dataBuffer);
+          await fsp.writeFile(abs, decoded.buffer);
         } catch (err) {
           throw classifyFsError(err, filePath, 'write');
         }
