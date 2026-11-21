@@ -24,6 +24,7 @@ const logger        = require('./logger');
 const ToolCache = require('./tool-cache');
 const { smartTruncate } = require('./truncator');
 const security = require('./security');
+const { Workspace } = require('./workspace');
 const os = require('os');
 const readline = require('readline');
 const { decodeTransportArg } = require('./transport');
@@ -54,6 +55,30 @@ function truncate(str, max = config.MAX_OUTPUT_LENGTH, type = 'text') {
 function resolve(filePath) {
   if (path.isAbsolute(filePath)) return filePath;
   return path.resolve(config.WORKING_DIR, filePath);
+}
+
+// ─────────────────────────────────────────────
+//  Workspace (atomic writes, snapshots, read-before-write, diffs)
+// ─────────────────────────────────────────────
+// One instance per working directory. Rebuilt if WORKING_DIR changes, which
+// tests and the supervisor's child processes both do.
+let _workspace = null;
+
+function getWorkspace() {
+  const root = path.resolve(config.WORKING_DIR || process.cwd());
+  if (_workspace && _workspace.root === root) return _workspace;
+
+  _workspace = new Workspace({
+    root,
+    // Deterministic per project (no pid) so `forge-agent --rollback` can find
+    // the pre-image from a later process.
+    snapshotDir: path.join(
+      require('./paths').forgePath('snapshots'),
+      path.basename(root)
+    ),
+    requireReadBeforeWrite: config.REQUIRE_READ_BEFORE_WRITE !== false,
+  });
+  return _workspace;
 }
 
 // ─────────────────────────────────────────────
@@ -239,6 +264,9 @@ const TOOLS = {
         throw Errors.pathIsDirectory(filePath);
       }
 
+      // The read-before-write guard in workspace.write() keys off this.
+      getWorkspace().markSeen(abs);
+
       const firstLine = start_line == null ? 1 : Math.floor(Number(start_line));
 
       if (!Number.isSafeInteger(firstLine) || firstLine < 1) {
@@ -391,14 +419,19 @@ const TOOLS = {
     async execute({ path: filePath, content, is_base64 = false }) {
       const abs = assertSafePath(filePath, 'write');
       const decoded = decodeTransportArg(content, is_base64, 'content');
+
+      let res;
       try {
-        fs.mkdirSync(path.dirname(abs), { recursive: true });
-        fs.writeFileSync(abs, decoded.buffer);
+        res = getWorkspace().write(abs, decoded.buffer);
       } catch (err) {
+        if (err && err.code === 'read_before_write') throw err;
         throw classifyFsError(err, filePath, 'write');
       }
-      const lineCount = decoded.text.split('\n').length;
-      return `✓ Wrote ${formatBytes(decoded.buffer.length)} (${lineCount} lines) → ${filePath}`;
+
+      const verb = res.created ? 'Wrote' : 'Updated';
+      let out = `✓ ${verb} ${formatBytes(res.bytes)} (${res.lines} lines) → ${filePath}`;
+      if (res.diff) out += '\n\n' + res.diff;
+      return out;
     },
   },
 
@@ -413,13 +446,14 @@ const TOOLS = {
     async execute({ path: filePath, content, is_base64 = false }) {
       const abs = assertSafePath(filePath, 'append');
       const decoded = decodeTransportArg(content, is_base64, 'content');
+
+      let res;
       try {
-        fs.mkdirSync(path.dirname(abs), { recursive: true });
-        fs.appendFileSync(abs, decoded.buffer);
+        res = getWorkspace().append(abs, decoded.buffer);
       } catch (err) {
         throw classifyFsError(err, filePath, 'append');
       }
-      return `✓ Appended ${formatBytes(decoded.buffer.length)} to ${filePath}`;
+      return `✓ Appended ${formatBytes(res.bytes)} to ${filePath}`;
     },
   },
 
@@ -438,6 +472,11 @@ const TOOLS = {
       const abs = assertSafePath(filePath, 'write');
       let content = fs.readFileSync(abs, 'utf8');
       const original = content;
+
+      // It has just been read; the workspace snapshots the pre-image and
+      // writes atomically so a crash cannot truncate the file.
+      const ws = getWorkspace();
+      ws.markSeen(abs);
 
       const searchVal = decodeTransportArg(find, is_base64, 'find').text;
       const targetVal = decodeTransportArg(replace, is_base64, 'replace').text;
@@ -460,7 +499,7 @@ const TOOLS = {
         new RegExp(use_regex ? searchVal : searchVal.replace(/[.*+?^${}()|[\\\]]/g, '\\$&'), 'g')
       ) || []).length;
 
-      fs.writeFileSync(abs, content, 'utf8');
+      ws.write(abs, content, { allowUnread: true });
       return `✓ Replaced ${count} occurrence(s) inside ${filePath}`;
     },
   },
@@ -474,12 +513,15 @@ const TOOLS = {
     async execute({ path: filePath }) {
       const abs = assertSafePath(filePath, 'delete');
       if (!fs.existsSync(abs)) throw Errors.fileNotFound(filePath);
+      let snap = null;
       try {
-        fs.unlinkSync(abs);
+        snap = getWorkspace().remove(abs).snapshot;
       } catch (err) {
         throw classifyFsError(err, filePath, 'delete');
       }
-      return `✓ Deleted ${filePath}`;
+      return snap
+        ? `✓ Deleted ${filePath} (snapshot kept — restore with: forge-agent --rollback ${filePath})`
+        : `✓ Deleted ${filePath}`;
     },
   },
 
@@ -901,9 +943,10 @@ const TOOLS = {
 		try {
           const isBase64 = !!item.is_base64;
           const decoded = decodeTransportArg(content, isBase64, `files[].content (${filePath})`);
-          await fsp.mkdir(path.dirname(abs), { recursive: true });
-          await fsp.writeFile(abs, decoded.buffer);
+          // Same guarantees as write_file: atomic, snapshotted, guarded.
+          getWorkspace().write(abs, decoded.buffer);
         } catch (err) {
+          if (err && err.code === 'read_before_write') throw err;
           throw classifyFsError(err, filePath, 'write');
         }
         return filePath;

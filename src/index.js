@@ -211,6 +211,8 @@ function parseArgs(argv) {
       case '--no-timeout':  opts.noTimeout   = true;    break;
       case '--no-prompt-pause': opts.noPromptPause = true; break;
       case '--clear-memory': opts.clearMemory = true;   break;
+      case '--rollback':    opts.rollback    = args[++i]; break;
+      case '--snapshots':   opts.snapshots   = true;    break;
       case '--list-plugins': opts.listPlugins = true;   break;
       case '--list-profiles': opts.listProfiles = true; break;
       case '--history':     opts.history     = 20;     break;
@@ -983,6 +985,54 @@ async function main() {
       logger.error('Memory clear error: ' + e.message);
     }
     process.exit(0);
+  }
+
+  // ── Workspace snapshots ────────────────────────────────────────────────────
+  if (args.rollback) {
+    try {
+      const { Workspace } = require('./workspace');
+      const path = require('path');
+      const ws = new Workspace({
+        root: config.WORKING_DIR,
+        snapshotDir: path.join(
+          require('./paths').forgePath('snapshots'),
+          path.basename(path.resolve(config.WORKING_DIR))
+        ),
+      });
+      const res = ws.rollback(path.resolve(config.WORKING_DIR, args.rollback));
+      logger.success(`Restored ${args.rollback} from snapshot`);
+      logger.dim(`  ${res.from}`);
+    } catch (e) {
+      logger.error('Rollback failed: ' + e.message);
+      process.exitCode = 1;
+    }
+    process.exit();
+  }
+
+  if (args.snapshots) {
+    const fsx = require('fs');
+    const pathx = require('path');
+    const dir = pathx.join(
+      require('./paths').forgePath('snapshots'),
+      pathx.basename(pathx.resolve(config.WORKING_DIR))
+    );
+    if (!fsx.existsSync(dir)) {
+      logger.info(`No snapshots for ${config.WORKING_DIR}`);
+      logger.dim(`  Snapshots are taken on the first write to a file in a session.`);
+    } else {
+      const walk = (d, base) => {
+        for (const e of fsx.readdirSync(d, { withFileTypes: true })) {
+          const full = pathx.join(d, e.name);
+          if (e.isDirectory()) { walk(full, base); continue; }
+          const rel = pathx.relative(base, full).replace(/\.bak$/, '');
+          logger.info(`  ${rel}`);
+        }
+      };
+      logger.info(`Snapshots for ${config.WORKING_DIR}:`);
+      walk(dir, dir);
+      logger.dim(`  Restore one with: forge-agent --rollback <path>`);
+    }
+    process.exit();
   }
 
   // ── Profiles ───────────────────────────────────────────────────────────────

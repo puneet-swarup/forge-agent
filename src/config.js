@@ -162,6 +162,9 @@ const DEFAULTS = {
   // Security
   ALLOW_DANGEROUS_COMMANDS: false,
   ALLOW_ENV_PLAIN_READ    : false,
+  // Overwriting a file the agent has neither read nor written this session is
+  // refused. Set false to restore the old silent-overwrite behaviour.
+  REQUIRE_READ_BEFORE_WRITE: true,
   AUDIT_LOG               : false,
   PARAM_VALIDATION        : true,
 
