@@ -102,10 +102,18 @@ const DEFAULTS = {
   // Audio (Items 3 & 4): async, sequentially-queued speech by default.
   AUDIO_ASYNC            : true,
   AUDIO_SEQUENTIAL       : true,
-  // Anti-block: random pause between consecutive prompts.
-  PROMPT_PAUSE           : true,
+  // Anti-block. The fixed 10-20 s pause before every prompt is now OFF by
+  // default: it cost 10-20 minutes on a 60-step task and did not help when the
+  // provider actually throttled. Set PROMPT_PAUSE: true (or --prompt-pause) to
+  // restore it. Rate limiting is handled reactively instead (src/throttle.js).
+  PROMPT_PAUSE           : false,
   PROMPT_PAUSE_MIN_MS    : 10_000,
   PROMPT_PAUSE_MAX_MS    : 20_000,
+  // Reactive rate-limit backoff (default ON).
+  RATE_LIMIT_BACKOFF     : true,
+  RATE_LIMIT_BASE_MS     : 5_000,
+  RATE_LIMIT_MAX_MS      : 60_000,
+  RATE_LIMIT_MAX_ATTEMPTS: 4,
   SESSION_DIR: process.env.FORGE_SESSION_DIR
     ? path.resolve(process.env.FORGE_SESSION_DIR)
     : paths.forgePath('session'),

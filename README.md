@@ -9,7 +9,7 @@ automation to code, test, and ship software — completely free.
 
 [![npm](https://img.shields.io/badge/npm-@puneet--swarup%2Fforge--agent-cb3837?logo=npm&style=flat)](https://www.npmjs.com/package/@puneet-swarup/forge-agent)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-2041%20passing-brightgreen)](#)
+[![Tests](https://img.shields.io/badge/tests-2065%20passing-brightgreen)](#)
 [![Docker](https://img.shields.io/badge/docker-ghcr.io%2Fpuneet--swarup%2Fforge--agent-blue)](https://github.com/puneet-swarup/forge-agent/pkgs/container/forge-agent)
 
 ---
@@ -80,7 +80,7 @@ fa "add TypeScript to this project"
 | 🔒 Security Sandbox | Blocks SSH keys, credentials, path traversal |
 | 🐳 Docker Ready | Official image, no local Node.js setup needed |
 | ⚡ Smart Caching | Skips repeated read-only tool calls |
-| ⏸ Anti-Block Pause | Random 10-20s pause between prompts (default ON; `--no-prompt-pause` disables) |
+| ⏸ Anti-Block Pause | Off by default. Rate limiting is handled reactively — back off 5s→60s only when the provider says so (`--prompt-pause` restores the old fixed 10-20s pause) |
 | 🗜 Context Compression | Auto-compresses long conversations |
 | 📝 Session Context | Durable, gitignored SESSION_CONTEXT.md survives compaction |
 | ✅ TODO Auto-Run | --auto works through FORGE_TODO.md unattended |
@@ -348,7 +348,7 @@ Run `forge-agent --setup` for guided configuration.
 ## Key Stats — v2.2.0
 
 - 🔧 **45 tools** built in (incl. adapter-agnostic uploads)
-- 🧪 **2041 tests** across 114 suites — all green
+- 🧪 **2065 tests** across 115 suites — all green
 - 🛟 **Reversible by default** — atomic writes, snapshots, `--rollback`
 - 📁 **13 docs pages** including full CLI reference
 - 📋 **10 task templates** built in

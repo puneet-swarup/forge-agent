@@ -209,6 +209,35 @@ and injected when a chat restarts.
 
 ---
 
+## 9. Throttling is handled when it happens
+
+**Invariant.** The agent does not pay a fixed delay per prompt. It backs off
+only when the provider signals a limit, and stops after a bounded number of
+attempts.
+
+**Enforced by.** `src/throttle.js`, wired into the loop in `agent.js` before the
+reply is parsed — a throttle notice is transport, not an answer, and must not
+count as a protocol violation.
+
+| Signal | Examples |
+| --- | --- |
+| Hard | "too many requests", "sending messages too quickly", "usage/daily limit reached", "you've reached your limit", "temporarily unavailable", 请求过于频繁 |
+| Soft (needs an error-ish co-signal) | "rate limit", "try again later", "slow down" |
+
+The two tiers exist so an agent *writing about* rate limiting does not back off
+on its own answer.
+
+Backoff: `RATE_LIMIT_BASE_MS` (5 s) × 2 per attempt, capped at
+`RATE_LIMIT_MAX_MS` (60 s), `RATE_LIMIT_MAX_ATTEMPTS` (4) before the run ends
+with a partial summary. A normal reply resets the budget.
+
+`PROMPT_PAUSE` — the old fixed 10–20 s pause before every prompt — still exists
+and is **off** by default; `--prompt-pause` turns it back on.
+
+**Verify.** `tests/throttle.test.js` — signal corpus, negative corpus (including
+an answer that merely mentions rate limiting), exponential growth and cap,
+reset, and three end-to-end loop cases.
+
 ## What is still missing
 
 Honest list of gaps this release does **not** close. Each one has a test-shaped

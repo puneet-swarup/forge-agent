@@ -210,6 +210,7 @@ function parseArgs(argv) {
       case '--no-cache':    opts.noCache     = true;    break;
       case '--no-timeout':  opts.noTimeout   = true;    break;
       case '--no-prompt-pause': opts.noPromptPause = true; break;
+      case '--prompt-pause':    opts.promptPause   = true; break;
       case '--clear-memory': opts.clearMemory = true;   break;
       case '--max-iterations': opts.maxIterations = args[++i]; break;
       case '--max-runtime':    opts.maxRuntime    = args[++i]; break;
@@ -517,7 +518,8 @@ ${c('1;36', 'SECURITY')}
 ${c('1;36', 'DEBUGGING')}
       --debug            Verbose output with raw AI responses
       --headless         Run browser invisibly (no window)
-      --no-prompt-pause  Disable the 10-20s random pause between prompts
+      --prompt-pause     Restore the fixed 10-20s pause before each prompt
+      --no-prompt-pause  Force the fixed pause off (it is already the default)
       --audio-sync       Speak/alarm synchronously (blocking; default: off)
       --audio-async      Speak/alarm asynchronously via queue (default)
       --parallel-tools   Run independent tool calls concurrently (default: on)
@@ -667,6 +669,7 @@ function applyFlagsToConfig(args, config) {
   if (args.compact !== undefined && args.compact !== false) config.COMPACT_OUTPUT = true;
   if (args.debug !== undefined && args.debug !== false) config.DEBUG = true;
   if (args.noPromptPause !== undefined && args.noPromptPause !== false) config.PROMPT_PAUSE = false;
+  if (args.promptPause === true) config.PROMPT_PAUSE = true;
 
   // Memory / Cache
   if (args.noMemory !== undefined && args.noMemory !== false) config.MEMORY_ENABLED = false;

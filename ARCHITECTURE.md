@@ -228,7 +228,7 @@ Some call sites pass a formatted string, others a `ProgressTracker`.
 break. Prefer one signature.
 
 ### 10.4 Baseline before touching anything
-`npx jest --runInBand` should be fully green (2,041 tests / 114 suites at the
+`npx jest --runInBand` should be fully green (2,065 tests / 115 suites at the
 time of writing). On Windows `npx` may be unavailable in the agent shell; call
 `node node_modules/jest/bin/jest.js --runInBand` directly. If you change a
 guarantee, update `docs/RELIABILITY.md` and the test it names in the same commit.

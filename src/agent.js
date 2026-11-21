@@ -20,6 +20,7 @@ const { ConversationManager }      = require('./prompt');
 const { Errors, displayError }     = require('./errors');
 const security                     = require('./security');
 const { Budget, BudgetExceeded }    = require('./budget');
+const { Throttle }                  = require('./throttle');
 const { sleep }                    = require('./retry');
 const { ProgressTracker }          = require('./progress');
 const { MemoryStore }              = require('./memory');
@@ -332,6 +333,14 @@ class DeepSeekAgent {
     // Resource envelope for this run: steps, wall clock, tool calls.
     const budget = new Budget(config);
     this._budget = budget;
+
+    // Reactive rate-limit handling: no fixed pause between prompts, back off
+    // only when the provider actually says it is throttling.
+    this._throttle = new Throttle({
+      baseMs: config.RATE_LIMIT_BASE_MS,
+      maxMs: config.RATE_LIMIT_MAX_MS,
+      maxAttempts: config.RATE_LIMIT_MAX_ATTEMPTS,
+    });
     const startTime = Date.now();
     const progress  = new ProgressTracker(task);
 
@@ -543,6 +552,39 @@ class DeepSeekAgent {
 
         // Clear streak on successful response
         this._emptyStreak = 0;
+
+        // ── Rate limiting ───────────────────────────────────────────────────
+        // A throttled reply is transport, not an answer: do not parse it, do
+        // not count it as a protocol violation. Back off briefly and re-ask.
+        if (config.RATE_LIMIT_BACKOFF !== false && this._throttle.detect(rawResponse)) {
+          const waitMs = this._throttle.nextDelayMs();
+
+          if (waitMs < 0) {
+            logger.error('Rate limited repeatedly — giving up on this run.');
+            const summary = progress.buildPartialSummary('rate limited by the model provider');
+            this._recordHistory(task, 'failed', startTime, progress, summary, templateName);
+            if (this.options.saveLog) await this._saveConversationLog(task, summary);
+            this._running = false;
+            return summary;
+          }
+
+          logger.warn(`Rate limited (${this._throttle.describe()}) — waiting ${(waitMs / 1000).toFixed(1)}s`);
+          progress.recordError('rate limited');
+          await sleep(waitMs);
+
+          const retry = this.conversation.addToolResult(
+            'SYSTEM',
+            'The provider rate-limited that request. Continue with the next step.',
+            true
+          );
+          await this.browser.sendMessage(retry);
+          step++;
+          continue;
+        }
+
+        // A normal reply means the provider is no longer throttling us.
+        if (this._throttle) this._throttle.noteSuccess();
+
         progress.recordAiResponse(rawResponse);
 
         if (config.DEBUG) {

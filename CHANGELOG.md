@@ -96,6 +96,16 @@ repository. See `docs/RELIABILITY.md` for the invariants and how to verify them.
   `--task`, `--verbose`). They are now documented.
 
 ### Changed
+- **Rate limiting is reactive, not a fixed tax.** The agent slept a random
+  10–20 s before *every* prompt ("anti-block"), which is 10–20 minutes of dead
+  time on a 60-step task and does nothing when a provider actually throttles.
+  The fixed pause is now **off by default** (`--prompt-pause` restores it) and
+  `src/throttle.js` backs off 5 s → 10 → 20 → 40 s (capped at 60 s) only when
+  the reply carries a throttle signal — "too many requests", "rate limit
+  exceeded", usage-limit notices, the Chinese equivalents — with a bounded
+  attempt count and a partial summary if the provider never relents. Detection
+  is two-tier so an agent *writing about* rate limiting does not back off on
+  its own answer.
 - The system prompt is ~12 k characters (~3 k tokens), down from ~22.5 k, while
   gaining the response envelope and the artifact protocol. Tool documentation is
   now **generated** from the tool registry, so a tool cannot be added without
@@ -108,10 +118,11 @@ repository. See `docs/RELIABILITY.md` for the invariants and how to verify them.
   and returns a diff. `delete_file` mentions the snapshot it kept.
 
 ### Tests
-- 2,041 tests across 114 suites, all green (`npm test`). New suites:
+- 2,065 tests across 115 suites, all green (`npm test`). New suites:
   `turn-boundary`, `adapter-turn-contract`, `prompt-single-source`, `recovery`,
   `secret-redaction`, `workspace`, `budget`, `protocol-validation`,
-  `session-context-wiring`, `adapter-factory-urls`, `cli-docs-sync`.
+  `session-context-wiring`, `adapter-factory-urls`, `cli-docs-sync`,
+  `throttle`.
 - Removed the public-internet dependency from the `read_url` unit test and the
   startup race from the `kill-escalation` test (both were failing or flaky in
   sandboxed CI).

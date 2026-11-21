@@ -21,10 +21,23 @@ describe('prompt pause (anti-block)', () => {
     Object.assign(config, saved);
   });
 
-  test('config has sane defaults: ON, 10s-20s', () => {
-    expect(saved.PROMPT_PAUSE).toBe(true);
+  // Changed in 2.2.0: the fixed pause is opt-in. Paying 10-20 s before every
+  // prompt cost minutes per task and did nothing for real throttling, which is
+  // now handled reactively (src/throttle.js, tests/throttle.test.js).
+  test('config default: OFF, with the 10s-20s bounds kept for opt-in', () => {
+    expect(saved.PROMPT_PAUSE).toBe(false);
     expect(saved.PROMPT_PAUSE_MIN_MS).toBe(10000);
     expect(saved.PROMPT_PAUSE_MAX_MS).toBe(20000);
+  });
+
+  test('enabling it restores the pause', async () => {
+    const b = new DeepSeekBrowser();
+    config.PROMPT_PAUSE = true;
+    await b._promptPause();                 // first prompt: never pauses
+    expect(jest.getTimerCount()).toBe(0);
+
+    b._promptPause();                       // second prompt: schedules one
+    expect(jest.getTimerCount()).toBe(1);
   });
 
   test('first prompt does NOT pause', async () => {
