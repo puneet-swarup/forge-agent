@@ -76,6 +76,16 @@ repository. See `docs/RELIABILITY.md` for the invariants and how to verify them.
   `getModelUrl()` fails with an actionable message naming `--model-url`.
 
 ### Added
+- **Integrity-checked argument transport** — `src/transport.js` gains
+  `encodeTransportArg` / `decodeTransportArg` with base64 **or** hex encoding
+  and an MD5 check over the decoded bytes. `write_file`, `append_to_file`,
+  `write_files` and `replace_in_file` accept `content_md5` (and
+  `find_md5` / `replace_md5`); a mismatch throws before anything is written, so
+  a payload mangled by the scraper can no longer truncate a file silently. The
+  hash is optional — without it the previous base64 round-trip check still
+  applies — and the honest limitation is documented in `docs/RELIABILITY.md`
+  §10: the sender must compute the digest, which is reliable for small payloads
+  and not for large ones.
 - `src/workspace.js` — atomic writes, snapshots, read-before-write, diffs.
 - `src/budget.js` — per-run resource envelope (`Budget`, `BudgetExceeded`).
 - `--rollback <path>` and `--snapshots` — restore a file from its snapshot, or
@@ -118,11 +128,11 @@ repository. See `docs/RELIABILITY.md` for the invariants and how to verify them.
   and returns a diff. `delete_file` mentions the snapshot it kept.
 
 ### Tests
-- 2,065 tests across 115 suites, all green (`npm test`). New suites:
+- 2,084 tests across 116 suites, all green (`npm test`). New suites:
   `turn-boundary`, `adapter-turn-contract`, `prompt-single-source`, `recovery`,
   `secret-redaction`, `workspace`, `budget`, `protocol-validation`,
   `session-context-wiring`, `adapter-factory-urls`, `cli-docs-sync`,
-  `throttle`.
+  `throttle`, `transport-integrity`.
 - Removed the public-internet dependency from the `read_url` unit test and the
   startup race from the `kill-escalation` test (both were failing or flaky in
   sandboxed CI).

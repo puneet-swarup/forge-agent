@@ -195,6 +195,10 @@ function buildSystemPrompt(opts = {}) {
     'Pass tool arguments as plain text. Do not pre-encode them. The one',
     'exception is genuinely binary content (an image, a compiled asset): set',
     '"is_base64": true and pass base64. Do not encode source code.',
+    '',
+    'Optional integrity check: content_md5 (and find_md5 / replace_md5) takes',
+    'the MD5 of the DECODED text. Include it only when you are certain of the',
+    'value — a mismatch aborts the write rather than risking a corrupt file.',
   );
 
   // ── Tool catalogue ───────────────────────────────────────────────────────

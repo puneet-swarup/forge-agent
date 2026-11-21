@@ -414,11 +414,15 @@ const TOOLS = {
     parameters: {
       path      : { type: 'string', required: true, description: 'Destination file path' },
       content   : { type: 'string', required: true, description: 'Full file content (Raw plain text or Base64 binary string)' },
-      is_base64 : { type: 'boolean', required: false, description: 'Set to true if content input is Base64 encoded' }
+      is_base64 : { type: 'boolean', required: false, description: 'Set to true if content input is Base64 encoded' },
+      is_hex    : { type: 'boolean', required: false, description: 'Set to true if content is hex-encoded' },
+      content_md5: { type: 'string', required: false, description: 'MD5 (32 hex chars) of the decoded content. The write is refused if it does not match.' }
     },
-    async execute({ path: filePath, content, is_base64 = false }) {
+    async execute({ path: filePath, content, is_base64 = false, is_hex = false, content_md5 = '' }) {
       const abs = assertSafePath(filePath, 'write');
-      const decoded = decodeTransportArg(content, is_base64, 'content');
+      const decoded = decodeTransportArg(content, {
+        isBase64: is_base64, isHex: is_hex, md5: content_md5, label: 'content',
+      });
 
       let res;
       try {
@@ -429,7 +433,8 @@ const TOOLS = {
       }
 
       const verb = res.created ? 'Wrote' : 'Updated';
-      let out = `✓ ${verb} ${formatBytes(res.bytes)} (${res.lines} lines) → ${filePath}`;
+      const integrity = decoded.verified ? ' · integrity verified' : '';
+      let out = `✓ ${verb} ${formatBytes(res.bytes)} (${res.lines} lines) → ${filePath}${integrity}`;
       if (res.diff) out += '\n\n' + res.diff;
       return out;
     },
@@ -441,11 +446,15 @@ const TOOLS = {
     parameters: {
       path      : { type: 'string', required: true, description: 'File path' },
       content   : { type: 'string', required: true, description: 'Text to append (Raw plain text or Base64 string)' },
-      is_base64 : { type: 'boolean', required: false, description: 'Set to true if content parameter is Base64 encoded' }
+      is_base64 : { type: 'boolean', required: false, description: 'Set to true if content parameter is Base64 encoded' },
+      is_hex    : { type: 'boolean', required: false, description: 'Set to true if content is hex-encoded' },
+      content_md5: { type: 'string', required: false, description: 'MD5 (32 hex chars) of the decoded content; refused if it does not match' }
     },
-    async execute({ path: filePath, content, is_base64 = false }) {
+    async execute({ path: filePath, content, is_base64 = false, is_hex = false, content_md5 = '' }) {
       const abs = assertSafePath(filePath, 'append');
-      const decoded = decodeTransportArg(content, is_base64, 'content');
+      const decoded = decodeTransportArg(content, {
+        isBase64: is_base64, isHex: is_hex, md5: content_md5, label: 'content',
+      });
 
       let res;
       try {
@@ -453,7 +462,8 @@ const TOOLS = {
       } catch (err) {
         throw classifyFsError(err, filePath, 'append');
       }
-      return `✓ Appended ${formatBytes(res.bytes)} to ${filePath}`;
+      const integrity = decoded.verified ? ' · integrity verified' : '';
+      return `✓ Appended ${formatBytes(res.bytes)} to ${filePath}${integrity}`;
     },
   },
 
@@ -466,9 +476,12 @@ const TOOLS = {
       replace        : { type: 'string',  required: true,  description: 'Replacement text (Plain string or Base64 string)' },
       use_regex      : { type: 'boolean', required: false, description: 'Treat "find" as a regex pattern (default: false)' },
       all_occurrences: { type: 'boolean', required: false, description: 'Replace all occurrences (default: true)' },
-      is_base64      : { type: 'boolean', required: false, description: 'Set to true if find and replace parameters are Base64 strings' }
+      is_base64      : { type: 'boolean', required: false, description: 'Set to true if find and replace parameters are Base64 strings' },
+      is_hex         : { type: 'boolean', required: false, description: 'Set to true if find and replace are hex-encoded' },
+      find_md5       : { type: 'string',  required: false, description: 'MD5 of the decoded find text; the replace is refused if it does not match' },
+      replace_md5    : { type: 'string',  required: false, description: 'MD5 of the decoded replacement text' }
     },
-    async execute({ path: filePath, find, replace, use_regex = false, all_occurrences = true, is_base64 = false }) {
+    async execute({ path: filePath, find, replace, use_regex = false, all_occurrences = true, is_base64 = false, is_hex = false, find_md5 = '', replace_md5 = '' }) {
       const abs = assertSafePath(filePath, 'write');
       let content = fs.readFileSync(abs, 'utf8');
       const original = content;
@@ -478,8 +491,12 @@ const TOOLS = {
       const ws = getWorkspace();
       ws.markSeen(abs);
 
-      const searchVal = decodeTransportArg(find, is_base64, 'find').text;
-      const targetVal = decodeTransportArg(replace, is_base64, 'replace').text;
+      const searchVal = decodeTransportArg(find, {
+        isBase64: is_base64, isHex: is_hex, md5: find_md5, label: 'find',
+      }).text;
+      const targetVal = decodeTransportArg(replace, {
+        isBase64: is_base64, isHex: is_hex, md5: replace_md5, label: 'replace',
+      }).text;
 
       if (use_regex) {
         const flags = all_occurrences ? 'g' : '';
@@ -925,7 +942,7 @@ const TOOLS = {
       files: {
         type       : 'array',
         required   : true,
-        description: 'Array of {path, content, is_base64} objects',
+        description: 'Array of {path, content, is_base64?, is_hex?, content_md5?} objects',
       },
     },
     async execute({ files }) {
@@ -941,8 +958,12 @@ const TOOLS = {
         const abs = assertSafePath(filePath, 'write');
 
 		try {
-          const isBase64 = !!item.is_base64;
-          const decoded = decodeTransportArg(content, isBase64, `files[].content (${filePath})`);
+          const decoded = decodeTransportArg(content, {
+            isBase64: !!item.is_base64,
+            isHex: !!item.is_hex,
+            md5: item.content_md5 || '',
+            label: `files[].content (${filePath})`,
+          });
           // Same guarantees as write_file: atomic, snapshotted, guarded.
           getWorkspace().write(abs, decoded.buffer);
         } catch (err) {

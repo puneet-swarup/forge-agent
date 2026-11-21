@@ -238,6 +238,36 @@ and is **off** by default; `--prompt-pause` turns it back on.
 an answer that merely mentions rate limiting), exponential growth and cap,
 reset, and three end-to-end loop cases.
 
+## 10. Arguments are integrity-checked
+
+**Invariant.** When a tool argument carries a hash, the bytes are verified
+before use, and a mismatch aborts the operation. A mangled payload never reaches
+the disk.
+
+**Enforced by.** `src/transport.js` — `encodeTransportArg` / `decodeTransportArg`
+with base64 **or** hex encoding and an MD5 over the decoded bytes. Wired into
+`write_file`, `append_to_file`, `write_files` (`content_md5`) and
+`replace_in_file` (`find_md5`, `replace_md5`).
+
+| Case | Behaviour |
+| --- | --- |
+| hash matches | write proceeds, result says `integrity verified` |
+| hash mismatches | throws, **nothing written** |
+| hash malformed | throws (not silently ignored) |
+| no hash | legacy path: base64/hex round-trip check only |
+
+**Honest limitation.** The hash must be computed by the sender. For an LLM that
+is reliable on short strings and unreliable on large files, so a match is proof
+the payload survived the channel; the absence of a hash means no end-to-end
+proof, only the encoding's own round-trip check. The prompt asks the model to
+include a hash only when it is certain of the value, because a wrong hash blocks
+a legitimate write.
+
+**Verify.** `tests/transport-integrity.test.js` — round-trips (plain, base64,
+hex, 10 KB of random bytes), tampered payload refused with nothing written,
+malformed hash refused, legacy signature preserved, and per-tool coverage of all
+four call sites.
+
 ## What is still missing
 
 Honest list of gaps this release does **not** close. Each one has a test-shaped
@@ -257,6 +287,8 @@ hole; none is hidden behind a passing suite.
 5. **Selector drift is untested.** The browser tests drive a mock page built from
    the adapter's own selectors, so they cannot detect a change in the real UI.
    Recorded-DOM fixtures are the fix.
-6. **The CLI is still one large file.** Flags are parsed by a hand-written loop;
+6. **The transport hash depends on the sender.** See §10: the model computing an
+   MD5 for a large file is not something to rely on.
+7. **The CLI is still one large file.** Flags are parsed by a hand-written loop;
    the new flags follow that pattern deliberately rather than growing a second
    one.

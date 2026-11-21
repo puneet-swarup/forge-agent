@@ -9,7 +9,7 @@ automation to code, test, and ship software — completely free.
 
 [![npm](https://img.shields.io/badge/npm-@puneet--swarup%2Fforge--agent-cb3837?logo=npm&style=flat)](https://www.npmjs.com/package/@puneet-swarup/forge-agent)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-2065%20passing-brightgreen)](#)
+[![Tests](https://img.shields.io/badge/tests-2084%20passing-brightgreen)](#)
 [![Docker](https://img.shields.io/badge/docker-ghcr.io%2Fpuneet--swarup%2Fforge--agent-blue)](https://github.com/puneet-swarup/forge-agent/pkgs/container/forge-agent)
 
 ---
@@ -348,7 +348,7 @@ Run `forge-agent --setup` for guided configuration.
 ## Key Stats — v2.2.0
 
 - 🔧 **45 tools** built in (incl. adapter-agnostic uploads)
-- 🧪 **2065 tests** across 115 suites — all green
+- 🧪 **2084 tests** across 116 suites — all green
 - 🛟 **Reversible by default** — atomic writes, snapshots, `--rollback`
 - 📁 **13 docs pages** including full CLI reference
 - 📋 **10 task templates** built in
