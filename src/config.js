@@ -109,6 +109,12 @@ const DEFAULTS = {
   PROMPT_PAUSE           : false,
   PROMPT_PAUSE_MIN_MS    : 10_000,
   PROMPT_PAUSE_MAX_MS    : 20_000,
+  // Verification gate: run the project's own checks before accepting
+  // TASK_COMPLETE. Never invents a command — only what the project declares.
+  VERIFY_BEFORE_COMPLETE   : true,
+  VERIFY_TIMEOUT_MS        : 120_000,
+  MAX_VERIFICATION_ATTEMPTS: 2,
+
   // Reactive rate-limit backoff (default ON).
   RATE_LIMIT_BACKOFF     : true,
   RATE_LIMIT_BASE_MS     : 5_000,
