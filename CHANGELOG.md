@@ -9,6 +9,26 @@ Versioning: [Semantic Versioning](https://semver.org/)
 ## [Unreleased]
 
 ### Added
+- **Loom, slice 2 — extractors and import resolution** (`src/loom/extract/`,
+  `src/loom/resolve.js`). Slice 1 stored files; this slice reads them. One
+  entry point, `extract(text, relPath)`, dispatches on extension to a
+  per-language extractor for JavaScript/TypeScript, Python, Go, Rust, SQL,
+  Markdown and the data formats (JSON/YAML/TOML top-level keys), returning
+  symbols with 1-indexed inclusive ranges, signatures, docs, exports, class
+  parents and per-symbol confidence, plus the file's imports.
+  `findBlockEnd` is a character scanner, not a brace counter: strings, template
+  literals with `${ … }`, line and block comments, Go raw strings and Rust
+  lifetimes all behave, and so do regex literals — without a regex state,
+  `.replace(/"/g, '')` opens a string that never closes and 16 files in this
+  repository scanned as `partial` instead of 5. A block that does not close
+  within the spec's 400 lines returns a 40-line placeholder at confidence 0.4
+  and marks the file `partial`, so an unmeasurable range is never served as if
+  it were measured.
+  `resolve.js` turns a specifier into a project-relative path: `./`, `../`,
+  `/`, `@/` and `~/` are local, everything else is external, candidates are
+  tried in the spec's order and anything that escapes the project resolves to
+  nothing. Existence is injectable, so the graph can be rebuilt from a file
+  list. See `docs/LOOM.md`.
 - **Loom, slice 1 — the project index's storage layer** (`src/loom/`). Loom is
   the persistent index described in `src/loom_specs.md`: files, symbols,
   dependency edges and one-line purposes, compiled into a digest for the first
@@ -38,6 +58,12 @@ Versioning: [Semantic Versioning](https://semver.org/)
 - `tests/markdown-scope.test.js` — fails when a Markdown file exists without an
   inventory row, when a row names a missing file, or when the stated count drifts
   from the tree.
+
+### Fixed
+- `docs/MARKDOWN_SCOPE.md` was missing its row for `docs/LOOM.md`, which
+  slice 1 added. `tests/markdown-scope.test.js` was failing on `main` because of
+  it (22 Markdown files on disk, 21 in the inventory), so every PR built on
+  `main` started red. The inventory is now complete at 22.
 
 ### Changed
 - **Documentation governance is now enforced.** `docs/MARKDOWN_SCOPE.md` claimed

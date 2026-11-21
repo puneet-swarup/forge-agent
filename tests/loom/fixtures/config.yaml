@@ -1,0 +1,7 @@
+# top level only
+name: fixture
+version: 1
+nested:
+  inner: 2
+list:
+  - a
