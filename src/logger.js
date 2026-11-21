@@ -109,7 +109,7 @@ const logger = {
   //   finalOutput(string)               -> plain completion text
   //   finalOutput(progressTracker, status) -> rich completion panel
   // Null/undefined are handled defensively so a stray call never throws.
-  finalOutput(progress, status) {
+  finalOutput(progress, status, opts = {}) {
     // Legacy / plain-string path.
     if (typeof progress === 'string') {
       if (progress) console.log(progress);
@@ -117,8 +117,9 @@ const logger = {
     }
     // Nullish guard: nothing to render.
     if (progress == null) return;
-    // Rich path: a ProgressTracker (or tracker-like object).
-    getTUI().renderCompletion(progress, status);
+    // Rich path: a ProgressTracker (or tracker-like object). `opts` carries the
+    // facts the tracker does not know — the verification result and the model.
+    getTUI().renderCompletion(progress, status, opts);
   },
 
   // ── Context meter ─────────────────────────────────────────────────────────

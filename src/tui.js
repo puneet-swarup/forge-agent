@@ -55,6 +55,23 @@ function colors(codes, text) {
 }
 
 // ─────────────────────────────────────────────
+//  Semantic palette
+//
+//  The ANSI names above say what a colour IS. These say what it MEANS, so the
+//  same meaning is the same colour everywhere: a step is always accent, a
+//  warning always warn, a verification result always ok/err.
+// ─────────────────────────────────────────────
+
+const theme = {
+  accent : 'lcyan',
+  ok     : 'lgreen',
+  warn   : 'lyellow',
+  err    : 'lred',
+  muted  : 'gray',
+  strong : 'lwhite',
+};
+
+// ─────────────────────────────────────────────
 //  Layout constants
 // ─────────────────────────────────────────────
 
@@ -383,56 +400,77 @@ class TUI {
    * ║  ✅  Task complete  ·  47s  ·  12 steps  ·  5 files written      ║
    * ╚══════════════════════════════════════════════════════════════════╝
    */
-  renderCompletion(progress, status = 'completed') {
-    const width    = getWidth();
-    const elapsed  = this.startTime ? formatMs(Date.now() - this.startTime) : '?';
+  renderCompletion(progress, status = 'completed', opts = {}) {
+    const width   = getWidth();
+    const elapsed = this.startTime ? formatMs(Date.now() - this.startTime) : '?';
 
-    const statusIcon = status === 'completed' ? '✅' :
-                       status === 'partial'   ? '⚠ ' :
-                       status === 'timeout'   ? '⏱ ' : '❌';
+    // No glyph in the title: a double-width character in some terminal fonts
+    // pushes the right border out by a column. Colour carries the status, the
+    // word confirms it.
+    const look = {
+      completed: { tone: 'ok',   label: 'Task complete' },
+      partial:   { tone: 'warn', label: 'Partial result' },
+      timeout:   { tone: 'warn', label: 'Timed out — partial result' },
+      failed:    { tone: 'err',  label: 'Failed' },
+    }[status] || { tone: 'err', label: 'Failed' };
 
-    const statusText = status === 'completed' ? 'Task complete' :
-                       status === 'partial'   ? 'Partial result (max iterations)' :
-                       status === 'timeout'   ? 'Timeout — partial result' : 'Failed';
+    const title = colors(['bold', look.tone], ` ${look.label} `);
 
-    const parts = [
-      `${statusIcon}  ${statusText}`,
-      elapsed,
-      `${this.stepNum} steps`,
-    ];
-
+    // Facts are aligned in a fixed column so the eye can run down them.
+    const facts = [];
+    facts.push(['Duration', elapsed]);
+    facts.push(['Steps',    String(this.stepNum || 0)]);
     if (progress) {
       if (progress.filesWritten && progress.filesWritten.size > 0) {
-        const files = [...progress.filesWritten.values()];
-        parts.push(`${files.length} file${files.length !== 1 ? 's' : ''}`);
+        facts.push(['Files', String(progress.filesWritten.size)]);
       }
       if (progress.commandsRun && progress.commandsRun.length > 0) {
-        parts.push(`${progress.commandsRun.length} command${progress.commandsRun.length !== 1 ? 's' : ''}`);
+        facts.push(['Commands', String(progress.commandsRun.length)]);
       }
       if (progress.errorCount > 0) {
-        parts.push(color('lred', `${progress.errorCount} error${progress.errorCount !== 1 ? 's' : ''}`));
+        facts.push(['Errors', color('err', String(progress.errorCount))]);
       }
     }
+    if (opts.verification) facts.push(['Verified', String(opts.verification)]);
+    if (opts.model)        facts.push(['Model', String(opts.model)]);
 
-    const content   = parts.join(color('gray', '  ·  '));
-    const boxColor  = status === 'completed' ? 'lgreen' :
-                      status === 'partial'   ? 'lyellow' : 'lred';
+    const labelWidth = Math.max(...facts.map(([k]) => k.length));
+    // Content area between the two border characters.
+    const inner      = Math.max(10, width - 2);
 
-    const top    = color(boxColor, '╔' + '═'.repeat(width - 2) + '╗');
-    const middle = color(boxColor, '║') + '  ' + padEnd(content, width - 4) + color(boxColor, '║');
-    const bottom = color(boxColor, '╚' + '═'.repeat(width - 2) + '╝');
+    const lines = [];
+    lines.push(color(look.tone, '╭' + '─'.repeat(Math.max(0, width - 2)) + '╮'));
 
-    this._print('\n' + [top, middle, bottom].join('\n') + '\n');
+    // Title row: the rule continues after the label, so the box stays closed.
+    const titleVis = stripAnsi(title).length;
+    lines.push(
+      color(look.tone, '│') + title
+      + color(look.tone, '─'.repeat(Math.max(0, inner - titleVis)))
+      + color(look.tone, '│')
+    );
 
-    // If files were written: show them
+    for (const [key, value] of facts) {
+      const line = `  ${color('muted', key.padEnd(labelWidth))}   ${value}`;
+      lines.push(color(look.tone, '│') + padEnd(line, inner) + color(look.tone, '│'));
+    }
+
     if (progress && progress.filesWritten && progress.filesWritten.size > 0) {
-      this._print(color('gray', '  Files written:'));
-      const files = [...progress.filesWritten.values()].slice(0, 10);
-      files.forEach(f => this._print(color('gray', `    • ${f}`)));
-      if (progress.filesWritten.size > 10) {
-        this._print(color('gray', `    ... and ${progress.filesWritten.size - 10} more`));
+      const files = [...progress.filesWritten.values()];
+      const shown = files.slice(0, 6);
+      const more  = files.length - shown.length;
+
+      lines.push(color(look.tone, '│') + ' '.repeat(inner) + color(look.tone, '│'));
+      lines.push(color(look.tone, '│') + padEnd(`  ${color('muted', 'Files written')}`, inner) + color(look.tone, '│'));
+      for (const f of shown) {
+        lines.push(color(look.tone, '│') + padEnd(`    ${color('muted', '·')} ${truncate(f, inner - 8)}`, inner) + color(look.tone, '│'));
+      }
+      if (more > 0) {
+        lines.push(color(look.tone, '│') + padEnd(`    ${color('muted', `… and ${more} more`)}`, inner) + color(look.tone, '│'));
       }
     }
+
+    lines.push(color(look.tone, '╰' + '─'.repeat(Math.max(0, width - 2)) + '╯'));
+    this._print('\n' + lines.join('\n') + '\n');
   }
 
   // ─────────────────────────────────────────────
@@ -557,8 +595,13 @@ class TUI {
     const leftVis  = stripAnsi(leftContent);
     const rightVis = stripAnsi(rightContent);
     const fill     = '─';
-    const space    = Math.max(3, width - leftVis.length - rightVis.length - 8);
-    return color('gray', '\n─── ') + leftContent + color('gray', ' ' + fill.repeat(space) + ' ') + rightContent + color('gray', ' ───');
+
+    // Three dashes on each end, and the fill absorbs whatever is left so the
+    // right-hand stats sit flush against the rule instead of floating.
+    const space = Math.max(1, width - leftVis.length - rightVis.length - 8);
+    return color('gray', '\n─── ') + leftContent
+      + color('gray', ' ' + fill.repeat(space) + ' ')
+      + rightContent + color('gray', ' ───');
   }
 
   _extractArgPreview(toolName, args) {

@@ -1132,7 +1132,10 @@ class ForgeAgent {
               // completion summary box. Previously both raw `content` AND
               // `formatted` were printed, double-printing the answer.
               logger.answer(content);
-              logger.getTUI().renderCompletion(progress, 'completed');
+              logger.getTUI().renderCompletion(progress, 'completed', {
+                verification: describeVerification(this._lastVerification),
+                model: config.MODEL,
+              });
             } else if (config.OUTPUT_FILE) {
               this._saveToFile(config.OUTPUT_FILE, formatted);
             } else {
