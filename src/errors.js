@@ -137,8 +137,15 @@ const Errors = {
       'The process does not have the required filesystem permissions.',
       [
         `Check file permissions: ls -la ${filePath}`,
-        `Try: chmod 644 ${filePath}  (for files)`,
-        `Try: chmod 755 ${filePath}  (for directories)`,
+        ...(process.platform === 'win32'
+          ? [
+              `Try: icacls "${filePath}" /grant %USERNAME%:F  (for files)`,
+              `Try: right-click → Properties → Security  (for directories)`,
+            ]
+          : [
+              `Try: chmod 644 ${filePath}  (for files)`,
+              `Try: chmod 755 ${filePath}  (for directories)`,
+            ]),
         'Check if the file is owned by a different user',
       ],
       cause
