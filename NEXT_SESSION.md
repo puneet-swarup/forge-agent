@@ -16,6 +16,7 @@ ls src/loom 2>/dev/null                   # T2
 npx jest tests/adapter-contract.test.js   # T3
 ls scripts/lifecycle.js scripts/plan.js   # T4
 grep -rn "['\"\`]/(var/)?tmp/" src/       # T5 (must be empty)
+npx jest tests/markdown-scope.test.js     # T6 (inventory matches the tree)
 ```
 
 ---
@@ -41,7 +42,7 @@ rotation are all on `main`.
 | **T3** | Adapters | **OPEN — live-DOM accuracy only** | all 8 adapters implement the 6 contract methods; `tests/adapter-contract.test.js` (50) green | per-adapter live smoke test with a real login |
 | **T4** | Plan lifecycle | **PARTIAL** | artifact protocol is in the live prompt; `src/lifecycle.js`, `scripts/lifecycle.js`, `scripts/plan.js` exist; context rotation now re-sends the plan on every rotation | enforce start/end gates in the agent loop |
 | **T5** | Cross-platform paths | **DONE (targeted)** | no literal `/tmp` in `src/`; `icacls` hints on win32; `tests/path-portability.test.js` green | extend only if a new path bug appears |
-| **T6** | Markdown governance | **OPEN** | inventory at `docs/MARKDOWN_SCOPE.md` (imported, needs re-audit — its counts predate this branch) | re-audit, then rewrite the docs set |
+| **T6** | Markdown governance | **DONE (re-audit + drift guard)** | `docs/MARKDOWN_SCOPE.md` re-audited: 21 tracked files, 9 stale rows removed, `docs/RELIABILITY.md` added; `tests/markdown-scope.test.js` (9) fails CI when the inventory drifts | none — README rewrite is its own workstream |
 
 ---
 
@@ -190,21 +191,51 @@ invariant I6). Two real defects were fixed in PR #5:
 
 ---
 
-## T6 — Markdown governance · OPEN
+## T6 — Markdown governance · DONE (re-audit + drift guard)
 
-`docs/MARKDOWN_SCOPE.md` was imported from the `loom` branch: an inventory of
-every Markdown file with its purpose, authority and maintenance boundary, plus
-five governance rules (one purpose per document; code and tests are authoritative
-over prose; historical records stay historical; generated artifacts are not
-documentation; update the canonical owner first).
+`docs/MARKDOWN_SCOPE.md` was imported from the `loom` branch and had drifted: it
+claimed 29 files and listed nine that no longer exist (`AGENTS.md`,
+`FORGE_PLAN.md` as a *document*, `SESSION_CONTEXT.md`, `SESSION_TASK.md`,
+`summary.md`, and the four `.audio-backup/` reports), while omitting
+`docs/RELIABILITY.md`.
 
-**It needs a re-audit.** Its counts (29 files, 16 at the root, 6 under `docs/`)
-predate this branch, which added `docs/RELIABILITY.md`, `src/loom_specs.md` and
-this file.
+The re-audit against `main` @ `b10bab4` found **21 tracked Markdown files**: 11
+at the root, 7 under `docs/`, 2 under `.github/` and `src/loom_specs.md`. The
+inventory was rewritten around that:
+
+- one row per tracked file, with purpose and maintenance boundary, grouped root /
+  `docs/` / `.github/` + `src`;
+- a separate table for the runtime artifacts that are gitignored
+  (`FORGE_PLAN.md`, `FORGE_TODO.md`, `SESSION_CONTEXT.md`, `SESSION_TASK.md`,
+  `summary.md`) — rule 4 requires them to be *identified*, not documented as
+  policy;
+- removed rows are recorded in one sentence, not kept as history: git is the
+  archive;
+- a sixth rule: adding, moving or deleting a Markdown file is one commit with
+  its row here.
+
+**The inventory can no longer drift.** `tests/markdown-scope.test.js` (9 tests)
+reads the document as text and fails when a tracked `.md` has no row, when a row
+names a file that does not exist, when a path is duplicated or absolute, when the
+stated total disagrees with the tree, or when a generated artifact appears in the
+tracked table. Verified both ways: adding an undocumented `docs/tmp-drift.md`
+fails two tests.
+
+**One conflict fixed while auditing it.** The test-count policy had three
+different numbers: `CONTRIBUTING.md` demanded "at least 10 tests" for a new
+feature, its own tool section said 3, and `.github/PULL_REQUEST_TEMPLATE.md` said
+5 for features and 3 for tools. `CONTRIBUTING.md` is now the single owner of one
+policy (feature 5, tool 3, template 2, bug fix a regression test) and the PR
+template mirrors it.
+
+**Recorded, not fixed here** (owner files, separate changes): `ROADMAP.md` still
+says "Current Version: 2.0.0" against `package.json` 2.2.0, and `README.md`
+states the plan gates are "Enforced by" `scripts/lifecycle.js` while `main`'s
+loop does not call them — PR #9 closes that gap and owns the wording.
 
 Related, and separate: the README still reads as a fork of the original project.
-That is being handled as its own workstream — accurate attribution stays (MIT
-requires it), but the document should describe *this* agent.
+That is its own workstream — accurate attribution stays (MIT requires it), but
+the document should describe *this* agent.
 
 ---
 

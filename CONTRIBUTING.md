@@ -92,7 +92,10 @@ my_tool: {
 ## Writing Tests
 - **Location:** All tests go in the `tests/` directory.
 - **Framework:** We use Jest.
-- **Requirements:** Every new feature needs at least 10 tests.
+- **Requirements:** A new feature needs at least 5 tests; a new tool needs at least 3 in
+  `tests/tools.test.js`; a new template needs at least 2 in `tests/templates.test.js`; a bug
+  fix needs a regression test that fails without the fix. These are the same numbers as
+  `.github/PULL_REQUEST_TEMPLATE.md` — change them in both files or in neither.
 - **Isolation:** Tests must not depend on an actual browser or network. Use mocks where necessary.
 - **Cleanup:** Always clean up temporary files in `afterAll()`.
 - **Environment:** Use `os.tmpdir()` for file-based tests. Never touch `~/.deepseek-agent/`.

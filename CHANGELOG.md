@@ -6,6 +6,31 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ---
 
+## [Unreleased]
+
+### Changed
+- **Documentation governance is enforced, not just described.**
+  `docs/MARKDOWN_SCOPE.md` had drifted badly: it claimed 29 Markdown files and
+  gave rows to nine that no longer exist (`AGENTS.md`, the four `.audio-backup/`
+  reports, `SESSION_CONTEXT.md`, `SESSION_TASK.md`, `summary.md`, and
+  `FORGE_PLAN.md` treated as a document) while omitting `docs/RELIABILITY.md`.
+  It is re-audited against the tree — **21 tracked files**, one row each with its
+  purpose and maintenance boundary — with the gitignored runtime artifacts
+  (`FORGE_PLAN.md`, `FORGE_TODO.md`, `SESSION_CONTEXT.md`, `SESSION_TASK.md`,
+  `summary.md`) listed separately, because rule 4 requires them to be identified
+  rather than documented as policy. A sixth rule makes updating the inventory part
+  of the commit that adds, moves or deletes a Markdown file.
+- **The test-count policy is one policy.** `CONTRIBUTING.md` demanded "at least
+  10 tests" for a new feature while its own tool section said 3 and
+  `.github/PULL_REQUEST_TEMPLATE.md` said 5 for features and 3 for tools. The
+  contributor guide now owns a single rule (feature 5, tool 3, template 2, bug
+  fix a regression test) and the PR template mirrors it.
+
+### Added
+- `tests/markdown-scope.test.js` — the inventory cannot drift: a tracked `.md`
+  with no row, a row with no file, a duplicated or absolute path, a wrong total,
+  or a generated artifact in the tracked table all fail CI.
+
 ## [2.2.0] - 2026-11-21
 
 **Reliability pass.** The theme of this release is one sentence: several
