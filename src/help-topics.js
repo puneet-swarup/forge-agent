@@ -236,7 +236,7 @@ const TOPICS = {
   ${cb('white', 'NOTES:')}
   • All models use the FREE web interface — no API key needed
   • You must be logged in to the model's website in your browser
-  • DeepSeek is recommended — fastest and most reliable
+  • DeepSeek is the default and usually the fastest
   • Different models have different strengths:
     DeepSeek: best for coding, has R1 thinking mode
     ChatGPT:  best for writing and explanation

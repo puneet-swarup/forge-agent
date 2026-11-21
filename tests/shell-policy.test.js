@@ -222,8 +222,8 @@ describe('run_command honours the policy', () => {
 
 describe('the agent stops prompting for allowlisted commands', () => {
   test('_needsPermission: read-only and allowlisted are free', () => {
-    const DeepSeekAgent = require('../src/agent');
-    const agent = new DeepSeekAgent({});
+    const ForgeAgent = require('../src/agent');
+    const agent = new ForgeAgent({});
 
     expect(agent._needsPermission('read_file', { path: 'a' })).toBe(false);
     expect(agent._needsPermission('run_command', { command: 'npm test' })).toBe(false);

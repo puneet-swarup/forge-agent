@@ -15,7 +15,7 @@ jest.mock('../src/permission-menu', () => ({
   showPermissionMenu: jest.fn(async () => 'session'),
 }));
 
-const DeepSeekAgent = require('../src/agent');
+const ForgeAgent = require('../src/agent');
 const config = require('../src/config');
 const { ProgressTracker } = require('../src/progress');
 
@@ -66,7 +66,7 @@ describe('chat recovery', () => {
       'utf8'
     );
 
-    const agent = new DeepSeekAgent({});
+    const agent = new ForgeAgent({});
     const browser = makeFakeBrowser([]);
     agent.browser = browser;
 
@@ -96,7 +96,7 @@ describe('chat recovery', () => {
   });
 
   test('_readPlanState returns null when there is no plan, and truncates a huge one', () => {
-    const agent = new DeepSeekAgent({});
+    const agent = new ForgeAgent({});
     expect(agent._readPlanState()).toBe(null);
 
     fs.writeFileSync(path.join(workdir, 'FORGE_PLAN.md'), 'x'.repeat(5000), 'utf8');
@@ -115,7 +115,7 @@ describe('chat recovery', () => {
       'All done.\nTASK_COMPLETE',
     ]);
 
-    const agent = new DeepSeekAgent({});
+    const agent = new ForgeAgent({});
     agent.browser = browser;
 
     const spy = jest.fn(async () => {});
@@ -130,7 +130,7 @@ describe('chat recovery', () => {
   test('gives up with a partial result once the restart budget is spent', async () => {
     const browser = makeFakeBrowser([THROW, THROW, THROW, THROW, THROW]);
 
-    const agent = new DeepSeekAgent({});
+    const agent = new ForgeAgent({});
     agent.browser = browser;
 
     const spy = jest.fn(async () => {});
@@ -145,7 +145,7 @@ describe('chat recovery', () => {
   }, 30000);
 
   test('the stall counters reset between runs on the same agent', async () => {
-    const agent = new DeepSeekAgent({});
+    const agent = new ForgeAgent({});
     agent._recoveries = 5;
     agent._emptyStreak = 9;
 

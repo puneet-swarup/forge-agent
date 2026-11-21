@@ -71,7 +71,7 @@ prompt side.
 **Invariant.** Restarting a chat preserves the system prompt, the task, the
 plan, the progress and the recent errors.
 
-**Enforced by.** `DeepSeekAgent._recoverWithNewChat()` →
+**Enforced by.** `ForgeAgent._recoverWithNewChat()` →
 `ConversationManager.buildResumeMessage()`, which re-sends the full prompt.
 
 **The ladder** (in `agent.js`), each level reachable and bounded:
@@ -202,7 +202,7 @@ illustration, a code sample or a data structure is never executed.
 **Invariant.** `SESSION_CONTEXT.md` is created at task start, kept out of git,
 and injected when a chat restarts.
 
-**Enforced by.** `DeepSeekAgent._sessionCtxStart()` / `_sessionCtxSnapshot()`,
+**Enforced by.** `ForgeAgent._sessionCtxStart()` / `_sessionCtxSnapshot()`,
 `src/session-context.js`, and `buildResumeMessage({ sessionContext })`.
 
 **Verify.** `tests/session-context-wiring.test.js`.

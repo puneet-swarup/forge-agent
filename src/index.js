@@ -391,7 +391,7 @@ function printHelp() {
   console.log(`
 ${c('1;36', '╔═════════════════════════════════════════════════════════════════════╗')}
 ${c('1;36', '║')}  ${c('1;37', '🔨  Forge Agent v' + version + ' — Autonomous AI Coding')}                      ${c('1;36', '║')}
-${c('1;36', '║')}  ${c('0;90', 'No API key needed. Drives DeepSeek or Gemini.')}                   ${c('1;36', '║')}
+${c('1;36', '║')}  ${c('0;90', 'No API key needed. Drives DeepSeek, Gemini, Qwen, ChatGPT and Google.')}                   ${c('1;36', '║')}
 ${c('1;36', '╚═════════════════════════════════════════════════════════════════════╝')}
 
 ${c('1;36', 'USAGE')}
@@ -953,7 +953,7 @@ async function main() {
     fa "task"                       Short alias
 
   ${process.stdout.isTTY ? '\x1b[1;37mMODELS & PROFILES\x1b[0m' : 'MODELS & PROFILES'}
-    forge-agent --model=chatgpt     Use ChatGPT instead of DeepSeek
+    forge-agent --model=chatgpt     Use ChatGPT instead of the default (DeepSeek)
     forge-agent --profile=backend   Backend development mode
 
   ${process.stdout.isTTY ? '\x1b[1;37mRESUME\x1b[0m' : 'RESUME'}
@@ -1743,8 +1743,8 @@ async function main() {
       config.MODEL = modelName;
       config.HEADLESS = true; // Use headless for test
       
-      const DeepSeekAgent = require('./agent');
-      const agent = new DeepSeekAgent();
+      const ForgeAgent = require('./agent');
+      const agent = new ForgeAgent();
       
       logger.thinking('Launching browser and loading page...');
       await agent.init();
@@ -1826,8 +1826,8 @@ async function main() {
   console.log('');
 
   // ── Create agent ───────────────────────────────────────────────────────────
-  const DeepSeekAgent = require('./agent');
-  const agent = new DeepSeekAgent({ saveLog: args.saveLog });
+  const ForgeAgent = require('./agent');
+  const agent = new ForgeAgent({ saveLog: args.saveLog });
 
   // ── Graceful shutdown handler ──────────────────────────────────────────────
   const shutdown = async (code = 0) => {

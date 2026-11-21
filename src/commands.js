@@ -309,8 +309,8 @@ const BUILT_IN_COMMANDS = [
       return [
         `Chain-of-thought thinking: ${state ? 'ON 💭' : 'OFF'}`,
         state
-          ? '  DeepSeek will reason step-by-step (takes longer, better results).'
-          : '  DeepSeek will respond directly without showing reasoning.',
+          ? `  ${config.MODEL || 'The model'} will reason step-by-step (takes longer, better results).`
+          : `  ${config.MODEL || 'The model'} will respond directly without showing reasoning.`,
         '',
         '  Note: Takes effect on the next task you run.',
         '  Type /new to start a fresh conversation with this setting.',
