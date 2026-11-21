@@ -1,7 +1,7 @@
 # Markdown governance — inventory and ownership
 
 **Audited:** 2026-11-21, against `main` @ `b10bab4`.
-Tracked Markdown files: **21**
+Tracked Markdown files: **22**
 
 **Purpose.** Say what every Markdown file in this repository is *for*, who owns
 it, and where its authority ends — so a change lands in one place instead of
@@ -37,7 +37,7 @@ test now prevents.
 
 ---
 
-## Tracked inventory (21 files)
+## Tracked inventory (22 files)
 
 | File | Purpose | Authority and boundary |
 |---|---|---|
@@ -47,6 +47,7 @@ test now prevents.
 | `docs/RELIABILITY.md` | The runtime invariants: what is guaranteed, where it is enforced, how to verify it, and what is still missing. | **Canonical reliability record.** One numbered section per invariant, each naming its test. Add a section when a guarantee is added; the "What is still missing" list is part of the contract, not an appendix. |
 | `docs/SPAWN_PROTOCOL.md` | Parent/child identity, spawn contract, environment, task handoff, heartbeat, liveness. | **Single canonical normative source for multi-agent spawning.** Any change to spawn behaviour updates this file in the same PR. |
 | `docs/session-context-and-multiagent.md` | Design history and rationale for session context, context overflow, TODO workflow and multi-agent coordination. | Conceptual record, not a second protocol. Historical proposals stay labelled historical; current spawn behaviour defers to `docs/SPAWN_PROTOCOL.md`. |
+| `docs/LOOM.md` | The Loom project index: what it is, the slice plan, and what is wired into the agent loop today. | **Canonical Loom status.** `src/loom_specs.md` is the normative specification; this file says what exists. Update the slice table in the PR that lands each slice, and never claim a slice is wired before it is. |
 | `docs/MARKDOWN_SCOPE.md` | This file: inventory, ownership, overlaps, maintenance rules. | Owns documentation governance. Add a row whenever a Markdown file is added, moved, renamed or removed. |
 | `docs/DEVELOPMENT.md` | Developer setup: clone, install, run, test, container workflow. | Owns environment setup. `CONTRIBUTING.md` links here instead of repeating OS-specific steps. |
 | `docs/GOOGLE_ADAPTER.md` | Why the Google adapter is built the way it is: feasibility, selector strategy, limitations. | Owns Google-adapter design rationale. Implementation claims must match the adapter and its tests. |
