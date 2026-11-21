@@ -16,6 +16,7 @@ ls src/loom 2>/dev/null                   # T2
 npx jest tests/adapter-contract.test.js   # T3
 ls scripts/lifecycle.js scripts/plan.js   # T4
 grep -rn "['\"\`]/(var/)?tmp/" src/       # T5 (must be empty)
+npx jest tests/markdown-scope.test.js     # T6 (14)
 ```
 
 ---
@@ -41,7 +42,7 @@ rotation are all on `main`.
 | **T3** | Adapters | **OPEN — live-DOM accuracy only** | all 8 adapters implement the 6 contract methods; `tests/adapter-contract.test.js` (50) green | per-adapter live smoke test with a real login |
 | **T4** | Plan lifecycle | **PARTIAL** | artifact protocol is in the live prompt; `src/lifecycle.js`, `scripts/lifecycle.js`, `scripts/plan.js` exist; context rotation now re-sends the plan on every rotation | enforce start/end gates in the agent loop |
 | **T5** | Cross-platform paths | **DONE (targeted)** | no literal `/tmp` in `src/`; `icacls` hints on win32; `tests/path-portability.test.js` green | extend only if a new path bug appears |
-| **T6** | Markdown governance | **OPEN** | inventory at `docs/MARKDOWN_SCOPE.md` (imported, needs re-audit — its counts predate this branch) | re-audit, then rewrite the docs set |
+| **T6** | Markdown governance | **DONE** | `docs/MARKDOWN_SCOPE.md` re-audited (21 tracked files, verified against the tree); `tests/markdown-scope.test.js` (14) green and fails on any undocumented `.md` | follow the three open findings below |
 
 ---
 
@@ -190,21 +191,42 @@ invariant I6). Two real defects were fixed in PR #5:
 
 ---
 
-## T6 — Markdown governance · OPEN
+## T6 — Markdown governance · DONE
 
-`docs/MARKDOWN_SCOPE.md` was imported from the `loom` branch: an inventory of
-every Markdown file with its purpose, authority and maintenance boundary, plus
-five governance rules (one purpose per document; code and tests are authoritative
-over prose; historical records stay historical; generated artifacts are not
-documentation; update the canonical owner first).
+`docs/MARKDOWN_SCOPE.md` was imported from the `loom` branch. Re-audited against
+the tree: it claimed **29** files and listed **nine that do not exist on `main`**
+(`AGENTS.md`, `FORGE_PLAN.md`, `SESSION_CONTEXT.md`, `SESSION_TASK.md`,
+`summary.md` and four `.audio-backup/*` reports) while omitting
+`docs/RELIABILITY.md`. The real number is **21** tracked files.
 
-**It needs a re-audit.** Its counts (29 files, 16 at the root, 6 under `docs/`)
-predate this branch, which added `docs/RELIABILITY.md`, `src/loom_specs.md` and
-this file.
+What the rewrite does:
 
-Related, and separate: the README still reads as a fork of the original project.
-That is being handled as its own workstream — accurate attribution stays (MIT
-requires it), but the document should describe *this* agent.
+- Two tables with different authority: 21 tracked files (purpose + boundary,
+  each row naming who wins on a conflict) and 5 generated/ignored artifacts,
+  each saying why it is not documentation.
+- The five governance rules are kept as-is; they were sound.
+- It no longer records *enforcement status* anywhere. That is what made it
+  wrong: status belongs in `docs/RELIABILITY.md` and this file, and a third copy
+  only rots.
+- **A test now holds it:** `tests/markdown-scope.test.js` (14) walks the tree,
+  requires a row for every `.md`, requires every listed file to exist, and
+  checks the stated count against both the table and the disk. Adding a Markdown
+  file without a row fails CI. Verified by probe: a stray `docs/DRIFT_PROBE.md`
+  fails two assertions.
+
+**Also fixed here:** the contributor test-count policy contradicted itself in
+three places (`CONTRIBUTING.md` asked for 10, 3 and 2; the PR template asked for
+5). One rule now, stated once in `CONTRIBUTING.md`; the template defers to it,
+and the test enforces that.
+
+**Open findings recorded in the inventory (not fixed — different workstreams):**
+
+1. `ROADMAP.md` still says "Current Version: 2.0.0" while `package.json` says
+   2.2.0. The milestone list needs a real pass.
+2. The HTML site under `docs/*.html` duplicates the user guide and has no
+   ownership row or generation rule.
+3. `README.md` still reads as a fork of the original project in places.
+   Attribution stays (MIT requires it); the framing is its own workstream.
 
 ---
 

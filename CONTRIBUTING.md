@@ -65,7 +65,7 @@ forge-agent --interactive
 1. Open `src/tools.js`.
 2. Add your tool definition to the `TOOLS` object following the existing pattern.
 3. Add the tool to `shouldCache()` in `src/tool-cache.js` if it is a read-only operation.
-4. Write at least 3 tests in `tests/tools.test.js` (or a new test file).
+4. Add tests for the tool (see [Writing Tests](#writing-tests)).
 5. Document the tool in `docs/tools.html`.
 6. Run `npm test` to ensure everything passes.
 
@@ -86,13 +86,16 @@ my_tool: {
 
 1. Open `src/templates.js`.
 2. Add your template to the `BUILT_IN_TEMPLATES` object.
-3. Write at least 2 tests in `tests/templates.test.js`.
+3. Add tests for the template (see [Writing Tests](#writing-tests)).
 4. Add the template to `docs/templates.html`.
 
 ## Writing Tests
 - **Location:** All tests go in the `tests/` directory.
 - **Framework:** We use Jest.
-- **Requirements:** Every new feature needs at least 10 tests.
+- **Requirements:** every change that alters behaviour needs at least 3 focused
+  tests, in the file that covers the behaviour (new or existing). Three tests
+  that each pin a real branch beat ten that restate the happy path; there is no
+  separate quota per feature, tool or template.
 - **Isolation:** Tests must not depend on an actual browser or network. Use mocks where necessary.
 - **Cleanup:** Always clean up temporary files in `afterAll()`.
 - **Environment:** Use `os.tmpdir()` for file-based tests. Never touch `~/.deepseek-agent/`.

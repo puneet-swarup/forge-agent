@@ -6,6 +6,25 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ---
 
+## [Unreleased]
+
+### Changed
+- **Documentation governance is now enforced.** `docs/MARKDOWN_SCOPE.md` claimed
+  29 Markdown files and listed nine that do not exist on `main` while omitting
+  `docs/RELIABILITY.md`. Re-audited: 21 tracked files, each with a purpose and a
+  boundary, plus a separate table for the five generated artifacts. It no longer
+  records enforcement status — that was the copy that rotted.
+- **One test-count rule.** `CONTRIBUTING.md` asked for 10 tests, 3 tests and 2
+  tests in three places; the PR template asked for 5. There is now one rule,
+  stated once, and the template defers to it.
+
+### Added
+- `tests/markdown-scope.test.js` — fails when a Markdown file exists without an
+  inventory row, when a row names a missing file, or when the stated count drifts
+  from the tree.
+
+---
+
 ## [2.2.0] - 2026-11-21
 
 **Reliability pass.** The theme of this release is one sentence: several

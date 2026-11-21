@@ -22,7 +22,7 @@
 ## Testing
 
 - [ ] `npm test` passes locally (paste result count: X passed, X total)
-- [ ] New code has tests (minimum 5 tests for new features)
+- [ ] New code has tests (see the test rule in `CONTRIBUTING.md`)
 - [ ] Tested manually with `forge-agent --interactive`
 - [ ] Tested on Linux / macOS / Windows (delete irrelevant)
 
@@ -31,7 +31,7 @@
 - [ ] Tool added to `TOOLS` object in `src/tools.js`
 - [ ] Tool added to `shouldCache()` in `src/tool-cache.js` (if read-only)
 - [ ] Tool documented in `docs/tools.html`
-- [ ] At least 3 tests written in `tests/tools.test.js`
+- [ ] Tests written for the tool (see `CONTRIBUTING.md`)
 
 ## For new templates
 
