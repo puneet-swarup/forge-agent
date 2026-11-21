@@ -1,6 +1,5 @@
 # NEXT SESSION — Forge Agent workstreams
 
-
 **Verified:** 2026-11-21, against `main` @ `704d182` (after PRs #3-#16). The
 runner never merges; the lead agent merges after CI is green.
 **Rule for this file:** implementation and tests are authoritative. A status here
