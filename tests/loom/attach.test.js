@@ -21,7 +21,8 @@ describe('buildContextDigest', () => {
   beforeEach(() => {
     config = require('../../src/config');
     orig = { ...config };
-    jest.resetModules();
+    // No resetModules(): attach.js and this test must share ONE config instance,
+    // otherwise the test mutates an object the module never reads.
   });
 
   afterEach(() => {
@@ -63,6 +64,33 @@ describe('buildContextDigest', () => {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  test('builds a real digest from this repository when enabled', () => {
+    const { buildContextDigest } = require('../../src/loom/attach');
+    config.LOOM_ENABLED = true;
+
+    const out = buildContextDigest({ cwd: path.join(__dirname, '..', '..'), maxTokens: 1200 });
+
+    // Slice 3 is present, so this must produce a map, not an empty string.
+    expect(out).toContain('# Project map');
+    expect(out).toMatch(/Stack: Node\.js/);
+    expect(out).toMatch(/root: @puneet-swarup\/forge-agent/);
+    expect(Math.ceil(out.length / 4)).toBeLessThanOrEqual(1200);
+  }, 60000);
+
+  test('collectFiles skips the directories that are never worth indexing', () => {
+    const { collectFiles } = require('../../src/loom/attach');
+    const files = collectFiles(path.join(__dirname, '..', '..'));
+
+    expect(files.length).toBeGreaterThan(50);
+    expect(files.some((f) => f.startsWith('node_modules/'))).toBe(false);
+    expect(files.some((f) => f.startsWith('.git/'))).toBe(false);
+    expect(files.some((f) => f === 'package-lock.json')).toBe(false);
+    expect(files).toContain('src/agent.js');
+    // Deterministic: sorted, forward slashes only.
+    expect(files).toEqual([...files].sort());
+    expect(files.every((f) => !f.includes('\\'))).toBe(true);
+  }, 60000);
 
   test('is bounded by the token budget when it produces anything', () => {
     const { buildContextDigest } = require('../../src/loom/attach');
