@@ -20,7 +20,8 @@
     "audit": "npm audit",
     "audit:fix": "npm audit fix",
     "check:syntax": "node scripts/check-syntax.js",
-    "check:syntax:all": "node scripts/check-syntax.js --all"
+    "check:syntax:all": "node scripts/check-syntax.js --all",
+    "release:notes": "node scripts/changelog-section.js"
   },
   "jest": {
     "testEnvironment": "node",
@@ -35,12 +36,25 @@
     ],
     "coverageReporters": [
       "text",
-      "lcov"
+      "lcov",
+      "json-summary"
     ],
     "testTimeout": 15000,
     "forceExit": true,
     "setupFiles": [
       "<rootDir>/tests/setup.js"
+    ],
+    "coverageThreshold": {
+      "global": {
+        "statements": 69,
+        "branches": 61,
+        "functions": 72,
+        "lines": 70
+      }
+    },
+    "coveragePathIgnorePatterns": [
+      "/node_modules/",
+      "/tests/"
     ]
   },
   "files": [

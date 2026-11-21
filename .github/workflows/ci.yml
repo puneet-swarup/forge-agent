@@ -1,15 +1,27 @@
 # .github/workflows/ci.yml
 # Runs on every push and pull request.
-# Tests across the supported LTS lines (Node 20 and 22) on Ubuntu.
-# Node 18 is EOL (Apr 2025) and is no longer tested.
+#
+# Node 20, 22 and 24 on Ubuntu. Node 18 is EOL (Apr 2025) and is not tested.
+#
+# The suite is the gate: coverage thresholds in package.json fail the build when
+# the number drops, and the browser job runs the suites that skip everywhere a
+# Chromium cannot launch.
 
 name: CI
 
 on:
   push:
-    branches: [ main, dev, 'feature/**', 'fix/**' ]
+    branches: [ main, dev, 'feature/**', 'fix/**', 'feat/**', 'docs/**' ]
   pull_request:
     branches: [ main ]
+
+permissions:
+  contents: read
+
+concurrency:
+  # A new push to the same branch cancels the previous run.
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
@@ -17,56 +29,65 @@ jobs:
     runs-on: ubuntu-latest
 
     strategy:
-      fail-fast: false           # run all matrix jobs even if one fails
+      fail-fast: false
       matrix:
-        node-version: [20, 22]
+        node-version: [20, 22, 24]
 
     steps:
-      # ── Checkout ───────────────────────────────────────────────────────────
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ── Node.js setup ──────────────────────────────────────────────────────
       - name: Set up Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
           cache: 'npm'
 
-      # ── Install dependencies ───────────────────────────────────────────────
       # SKIP_PLAYWRIGHT_INSTALL=1 prevents postinstall from downloading
-      # Chromium (~150 MB) — we don't need a real browser for unit tests.
+      # Chromium (~150 MB) — the unit suite does not need a real browser.
       - name: Install dependencies
         run: npm ci
         env:
           SKIP_PLAYWRIGHT_INSTALL: '1'
 
-      # ── Security Audit ─────────────────────────────────────────────────────
       - name: Security audit
         run: npm audit --audit-level=high
-        continue-on-error: true   # warn but don't block CI yet
+        continue-on-error: true   # warn but do not block
 
-      # ── Lint ───────────────────────────────────────────────────────────────
       - name: Type-check (JSDoc / @ts-check modules)
-        run: npx tsc -p tsconfig.json
+        run: npm run typecheck
 
+      # Parses every file in src/ and tests/, not a hand-maintained list that
+      # silently misses whatever was added last.
       - name: Check for syntax errors
-        run: node --check src/index.js src/agent.js src/browser.js src/tools.js src/parser.js src/prompt.js src/config.js src/logger.js src/session-context.js src/todo-manager.js src/work-startup.js src/agent-supervisor.js
+        run: npm run check:syntax:all
 
-      # ── Tests ──────────────────────────────────────────────────────────────
-      - name: Run test suite
-        run: npm test
+      - name: Run test suite with coverage
+        run: npm run test:coverage
         env:
           CI: 'true'
 
-      # ── Coverage ───────────────────────────────────────────────────────────
       - name: Upload coverage report
-        if: matrix.node-version == 20    # only upload once
+        if: matrix.node-version == 20    # upload once
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
           path: coverage/
           retention-days: 7
+
+      - name: Coverage summary
+        if: matrix.node-version == 20
+        run: |
+          node -e "
+            const fs = require('fs');
+            const p = 'coverage/coverage-summary.json';
+            if (!fs.existsSync(p)) { console.log('no summary'); process.exit(0); }
+            const t = JSON.parse(fs.readFileSync(p, 'utf8')).total;
+            const line = ['statements','branches','functions','lines']
+              .map(k => k + ': ' + t[k].pct + '%').join(' | ');
+            console.log('Coverage — ' + line);
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, '### Coverage\n\n' + line + '\n');
+          "
 
   # -- Integration: real headless Chromium against a local mock chat page --
   integration:

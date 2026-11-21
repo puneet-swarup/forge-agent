@@ -76,6 +76,18 @@ repository. See `docs/RELIABILITY.md` for the invariants and how to verify them.
   `getModelUrl()` fails with an actionable message naming `--model-url`.
 
 ### Added
+- **CI/CD: coverage gate, wider matrix, honest releases** — CI now runs the
+  suite *with* coverage and fails when it drops below a ratcheting threshold
+  (69/61/72/70 for statements/branches/functions/lines, a point under today's
+  70.4/62.7/73.3/71.9); the Node matrix gains 24; the syntax check covers every
+  file in `src/` and `tests/` instead of a hand-maintained list that had already
+  fallen behind; a new push cancels the previous run; workflows default to
+  read-only permissions. Releases are tag-driven and refuse to run when the tag
+  disagrees with `package.json`, publish to npm only when `NPM_TOKEN` is
+  configured, and build the GitHub Release notes from the CHANGELOG section for
+  that version (`scripts/changelog-section.js`) instead of a generated list of
+  merge commits. Dependabot watches npm and Actions, grouped so a security bump
+  does not arrive as twenty notifications.
 - **Routine context rotation** — the model's real context window belongs to the
   remote chat, not to this process: `ConversationManager.compress()` rewrote a
   local log that was never re-sent, so the remote context grew until the provider

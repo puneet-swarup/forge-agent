@@ -1,0 +1,26 @@
+# .github/dependabot.yml — keep dependencies current, weekly, in one PR per
+# ecosystem so a security bump does not arrive as twenty separate notifications.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: '/'
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      dev-dependencies:
+        dependency-type: development
+      production-dependencies:
+        dependency-type: production
+    commit-message:
+      prefix: 'chore(deps)'
+    labels: ['dependencies']
+
+  - package-ecosystem: github-actions
+    directory: '/'
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: 'chore(ci)'
+    labels: ['dependencies', 'ci']
