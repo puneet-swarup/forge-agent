@@ -55,12 +55,22 @@ function parseResponse(rawText, opts = {}) {
   // ILLUSTRATION unless it is the entire response. Models routinely show an
   // example call while explaining something; executing that example is how an
   // explanation of a write becomes a write.
-  const codeBlockRe = /```([A-Za-z0-9_+-]*)[^\n]*\n([\s\S]*?)\n?\s*```/g;
+  const codeBlockRe = /```([A-Za-z0-9_+-]*)[ \t]*\r?\n([\s\S]*?)\r?\n?[ \t]*```/g;
   let cbMatch;
   const _cbCalls = [];
   while ((cbMatch = codeBlockRe.exec(text)) !== null) {
-    const info = (cbMatch[1] || '').toLowerCase();
-    const body = cbMatch[2].trim();
+    let info = (cbMatch[1] || '').toLowerCase();
+    let body = cbMatch[2];
+
+    // Some UIs render the language label on its own line, so the scrape looks
+    // like ```\ntool_call\n{...}. Treat a leading tag word as the info string.
+    const labelOnOwnLine = body.match(/^[ \t]*(tool_call|json)[ \t]*\r?\n/i);
+    if (!info && labelOnOwnLine) {
+      info = labelOnOwnLine[1].toLowerCase();
+      body = body.slice(labelOnOwnLine[0].length);
+    }
+
+    body = body.trim();
     const before = text.slice(0, cbMatch.index).trim();
     const after = text.slice(codeBlockRe.lastIndex).trim();
     const wholeResponse = before === '' && after === '';

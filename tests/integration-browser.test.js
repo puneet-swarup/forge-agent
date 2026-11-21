@@ -116,7 +116,11 @@ describe('browser integration (mock chat)', () => {
     const reply = await adapter.waitForResponse();
 
     // The parser must be able to see a tool_call fence in the scraped text.
-    expect(reply).toContain('tool_call');
+    // If this ever fails in CI, print the scraped text: the shape of the DOM
+    // text is the thing under test, and a bare "expected show_info" hides it.
+    if (!reply.includes('tool_call')) {
+      throw new Error('scraped reply has no tool_call fence: ' + JSON.stringify(reply));
+    }
     const { parseResponse } = require('../src/parser');
     const parsed = parseResponse(reply);
     // parseResponse returns {type:'tool_call', name, args} for a single call,
@@ -124,7 +128,14 @@ describe('browser integration (mock chat)', () => {
     const names = parsed.type === 'tool_batch'
       ? parsed.calls.map(c => c.name)
       : [parsed.name];
-    expect(names).toContain('show_info');
+
+    if (!names.includes('show_info')) {
+      throw new Error(
+        'could not parse a tool call from the scraped reply\n' +
+        'scraped: ' + JSON.stringify(reply) + '\n' +
+        'parsed : ' + JSON.stringify(parsed)
+      );
+    }
   }, 30000);
 
   itBrowser('uses the MutationObserver fast path and resolves quickly', async () => {
