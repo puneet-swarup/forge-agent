@@ -77,6 +77,11 @@ const logger = {
   success(msg)    { getTUI().success(msg); },
   warn(msg, ...rest)   { getTUI().warn(joinArgs(msg, rest)); },
   error(msg)      { getTUI().error(msg); },
+  debug(msg, ...rest) {
+    if (!_config.DEBUG) return;
+    getTUI().dim(joinArgs(msg, rest));
+  },
+
   dim(msg)        { getTUI().dim(msg); },
   answer(text)    { getTUI().renderAnswer(text); },
   separator(label){ getTUI().separator(label); },

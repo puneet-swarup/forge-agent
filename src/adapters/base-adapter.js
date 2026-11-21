@@ -322,11 +322,44 @@ class BaseAdapter {
       results.errors.push('Input error: ' + err.message);
     }
 
+    // The send control usually appears only once the composer has content —
+    // ChatGPT, Gemini and Indus all do this. Checking it against an empty
+    // composer reports "not found" for a button that exists, which is worse than
+    // useless: it sends the operator hunting for a selector that is already
+    // correct.
     try {
+      let typed = false;
+      if (results.input) {
+        try {
+          const composer = await this.discoverComposer({ timeout: 5000 });
+          if (composer) {
+            await composer.click({ timeout: 3000 }).catch(() => {});
+            await this.page.keyboard.type('x', { delay: 0 });
+            typed = true;
+            await this.page.waitForTimeout(600);
+          }
+        } catch (_) {
+          // Typing is a probe, not a requirement.
+        }
+      }
+
       results.send = !!await this.discoverSendButton();
 
+      if (typed) {
+        // Leave the composer as we found it.
+        try {
+          await this.page.keyboard.press('Control+A');
+          await this.page.keyboard.press('Backspace');
+          await this.page.waitForTimeout(200);
+        } catch (_) { /* best effort */ }
+      }
+
       if (!results.send) {
-        results.errors.push('Send button not found');
+        results.errors.push(
+          typed
+            ? 'Send button not found (checked with text in the composer)'
+            : 'Send button not found (composer was empty; could not type a probe)'
+        );
       }
     } catch (err) {
       results.errors.push('Send error: ' + err.message);

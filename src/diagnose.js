@@ -149,7 +149,8 @@ async function probeDom(page) {
  */
 function formatDiagnostics(report) {
   const lines = [];
-  const { model, url, selectors, dom, roundTrip } = report || {};
+  const safe = report || {};
+  const { model, url, selectors, dom, roundTrip, sendWithText, messages } = safe;
 
   lines.push('');
   lines.push(`Selector diagnostics${model ? ' — ' + model : ''}`);
@@ -179,6 +180,33 @@ function formatDiagnostics(report) {
           : `${row.count} match${row.count === 1 ? '' : 'es'}${row.visible ? ', visible' : ', hidden'}${row.enabled ? '' : ', disabled'}`;
       lines.push(`    ${mark} ${row.selector}`);
       lines.push(`        ${detail}`);
+    }
+  }
+
+  // ── Send, re-checked with text in the composer ─────────────────────────
+  if (sendWithText) {
+    const st = sendWithText;
+    lines.push('');
+    lines.push('  send (with text in the composer)');
+
+    if (st.error) {
+      lines.push(`    could not probe: ${st.error}`);
+    } else {
+      const matched = (st.rows || []).filter((r) => r.count > 0 && r.visible && !r.error);
+      lines.push(`    ${matched.length} of ${(st.rows || []).length} matched` +
+        (st.typed ? '' : '  (nothing was typed)'));
+
+      for (const row of st.rows || []) {
+        const mark = row.error ? 'ERR' : row.count === 0 ? ' · ' : row.visible ? ' ✓ ' : ' ~ ';
+        lines.push(`    ${mark} ${row.selector}`);
+      }
+
+      if (st.structuralButtons !== null && st.structuralButtons !== undefined) {
+        lines.push(`    structural: ${st.structuralButtons} enabled button(s) share the composer's container`);
+      }
+      if (matched.length === 0 && st.structuralButtons > 0) {
+        lines.push('    → the structural fallback would find it; add the real selector from the DOM dump below');
+      }
     }
   }
 
@@ -224,6 +252,21 @@ function formatDiagnostics(report) {
     if (roundTrip.error) lines.push(`    error:     ${roundTrip.error}`);
   }
 
+  // ── Where the reply actually lives ─────────────────────────────────────
+  if (Array.isArray(messages) && messages.length) {
+    lines.push('');
+    lines.push('  Text containers after the reply (largest first — the answer is at the top):');
+    for (const el of messages) {
+      const bits = [`<${el.tag}>`];
+      if (el.cls) bits.push(`.${String(el.cls).split(' ').slice(0, 3).join('.')}`);
+      if (el.testId) bits.push(`data-testid="${el.testId}"`);
+      if (el.role) bits.push(`role="${el.role}"`);
+      bits.push(`[${el.len} chars]`);
+      lines.push(`    ${bits.join(' ')}`);
+      if (el.text) lines.push(`        "${el.text}"`);
+    }
+  }
+
   lines.push('');
   return lines.join('\n');
 }
@@ -242,6 +285,130 @@ function describeElement(el) {
   return parts.length ? parts.join(' ') : '(no identifying attributes)';
 }
 
+
+/**
+ * Re-probe the send group with text in the composer.
+ *
+ * Chat UIs render the send control only once there is something to send, so a
+ * probe against an empty composer reports "not found" for a button that exists.
+ * On a live Sarvam run that false negative is exactly what we saw.
+ *
+ * @param {object} page
+ * @param {object} adapter
+ * @returns {Promise<object>} { typed, rows, cleared, error }
+ */
+async function probeSendWithText(page, adapter) {
+  const out = { typed: false, rows: [], cleared: false, error: null };
+
+  try {
+    const composer = await adapter.discoverComposer({ timeout: 5000 });
+    if (!composer) {
+      out.error = 'composer not found';
+      return out;
+    }
+
+    await composer.click({ timeout: 3000 }).catch(() => {});
+    await page.keyboard.type('x', { delay: 0 });
+    out.typed = true;
+    await page.waitForTimeout(700);
+
+    const selectors = selectorsFor(adapter, 'send');
+    for (const selector of selectors) {
+      const row = { selector, count: 0, visible: false, enabled: false, error: null };
+      try {
+        const locator = page.locator(selector);
+        row.count = await locator.count();
+        if (row.count > 0) {
+          const last = locator.last();
+          row.visible = await last.isVisible().catch(() => false);
+          row.enabled = await last.isEnabled().catch(() => false);
+        }
+      } catch (err) {
+        row.error = (err && err.message) || String(err);
+      }
+      out.rows.push(row);
+    }
+
+    // Structural answer: the last enabled button sharing a container with the
+    // composer. If a selector list has drifted, this is what would be used.
+    try {
+      const container = composer.locator('xpath=ancestor::*[.//button][1]');
+      const buttons = container.locator('button:not([disabled])');
+      const count = await buttons.count();
+      out.structuralButtons = count;
+    } catch (_) {
+      out.structuralButtons = null;
+    }
+  } catch (err) {
+    out.error = (err && err.message) || String(err);
+  } finally {
+    try {
+      await page.keyboard.press('Control+A');
+      await page.keyboard.press('Backspace');
+      out.cleared = true;
+    } catch (_) { /* best effort */ }
+  }
+
+  return out;
+}
+
+/**
+ * Dump the elements that could hold a reply.
+ *
+ * After a message is sent, this is what tells us which container the answer
+ * actually lives in — the one thing an empty page cannot reveal.
+ *
+ * @param {object} page
+ * @returns {Promise<Array>} candidates, largest text first
+ */
+async function probeMessages(page) {
+  try {
+    return await page.evaluate(() => {
+      const clip = (v, max = 80) => {
+        if (v === null || v === undefined) return null;
+        const t = String(v).replace(/\s+/g, ' ').trim();
+        return t.length > max ? t.slice(0, max - 1) + '…' : t;
+      };
+
+      const visible = (el) => {
+        const style = window.getComputedStyle(el);
+        return style.display !== 'none' && style.visibility !== 'hidden' &&
+          el.getClientRects().length > 0;
+      };
+
+      // Elements holding a paragraph or more of text, excluding the composer and
+      // the page chrome. Sorted by text length so the answer is at the top.
+      const candidates = [...document.querySelectorAll('div, article, section, li, p, span')]
+        .filter((el) => {
+          if (!visible(el)) return false;
+          if (el.closest('[contenteditable="true"]')) return false;
+          const text = (el.innerText || '').trim();
+          if (text.length < 40) return false;
+          // Prefer leaf-ish nodes: a container whose child holds the same text
+          // is the parent, and tells us less.
+          const childSame = [...el.children].some(
+            (c) => (c.innerText || '').trim().length === text.length
+          );
+          return !childSame;
+        })
+        .map((el) => ({
+          tag: el.tagName.toLowerCase(),
+          cls: clip(el.className && el.className.toString(), 70) || null,
+          testId: clip(el.getAttribute('data-testid') || el.getAttribute('data-test-id')) || null,
+          role: clip(el.getAttribute('role')) || null,
+          len: (el.innerText || '').trim().length,
+          text: clip(el.innerText, 80),
+        }))
+        .sort((a, b) => b.len - a.len)
+        .slice(0, 12);
+
+      return candidates;
+    });
+  } catch (_) {
+    return [];
+  }
+}
+
 module.exports = {
   GROUPS,
   GROUP_METHODS,
@@ -250,4 +417,6 @@ module.exports = {
   probeDom,
   formatDiagnostics,
   describeElement,
+  probeSendWithText,
+  probeMessages,
 };

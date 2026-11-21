@@ -154,3 +154,81 @@ describe('describeElement', () => {
     expect(diagnose.describeElement({ tag: 'div' })).toBe('(no identifying attributes)');
   });
 });
+
+// ─────────────────────────────────────────────
+//  The two false negatives a live run produced
+// ─────────────────────────────────────────────
+
+describe('send with text, and where the reply lives', () => {
+  test('reports that nothing was typed when the composer is missing', async () => {
+    const adapter = {
+      discoverComposer: async () => null,
+      _getSendSelectors: () => ['#send'],
+    };
+    const out = await diagnose.probeSendWithText({ keyboard: {} }, adapter);
+
+    expect(out.typed).toBe(false);
+    expect(out.error).toContain('composer not found');
+  });
+
+  test('types into the composer and probes send afterwards', async () => {
+    const typed = [];
+    const page = {
+      keyboard: {
+        type: async (t) => typed.push(t),
+        press: async (k) => typed.push(k),
+      },
+      waitForTimeout: async () => {},
+      locator: () => ({
+        count: async () => 1,
+        last: () => ({ isVisible: async () => true, isEnabled: async () => true }),
+      }),
+    };
+    const composer = {
+      click: async () => {},
+      locator: () => ({ locator: () => ({ count: async () => 2 }) }),
+    };
+    const adapter = {
+      discoverComposer: async () => composer,
+      _getSendSelectors: () => ['#send'],
+    };
+
+    const out = await diagnose.probeSendWithText(page, adapter);
+
+    expect(out.typed).toBe(true);
+    expect(out.rows[0]).toMatchObject({ selector: '#send', count: 1, visible: true });
+    expect(out.cleared).toBe(true);
+    expect(typed).toContain('x');
+  });
+
+  test('the report says the structural fallback would have found it', () => {
+    const out = diagnose.formatDiagnostics({
+      selectors: {},
+      sendWithText: {
+        typed: true,
+        rows: [{ selector: '.nope', count: 0, visible: false, enabled: false, error: null }],
+        structuralButtons: 3,
+      },
+    });
+
+    expect(out).toContain('with text in the composer');
+    expect(out).toContain('0 of 1 matched');
+    expect(out).toContain('structural fallback would find it');
+  });
+
+  test('text containers after a reply are listed largest first', () => {
+    const out = diagnose.formatDiagnostics({
+      selectors: {},
+      messages: [
+        { tag: 'div', cls: 'indus-response', len: 220, text: 'The test script is…' },
+        { tag: 'p', cls: null, len: 60, text: 'smaller' },
+      ],
+    });
+
+    expect(out).toContain('Text containers after the reply');
+    expect(out).toContain('.indus-response');
+    expect(out).toContain('[220 chars]');
+    // The biggest block must come first: it is the one holding the answer.
+    expect(out.indexOf('[220 chars]')).toBeLessThan(out.indexOf('[60 chars]'));
+  });
+});

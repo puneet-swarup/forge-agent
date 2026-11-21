@@ -9,6 +9,22 @@ Versioning: [Semantic Versioning](https://semver.org/)
 ## [Unreleased]
 
 ### Fixed
+- **`logger.debug` did not exist, and five adapters called it.** Every call threw
+  a TypeError inside a try/catch, so the message vanished *and* the rest of that
+  block was skipped. On a live Sarvam run it surfaced as
+  `[Sarvam] Navigation fallback: TypeError: logger.debug is not a function`. A
+  test now asserts every `logger.<method>()` used in `src/` exists.
+- **The selector test reported "send button not found" for a button that was
+  there.** Chat UIs render the send control only once the composer has text, so
+  probing an empty composer gives a false negative — the operator then hunts for
+  a selector that is already correct. `--test-model` now types a probe character,
+  checks, and clears.
+- **`--diagnose` could not see the reply container, because none existed.** It
+  now re-probes `send` with text in the composer, and after `--round-trip` dumps
+  the text containers on the page largest-first — which is how you find where an
+  adapter's response selector should point.
+
+### Fixed
 - **An unknown model silently became deepseek.** `config.MODEL` was validated
   against a hand-written list that predated the adapter registry, so
   `--model=sarvam` (or `--diagnose=sarvam`) printed "Sarvam AI (Indus)" and then

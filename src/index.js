@@ -1801,7 +1801,12 @@ async function main() {
       const selectors = await diagnose.probeSelectors(page, adapter);
       const dom = await diagnose.probeDom(page);
 
+      // The send control usually only exists once the composer has text, so an
+      // empty-composer probe reports a false "not found".
+      const sendWithText = await diagnose.probeSendWithText(page, adapter);
+
       let roundTrip = null;
+      let messages = null;
       if (args.roundTrip) {
         const started = Date.now();
         roundTrip = { sent: false, detected: false, elapsedMs: null, reply: null, error: null };
@@ -1812,6 +1817,10 @@ async function main() {
           roundTrip.detected = Boolean(reply && String(reply).trim());
           roundTrip.reply = reply ? String(reply).trim() : null;
           roundTrip.elapsedMs = Date.now() - started;
+
+          // Now that a reply exists, find out which container holds it.
+          await page.waitForTimeout(1500);
+          messages = await diagnose.probeMessages(page);
         } catch (err) {
           roundTrip.error = (err && err.message) || String(err);
         }
@@ -1822,7 +1831,9 @@ async function main() {
         url: dom.url || getModelUrl(modelName),
         selectors,
         dom,
+        sendWithText,
         roundTrip,
+        messages,
       }));
 
       await agent.shutdown();

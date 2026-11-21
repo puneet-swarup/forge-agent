@@ -23,13 +23,23 @@ _getInputSelectors() {
 }
 
   _getSendSelectors() {
+    // A live diagnostic run on an EMPTY composer matched none of the original
+    // five and showed no send control in the DOM at all — Indus renders it only
+    // once there is text. These are broader, and discoverSendButton() below
+    // falls back to the structural search when even these miss.
     return [
-      // The debug output shows an .indus-send-slot container
       '.indus-send-slot button:not([disabled])',
       '.indus-send-slot [role="button"]:not([aria-disabled="true"])',
       'button[aria-label*="Send" i]:not([disabled])',
       'button[type="submit"]:not([disabled])',
       'button:has(svg[class*="send"])',
+      '[class*="send" i] button:not([disabled])',
+      'button[class*="send" i]:not([disabled])',
+      'button[data-testid*="send" i]:not([disabled])',
+      'form button[type="submit"]:not([disabled])',
+      // Last named attempt: the icon-only button beside the composer.
+      '.tiptap ~ button:not([disabled])',
+      '.indus-prompt-input ~ * button:not([disabled])',
     ];
   }
 
@@ -111,6 +121,30 @@ _getInputSelectors() {
         // Try next selector.
       }
     }
+
+    // Structural fallback. Indus renders its send control inside the composer
+    // container and only once there is text, so no attribute-based selector can
+    // be relied on. Take the last enabled button that shares a container with
+    // the editor — that is where a send affordance lives in every chat UI.
+    try {
+      const composer = await this.discoverComposer({ timeout: 3000 });
+      if (composer) {
+        const container = composer.locator('xpath=ancestor::*[.//button][1]');
+        const buttons = container.locator('button:not([disabled])');
+        const count = await buttons.count();
+
+        for (let i = count - 1; i >= 0; i--) {
+          const candidate = buttons.nth(i);
+          if (await candidate.isVisible()) {
+            logger.debug('[Sarvam] Send button found structurally (no selector matched)');
+            return candidate;
+          }
+        }
+      }
+    } catch (_) {
+      // Fall through to the Enter key.
+    }
+
     return null;
   }
 
