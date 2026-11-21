@@ -181,8 +181,9 @@ const DEFAULTS = {
   WIZARD_COMPLETED   : false,
 
   // Response Streak Thresholds
-  EMPTY_RESPONSE_THRESHOLD: 4,
-  PARTIAL_RESULT_THRESHOLD: 6,
+  EMPTY_RESPONSE_THRESHOLD: 4,   // consecutive stalls before restarting the chat
+  PARTIAL_RESULT_THRESHOLD: 6,   // consecutive stalls before returning a partial result
+  MAX_CHAT_RECOVERIES: 2,        // chat restarts allowed per run before giving up
 };
 
 // ─────────────────────────────────────────────

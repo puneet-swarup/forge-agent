@@ -188,6 +188,62 @@ class DeepSeekAgent {
   }
 
   /**
+   * Restart the chat WITHOUT losing the contract.
+   *
+   * A fresh chat has no system prompt, no tool list and no call format. The
+   * old recovery path sent only "you are a coding agent, continue the task",
+   * so the model's next reply was prose, which tripped the correction counter
+   * and aborted the run a few steps later. Recovery turned a stall into a
+   * guaranteed failure.
+   *
+   * This re-sends the full system prompt plus the plan and progress, so the
+   * model resumes with the same rules it started with.
+   *
+   * @param {string} task
+   * @param {ProgressTracker} progress
+   * @returns {Promise<void>}
+   */
+  async _recoverWithNewChat(task, progress) {
+    logger.warn('Chat stalled — restarting with the full contract and state');
+
+    await this.browser.newChat();
+    await sleep(2_000);
+
+    const message = this.conversation.buildResumeMessage({
+      task,
+      progress: progress.getStatusLine(),
+      plan: this._readPlanState(),
+      recentErrors: typeof progress.recentErrors === 'function'
+        ? progress.recentErrors(3)
+        : [],
+      reason: 'the previous chat stopped responding',
+      profile: config.ACTIVE_PROFILE,
+      workingDir: config.WORKING_DIR,
+    });
+
+    await this.browser.sendMessage(message);
+    logger.dim('  Contract re-sent: system prompt + plan + progress');
+  }
+
+  /**
+   * Current plan state, if the agent has written one. Bounded so a large plan
+   * cannot blow the context on a restart.
+   *
+   * @returns {string|null}
+   */
+  _readPlanState() {
+    try {
+      const file = path.join(config.WORKING_DIR || process.cwd(), 'FORGE_PLAN.md');
+      if (!fs.existsSync(file)) return null;
+      const body = fs.readFileSync(file, 'utf8').trim();
+      if (!body) return null;
+      return body.length > 2000 ? body.slice(0, 2000) + '\n… (truncated)' : body;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /**
    * Run a task to completion.
    * Returns the final response string, or a partial summary on timeout.
    */
@@ -200,6 +256,11 @@ class DeepSeekAgent {
 
     logger.initTUI(config);
     this._running   = true;
+    // Per-run counters. They are instance state, so a second run() on the same
+    // agent must not inherit the previous run's streak or recovery count.
+    this._emptyStreak = 0;
+    this._recoveries = 0;
+    this._lastToolCallCountAtFailure = 0;
     const startTime = Date.now();
     const progress  = new ProgressTracker(task);
 
@@ -327,26 +388,21 @@ class DeepSeekAgent {
           if (this._emptyStreak === undefined) this._emptyStreak = 0;
           this._emptyStreak++;
 
-          const noRecentProgress = progress.toolCallCount <= (this._lastToolCallCountAtFailure || 0);
-          if (this._emptyStreak >= (config.EMPTY_RESPONSE_THRESHOLD || 4) && noRecentProgress) {
-            // Capture diagnostics before aborting (s.13.2). Best-effort.
-            try {
-              const { captureFailure } = require('./failure-capture');
-              const page = this.browser && this.browser.page;
-              const adapterName = this.browser && this.browser.adapter && this.browser.adapter.constructor
-                ? this.browser.adapter.constructor.name : 'unknown';
-              await captureFailure(page, 'empty-streak-abort', { adapterName });
-            } catch (_) { /* never mask the abort */ }
-            logger.error('Stuck in empty response loop without progress — aborting.');
-            const summary = progress.buildPartialSummary('stuck in empty response loop');
-            this._recordHistory(task, 'failed', startTime, progress, summary, templateName);
-            if (this.options.saveLog) await this._saveConversationLog(task, summary);
-            this._running = false;
-            return summary;
-          }
-          this._lastToolCallCountAtFailure = progress.toolCallCount;
+          // ── Stall escalation ─────────────────────────────────────────────
+          // Three levels, in order, each reachable and bounded:
+          //   1. nudge   — ask the model to continue
+          //   2. recover — restart the chat WITH the contract (bounded)
+          //   3. give up — capture diagnostics and return a partial result
+          //
+          // Before this change level 2 was unreachable: a successful response
+          // (the only thing that raises toolCallCount) also resets
+          // _emptyStreak, so the "no progress" guard was always true at the
+          // threshold and the loop aborted before it could ever recover.
+          const recoverAt     = config.EMPTY_RESPONSE_THRESHOLD || 4;
+          const giveUpAt      = config.PARTIAL_RESULT_THRESHOLD || 6;
+          const maxRecoveries = config.MAX_CHAT_RECOVERIES || 2;
 
-          if (this._emptyStreak >= (config.PARTIAL_RESULT_THRESHOLD || 6)) {
+          if (this._emptyStreak >= giveUpAt) {
             logger.warn('Too many consecutive failures — returning partial result.');
 
             if (config.MEMORY_ENABLED) {
@@ -366,19 +422,27 @@ class DeepSeekAgent {
             return summary;
           }
 
-          if (this._emptyStreak >= (config.EMPTY_RESPONSE_THRESHOLD || 4)) {
-            logger.warn('Starting a new chat to recover...');
-            await this.browser.newChat();
-            await sleep(2_000);
-            const doneSoFar = progress.getStatusLine();
-            const recovery = this.conversation.addToolResult(
-              'SYSTEM',
-              `You are a coding agent. The previous chat session was reset due to connection issues.
-               Please continue with this task: "${task}"
-               Current Progress: ${doneSoFar}`,
-              true
-            );
-            await this.browser.sendMessage(recovery);
+          if (this._emptyStreak >= recoverAt) {
+            if ((this._recoveries || 0) >= maxRecoveries) {
+              // Capture diagnostics before aborting (s.13.2). Best-effort.
+              try {
+                const { captureFailure } = require('./failure-capture');
+                const page = this.browser && this.browser.page;
+                const adapterName = this.browser && this.browser.adapter && this.browser.adapter.constructor
+                  ? this.browser.adapter.constructor.name : 'unknown';
+                await captureFailure(page, 'empty-streak-abort', { adapterName });
+              } catch (_) { /* never mask the abort */ }
+              logger.error(`Still stalled after ${maxRecoveries} chat restart(s) — aborting.`);
+              const summary = progress.buildPartialSummary('stuck in empty response loop');
+              this._recordHistory(task, 'failed', startTime, progress, summary, templateName);
+              if (this.options.saveLog) await this._saveConversationLog(task, summary);
+              this._running = false;
+              return summary;
+            }
+
+            this._recoveries = (this._recoveries || 0) + 1;
+            logger.warn(`Stall ${this._emptyStreak}: restarting chat (recovery ${this._recoveries}/${maxRecoveries})`);
+            await this._recoverWithNewChat(task, progress);
           } else {
             await sleep(2_000);
             const nudge = this.conversation.addToolResult(

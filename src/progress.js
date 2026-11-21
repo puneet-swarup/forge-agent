@@ -103,6 +103,20 @@ class ProgressTracker {
     });
   }
 
+  /**
+   * The most recent error messages, oldest first.
+   * Used when a chat is restarted so the model does not repeat a failure.
+   *
+   * @param {number} [limit]
+   * @returns {string[]}
+   */
+  recentErrors(limit = 3) {
+    return this.steps
+      .filter((s) => s.type === STEP.ERROR)
+      .slice(-limit)
+      .map((s) => s.message);
+  }
+
   // ── Summary generation ─────────────────────────────────────────────────────
 
   /**
