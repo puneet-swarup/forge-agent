@@ -7,7 +7,7 @@ const { execSync }                 = require('child_process');
 const config                       = require('./config');
 const logger                       = require('./logger');
 const DeepSeekBrowser              = require('./browser');
-const { executeTool, cache, setAdapterProvider } = require('./tools');
+const { executeTool, cache, setAdapterProvider, TOOLS } = require('./tools');
 const {
   parseResponse,
   formatToolResult,
@@ -557,7 +557,9 @@ class DeepSeekAgent {
         this.conversation.addAssistantMessage(rawResponse);
 
         // Parse the response
-        const parsed = parseResponse(rawResponse);
+        // Parse WITH the tool registry so prose that merely contains JSON, and
+        // misspelled tool names, cannot execute. See parser._finalise().
+        const parsed = parseResponse(rawResponse, { toolNames: Object.keys(TOOLS) });
 
         // Step line describes the tool that is ACTUALLY about to run (current
         // intent), not the previous one. Emitted after parsing so the label and
@@ -755,6 +757,35 @@ class DeepSeekAgent {
           }
 
           await this.browser.sendMessage(feedbackMsg);
+          step++;
+          continue;
+        }
+
+        // ── Case 1b: Unknown tool name ─────────────────────────────────────
+        // One targeted repair ("did you mean read_file?") instead of the
+        // executor's full registry dump, and no execution of a partial batch.
+        if (parsed.type === 'invalid_tool') {
+          _consecutiveUnrecognised++;
+          logger.warn(`Unknown tool: ${parsed.name}${parsed.suggestion ? ` (did you mean ${parsed.suggestion}?)` : ''}`);
+          progress.recordError(`unknown tool: ${parsed.name}`);
+
+          if (_consecutiveUnrecognised >= MAX_CORRECTION_ATTEMPTS) {
+            throw new Error(
+              `The AI kept calling tools that do not exist (last: "${parsed.name}"). ` +
+              'Check the model response and try again.'
+            );
+          }
+
+          const hint = parsed.suggestion
+            ? `Did you mean "${parsed.suggestion}"?`
+            : 'Use one of the names listed under AVAILABLE TOOLS.';
+          const repair = this.conversation.addToolResult(
+            'SYSTEM',
+            `There is no tool called "${parsed.name}". ${hint}\n` +
+            'Reply with a single <tool_call> block using an exact tool name.',
+            true
+          );
+          await this.browser.sendMessage(repair);
           step++;
           continue;
         }
