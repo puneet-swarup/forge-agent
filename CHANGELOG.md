@@ -15,6 +15,13 @@ that separates allowed from destructive, and a context rotation that stops the
 provider silently truncating the model's memory — plus the first two slices of
 Loom, the project index, and a CI/CD pipeline that can actually gate a release.
 
+Loom — the project index — reached its third slice: it can now extract symbols
+and imports from eight languages, resolve those imports to real files, build the
+dependency graph, and compile it into a ~480-token orientation digest for the
+model's first prompt. It ships **disabled** (`LOOM_ENABLED=true` to try it),
+because the digest's file ranking needs real access data before it is worth
+trusting.
+
 The through-line: every claim in this repository is now backed by a command you
 can re-run. `docs/RELIABILITY.md` lists each guarantee with the test that proves
 it and, just as importantly, what is still missing.
