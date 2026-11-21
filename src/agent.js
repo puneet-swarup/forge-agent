@@ -19,6 +19,7 @@ const { showPermissionMenu } = require('./permission-menu');
 const { ConversationManager }      = require('./prompt');
 const { Errors, displayError }     = require('./errors');
 const security                     = require('./security');
+const { Budget, BudgetExceeded }    = require('./budget');
 const { sleep }                    = require('./retry');
 const { ProgressTracker }          = require('./progress');
 const { MemoryStore }              = require('./memory');
@@ -328,6 +329,9 @@ class DeepSeekAgent {
     this._emptyStreak = 0;
     this._recoveries = 0;
     this._lastToolCallCountAtFailure = 0;
+    // Resource envelope for this run: steps, wall clock, tool calls.
+    const budget = new Budget(config);
+    this._budget = budget;
     const startTime = Date.now();
     const progress  = new ProgressTracker(task);
 
@@ -433,10 +437,24 @@ class DeepSeekAgent {
         // Protocol default: every step line carries a short one-liner saying
         // what the step is doing, derived from the previous tool call.
 
-        // Safety circuit breaker
-        if (step > 10000) {
-          logger.warn('Step count exceeded 10000 — stopping to prevent runaway process');
-          break;
+        // Safety circuit breaker — honours MAX_ITERATIONS, MAX_RUNTIME_MS and
+        // MAX_TOOL_CALLS. Exceeding it is a normal end state: report what was
+        // done rather than throwing out of run().
+        try {
+          budget.tick();
+        } catch (budgetErr) {
+          if (!(budgetErr instanceof BudgetExceeded)) throw budgetErr;
+          logger.warn(budgetErr.message);
+          const summary = progress.buildPartialSummary(budgetErr.message);
+          const formatted = format(summary, config.OUTPUT_FORMAT, {
+            task, model: config.MODEL, profile: config.ACTIVE_PROFILE, timestamp: config.OUTPUT_TIMESTAMP
+          });
+          if (config.OUTPUT_FILE) this._saveToFile(config.OUTPUT_FILE, formatted);
+          else logger.finalOutput(formatted);
+          this._recordHistory(task, 'timeout', startTime, progress, summary, templateName);
+          if (this.options.saveLog) await this._saveConversationLog(task, summary);
+          this._running = false;
+          return summary;
         }
 
         if (config.DEBUG) {
@@ -675,6 +693,7 @@ class DeepSeekAgent {
 
           logger.toolCall(parsed.name, parsed.args);
           progress.recordToolCall(parsed.name, parsed.args);
+          if (this._budget) this._budget.recordToolCalls(1);
 
           let result;
           let isError = false;
@@ -1024,6 +1043,7 @@ class DeepSeekAgent {
       logger.toolCall(c.name, c.args);
       progress.recordToolCall(c.name, c.args);
     }
+    if (this._budget) this._budget.recordToolCalls(calls.length);
 
     let results;
     try {

@@ -92,6 +92,11 @@ const DEFAULTS = {
 
   // Agent behaviour
   WORKING_DIR        : process.cwd(),
+  // Resource envelope for one run (src/budget.js). MAX_ITERATIONS is the step
+  // limit the docs always promised; 0 disables the time / tool-call limits.
+  MAX_ITERATIONS     : 100,
+  MAX_RUNTIME_MS     : 0,
+  MAX_TOOL_CALLS     : 0,
   PARALLEL_TOOL_CALLS    : true,
   MAX_PARALLEL_TOOL_CALLS: 4,
   // Audio (Items 3 & 4): async, sequentially-queued speech by default.

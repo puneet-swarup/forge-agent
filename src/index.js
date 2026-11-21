@@ -211,6 +211,9 @@ function parseArgs(argv) {
       case '--no-timeout':  opts.noTimeout   = true;    break;
       case '--no-prompt-pause': opts.noPromptPause = true; break;
       case '--clear-memory': opts.clearMemory = true;   break;
+      case '--max-iterations': opts.maxIterations = args[++i]; break;
+      case '--max-runtime':    opts.maxRuntime    = args[++i]; break;
+      case '--max-tool-calls': opts.maxToolCalls  = args[++i]; break;
       case '--rollback':    opts.rollback    = args[++i]; break;
       case '--snapshots':   opts.snapshots   = true;    break;
       case '--list-plugins': opts.listPlugins = true;   break;
@@ -603,6 +606,25 @@ function applyFlagsToConfig(args, config) {
     } catch (e) {}
   }
 
+  // Resource budget (src/budget.js)
+  if (args.maxIterations != null && args.maxIterations !== '') {
+    const n = Number(args.maxIterations);
+    if (Number.isFinite(n) && n > 0) config.MAX_ITERATIONS = Math.floor(n);
+  }
+  if (args.maxRuntime != null && args.maxRuntime !== '') {
+    // Accept "90" (minutes), "90m", "30s" or "2h".
+    const m = String(args.maxRuntime).trim().match(/^(\d+(?:\.\d+)?)\s*([smh]?)$/i);
+    if (m) {
+      const mult = { s: 1000, m: 60_000, h: 3_600_000, '': 60_000 }[m[2].toLowerCase()];
+      const ms = Number(m[1]) * mult;
+      if (Number.isFinite(ms) && ms > 0) config.MAX_RUNTIME_MS = ms;
+    }
+  }
+  if (args.maxToolCalls != null && args.maxToolCalls !== '') {
+    const n = Number(args.maxToolCalls);
+    if (Number.isFinite(n) && n > 0) config.MAX_TOOL_CALLS = Math.floor(n);
+  }
+
   // Timeout
   if (args.noTimeout) {
     config.RESPONSE_TIMEOUT = 0;
@@ -922,9 +944,15 @@ async function main() {
     forge-agent --format=markdown "task"  Markdown output
     forge-agent --output=file.md "task"   Save to file
 
-  ${process.stdout.isTTY ? '\x1b[1;37mPERFORMANCE\x1b[0m' : 'PERFORMANCE'}
+  ${process.stdout.isTTY ? '\x1b[1;37mPERFORMANCE & BUDGET\x1b[0m' : 'PERFORMANCE & BUDGET'}
     forge-agent --no-timeout "task"       No response timeout
-    forge-agent --max-iterations=200      More steps allowed
+    forge-agent --max-iterations=200      Step limit for this run (default 100)
+    forge-agent --max-runtime=90          Wall-clock limit (90 = 90m, 30s, 2h)
+    forge-agent --max-tool-calls=500      Tool-call limit for this run
+
+  ${process.stdout.isTTY ? '\x1b[1;37mRECOVERY\x1b[0m' : 'RECOVERY'}
+    forge-agent --snapshots               List files this project can roll back
+    forge-agent --rollback=src/a.js       Restore a file from its snapshot
 
   ${process.stdout.isTTY ? '\x1b[1;37mWATCH\x1b[0m' : 'WATCH'}
     forge-agent --watch "fix tests"       Re-run on file changes
