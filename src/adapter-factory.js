@@ -21,7 +21,12 @@ const MODEL_REGISTRY = Object.freeze({
   colab: {
     displayName: 'Colab / Remote Tunnel',
     dedicated: true,
-    url: 'https://qualm-buzz-blah.ngrok-free.dev',
+    // No default endpoint, deliberately. This used to be a personal ngrok
+    // tunnel URL, which meant any user who ran `--model=colab` without
+    // --model-url sent their prompts and file contents to one individual's
+    // development endpoint. The endpoint is supplied at run time via
+    // --model-url / OLLAMA_BASE_URL (see ColabAdapter).
+    url: null,
     aliases: ['colab', 'tunnel', 'ngrok', 'remote-ollama'],
     adapter: './adapters/colab-adapter',
   },
@@ -122,8 +127,17 @@ function getAdapter(modelName, page, config = {}) {
  */
 function getModelUrl(modelName) {
   const canonicalName = resolveModelName(modelName);
+  const def = MODEL_REGISTRY[canonicalName];
 
-  return MODEL_REGISTRY[canonicalName].url;
+  if (!def.url) {
+    throw new Error(
+      `${def.displayName} has no default endpoint. Point it at your own: ` +
+      `--model-url <url> (or set OLLAMA_BASE_URL). Refusing to guess an ` +
+      `endpoint for a remote model.`
+    );
+  }
+
+  return def.url;
 }
 
 /**
