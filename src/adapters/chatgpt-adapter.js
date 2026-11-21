@@ -56,11 +56,21 @@ class ChatGPTAdapter extends BaseAdapter {
   }
 
   _getResponseSelectors() {
-	  return [
-		'.thread-scroll-container [class*="prose"]',
-		'[role="region"][aria-label="Conversation"] [class*="prose"]',
-		'[class*="prose"]',
-	  ];
+    // ChatGPT no longer wraps replies in a "prose" class, so all three of the
+    // previous selectors matched nothing on a live run — even with a reply on
+    // screen. These come from a --diagnose dump of the real page, which showed
+    // the transcript inside .thread-scroll-container[role="region"].
+    return [
+      '[data-message-author-role="assistant"]',
+      '.thread-scroll-container [data-message-author-role="assistant"]',
+      '[role="region"].thread-scroll-container article:last-of-type',
+      '.thread-scroll-container article[data-testid^="conversation-turn"]:last-of-type',
+      '[class*="agent-turn"]',
+      // Kept as fallbacks for older markup.
+      '.thread-scroll-container [class*="prose"]',
+      '[role="region"][aria-label="Conversation"] [class*="prose"]',
+      '[class*="prose"]',
+    ];
   }
 
   getModelUrl() {

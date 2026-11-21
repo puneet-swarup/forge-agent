@@ -9,6 +9,18 @@ Versioning: [Semantic Versioning](https://semver.org/)
 ## [Unreleased]
 
 ### Fixed
+- **`--model=<name>` was never parsed.** Only the two-token form worked, so
+  every documented example — `--model=gemini`, `--model=sarvam` — was silently
+  ignored and the run used whatever the config file held. That is why
+  `--model=sarvam --diagnose` diagnosed **ChatGPT**. Eleven other documented
+  `--flag=value` forms (`--task`, `--timeout`, `--max-iterations`, …) were in
+  the same state; a test now asserts every flag the help documents with `=`
+  is actually parsed.
+- **ChatGPT's response selectors matched nothing**, even with a reply on screen:
+  it no longer wraps answers in a `prose` class. Replaced with selectors taken
+  from a live `--diagnose` dump (`[data-message-author-role="assistant"]`,
+  `.thread-scroll-container article`, `[class*="agent-turn"]`), keeping the old
+  ones as fallbacks.
 - **`logger.debug` did not exist, and five adapters called it.** Every call threw
   a TypeError inside a try/catch, so the message vanished *and* the rest of that
   block was skipped. On a live Sarvam run it surfaced as

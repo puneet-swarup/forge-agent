@@ -232,3 +232,28 @@ describe('send with text, and where the reply lives', () => {
     expect(out.indexOf('[220 chars]')).toBeLessThan(out.indexOf('[60 chars]'));
   });
 });
+
+// ─────────────────────────────────────────────
+//  Model selection for --diagnose / --test-model
+//
+//  `--model=sarvam --diagnose` diagnosed ChatGPT, because the bare flag read
+//  config.MODEL — the saved default — and ignored --model entirely.
+// ─────────────────────────────────────────────
+
+describe('model precedence for the diagnostic commands', () => {
+  const src = require('fs').readFileSync(
+    require('path').join(__dirname, '..', 'src', 'index.js'), 'utf8');
+
+  test('--model is honoured, not just the saved default', () => {
+    // Both blocks must consult args.model before falling back to config.
+    const matches = src.match(/\(typeof args\.(diagnose|testModel) === 'string' && args\.\1\)\s*\n?\s*\|\| args\.model/g);
+    expect(matches).not.toBeNull();
+    expect(matches.length).toBe(2);
+  });
+
+  test('an explicit --diagnose=<model> still wins over --model', () => {
+    // Order matters: the flag that names the model most specifically is first.
+    const block = src.slice(src.indexOf('const modelName = (typeof args.diagnose'));
+    expect(block.indexOf('args.diagnose')).toBeLessThan(block.indexOf('args.model'));
+  });
+});

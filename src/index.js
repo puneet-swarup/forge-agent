@@ -321,6 +321,38 @@ function parseArgs(argv) {
           opts.resume = a.split('=')[1];
         } else if (a && a.startsWith('--rerun=')) {
           opts.rerun = a.split('=')[1];
+        } else if (a && a.startsWith('--model=')) {
+          // `--model=gemini` was never parsed: only the two-token form worked.
+          // Every documented example uses `=`, so the flag was silently ignored
+          // and the run used whatever config held.
+          opts.model = a.split('=')[1];
+        } else if (a && a.startsWith('--') && a.includes('=') && !a.startsWith('--no-')) {
+          // Every documented `--flag=<value>` should work, not only the handful
+          // with a bespoke branch. Unknown --flag=value pairs are ignored rather
+          // than becoming the task text.
+          const [flag, ...rest] = a.split('=');
+          const value = rest.join('=');
+          const EQUALS_FLAGS = {
+            '--save-template': 'saveTemplate',
+            '--show-template': 'showTemplate',
+            '--timeout': 'timeout',
+            '--task': 'task',
+            '--tool-timeout': 'toolTimeout',
+            '--max-iterations': 'maxIterations',
+            '--max-runtime': 'maxRuntime',
+            '--max-tool-calls': 'maxToolCalls',
+            '--rollback': 'rollback',
+            '--custom-profile': 'customProfile',
+            '--launch-assets': 'launchAssets',
+            '--max-parallel': 'maxParallel',
+            '--template': 'template',
+            '--remove-template': 'removeTemplate',
+            '--new-plugin': 'newPlugin',
+            '--session': 'session',
+            '--model-url': 'modelUrl',
+            '--api-key': 'apiKey',
+          };
+          if (EQUALS_FLAGS[flag]) opts[EQUALS_FLAGS[flag]] = value;
         } else if (a && a.startsWith('--diagnose=')) {
           opts.diagnose = a.split('=')[1];
         } else if (a && a.startsWith('--port=')) {
@@ -1772,7 +1804,13 @@ async function main() {
   // selector with its match count, the real buttons and editables on the page,
   // and an optional live round trip.
   if (args.diagnose) {
-    const modelName = typeof args.diagnose === 'string' ? args.diagnose : config.MODEL;
+    // Precedence: --diagnose=<model> > --model=<model> > the saved default.
+    // Reading config.MODEL alone ignored --model entirely, so
+    // `--model=sarvam --diagnose` diagnosed whatever the config file happened to
+    // hold — on a live run, ChatGPT.
+    const modelName = (typeof args.diagnose === 'string' && args.diagnose)
+      || args.model
+      || config.MODEL;
     const { getModelDisplayName, getModelUrl } = require('./adapter-factory');
     const diagnose = require('./diagnose');
 
@@ -1848,7 +1886,9 @@ async function main() {
 
   if (args.testModel) {
     try {
-      const modelName = typeof args.testModel === 'string' ? args.testModel : config.MODEL;
+      const modelName = (typeof args.testModel === 'string' && args.testModel)
+        || args.model
+        || config.MODEL;
       const { getModelDisplayName, getModelUrl } = require('./adapter-factory');
       const display = getModelDisplayName(modelName);
 
