@@ -9,6 +9,12 @@ Versioning: [Semantic Versioning](https://semver.org/)
 ## [Unreleased]
 
 ### Added
+- **Background processes are visible outside the process that started them.**
+  `src/process-manager.js` keeps its registry in memory, so the dashboard — a
+  separate process — showed an empty Processes panel while children were running.
+  It now writes a small snapshot to `~/.forge-agent/processes.json` on start,
+  exit and error, and a failed write never breaks the process it is describing.
+  The live map still wins inside the owner process; the snapshot is a view.
 - **`--dashboard`** — a local web view of everything Forge is doing: every agent
   (with a Stop button), session, project, task and background process on one
   page, refreshed every two seconds. `forge-agent --dashboard [--port=7777]`
