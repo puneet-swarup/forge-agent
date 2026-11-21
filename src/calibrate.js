@@ -162,8 +162,10 @@ async function calibrate() {
   }
 
   console.log(sep);
-  console.log('\n📸  Taking screenshot → /tmp/forge-calibrate.png');
-  await page.screenshot({ path: '/tmp/forge-calibrate.png', fullPage: false });
+  const shotPath = require('./paths').forgePath('logs', 'calibrate.png');
+  require('fs').mkdirSync(require('path').dirname(shotPath), { recursive: true });
+  console.log(`\n📸  Taking screenshot → ${shotPath}`);
+  await page.screenshot({ path: shotPath, fullPage: false });
 
   console.log('\n✅  Calibration complete! Update src/browser.js SEL object with the selectors above.');
   console.log('    Press Ctrl+C to exit.\n');
