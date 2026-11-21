@@ -87,7 +87,7 @@ class ConversationManager {
    * @param {string} [opts.reason]    why the chat was restarted
    * @returns {string}
    */
-  buildResumeMessage({ task, plan, progress, recentErrors = [], reason = 'the previous chat stalled', profile = '', workingDir }) {
+  buildResumeMessage({ task, plan, progress, sessionContext = '', recentErrors = [], reason = 'the previous chat stalled', profile = '', workingDir }) {
     const systemPrompt = buildSystemPrompt({
       profile: profile === 'default' ? '' : profile,
       workingDir: workingDir || process.cwd(),
@@ -113,6 +113,10 @@ class ConversationManager {
 
     if (plan) {
       parts.push('', 'CURRENT PLAN (from FORGE_PLAN.md):', '─────────────────────────────────', plan);
+    }
+
+    if (sessionContext) {
+      parts.push('', 'SESSION NOTES (durable working memory):', '──────────────────────────────────────', sessionContext);
     }
 
     if (recentErrors.length) {

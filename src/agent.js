@@ -133,15 +133,39 @@ class DeepSeekAgent {
     await this.browser.close();
   }
 
-  // -- Phase 1: session context helpers --
+  // -- Session context helpers --
+  //
+  // SESSION_CONTEXT.md is the durable working memory of a run: goal, decisions,
+  // progress, git state. It survives a chat restart, which is exactly what
+  // _recoverWithNewChat() needs.
+  //
+  // This block used to be half-wired: _sessionCtxStart() was called twice and
+  // defined nowhere (the guarded call was silently skipped, the unguarded one
+  // would throw), and _sessionCtxUpdate() was declared twice. The file was
+  // written by accident and never read back.
 
-  /** Create (or resume) the durable SESSION_CONTEXT.md for this task. */
-  _sessionCtxUpdate() {
-    if (!this.sessionContext) return;
+  /** Create (or resume) SESSION_CONTEXT.md at task start. */
+  _sessionCtxStart(task) {
+    if (!this.sessionContext) return null;
     try {
-      this.sessionContext.update();
+      // The agent is constructed before the task is known, so the task is
+      // attached here, at task start, before the file is rendered.
+      if (task) {
+        const clean = String(task).replace(/\s+/g, ' ').trim().slice(0, 300);
+        this.sessionContext.task = clean;
+        if (this.sessionContext.data) {
+          this.sessionContext.data.task = clean;
+          if (!this.sessionContext.data.goal) this.sessionContext.data.goal = clean;
+        }
+      }
+
+      if (typeof this.sessionContext.create === 'function') {
+        return this.sessionContext.create();
+      }
+      return this.sessionContext.update();
     } catch (err) {
-      logger.warn(`Session context update FAILED: ${err.message}`);
+      logger.warn(`Session context create FAILED: ${err.message}`);
+      return null;
     }
   }
 
@@ -153,6 +177,18 @@ class DeepSeekAgent {
     } catch (err) {
       logger.warn(`Session context update FAILED: ${err.message}`);
     }
+  }
+
+  /** Current session notes, for re-feeding after a chat restart. */
+  _sessionCtxSnapshot() {
+    if (!this.sessionContext) return '';
+    try {
+      if (typeof this.sessionContext.asContextString === 'function') {
+        const text = this.sessionContext.asContextString() || '';
+        return text.length > 2000 ? text.slice(0, 2000) + '\n… (truncated)' : text;
+      }
+    } catch (_) { /* best effort */ }
+    return '';
   }
 
   /** Delete the ephemeral context file at session end. */
@@ -214,6 +250,7 @@ class DeepSeekAgent {
       task,
       progress: progress.getStatusLine(),
       plan: this._readPlanState(),
+      sessionContext: this._sessionCtxSnapshot(),
       recentErrors: typeof progress.recentErrors === 'function'
         ? progress.recentErrors(3)
         : [],
