@@ -109,6 +109,11 @@ const DEFAULTS = {
   PROMPT_PAUSE           : false,
   PROMPT_PAUSE_MIN_MS    : 10_000,
   PROMPT_PAUSE_MAX_MS    : 20_000,
+  // Routine context rotation: start a fresh chat every N assistant turns and
+  // re-send the contract plus a state digest. 0 disables it. The model's real
+  // context lives in the remote chat, so this is what keeps it bounded.
+  CONTEXT_ROTATION_TURNS   : 25,
+
   // Verification gate: run the project's own checks before accepting
   // TASK_COMPLETE. Never invents a command — only what the project declares.
   VERIFY_BEFORE_COMPLETE   : true,
