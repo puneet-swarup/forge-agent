@@ -45,10 +45,35 @@ The rule that keeps them apart:
 
 ## Running autonomously
 
-A cron job (`forge-agent roadmap runner`, every 2 hours) reads this file, takes
-the next unblocked item, implements it with tests, opens a PR and updates this
-file. It never merges and never force-pushes. If CI fails twice on the same item
-it leaves the branch and reports the failure.
+**Status: DELETED 2026-11-21.** The hourly runner was removed because it had
+nothing to do — three PRs were already open, so its own rule made it wake, see
+the queue and stop. Recreate it with the recipe below when unattended progress is
+wanted again.
+
+A cron job (`forge-agent roadmap runner`) reads this file, takes the next
+unblocked item, implements it with tests, opens a PR and updates this file. It
+never merges and never force-pushes. If CI fails twice on the same item it leaves
+the branch and reports the failure.
+
+**Recreating it.** Schedule `0 * * * *` (Asia/Kolkata), or any interval of an hour
+or more. The prompt is the part that matters:
+
+> Continue the Forge Agent roadmap autonomously. Work in /scratch/work/forge-agent
+> (clone the repository if absent; run `npm ci` if node_modules is missing).
+> COORDINATION RULE — exactly one PR may be in flight at a time: run
+> `gh pr list --state open` first. If ANY pull request is open, do not start work;
+> report which PR is open and stop. Then read NEXT_SESSION.md, pick the next
+> unblocked item, and claim it by writing `IN PROGRESS: <item> — <branch>` under a
+> `## Claim` heading at the top of this file in the same commit as your first
+> change. Implement it with tests and docs, open one pull request against main,
+> and report the PR link and test counts. Rules: never merge, never force-push,
+> never open a second PR, keep changes small and focused, update this file with
+> what you did and what is next (and remove the Claim line), and if CI fails twice
+> on the same item leave the branch and report the failure instead of retrying.
+
+Two lessons from the first deployment, both encoded above: without the
+one-PR-in-flight rule two runs opened duplicate PRs (#11 and #12), and without
+the claim line a run and the lead agent fought over this file and CHANGELOG.md.
 
 Phase A (robustness) is now **complete**: turn boundary, one prompt, recovery,
 redaction, workspace safety, budgets, parser validation, throttling, transport
