@@ -192,6 +192,8 @@ function parseArgs(argv) {
       case '--new-session': opts.newSession = true;   break;
       case '--dashboard':   opts.dashboard   = true;    break;
       case '--headed':      opts.headed      = true;    break;
+      case '--diagnose':    opts.diagnose    = true;    break;
+      case '--round-trip':  opts.roundTrip   = true;    break;
       case '--port':        opts.port        = args[++i]; break;
       case '--json':        opts.json = true;         break;
       case '-a':
@@ -319,6 +321,8 @@ function parseArgs(argv) {
           opts.resume = a.split('=')[1];
         } else if (a && a.startsWith('--rerun=')) {
           opts.rerun = a.split('=')[1];
+        } else if (a && a.startsWith('--diagnose=')) {
+          opts.diagnose = a.split('=')[1];
         } else if (a && a.startsWith('--port=')) {
           opts.port = a.split('=')[1];
         } else if (a && a.startsWith('--help=')) {
@@ -536,6 +540,10 @@ ${c('1;36', 'DEBUGGING')}
       --save-log         Save full conversation to disk
       --calibrate        Auto-detect browser selectors
       --test-model       Test current model selectors
+      --diagnose=<n>     Why did this model stop working? Every candidate
+                         selector, the real DOM, and (with --round-trip) a live
+                         send/receive check. Add --headed to watch it.
+      --round-trip       With --diagnose: send one message and report the reply
       --test-model=<n>   Test: deepseek | qwen | chatgpt | gemini | google | sarvam
                          (add --headed to see the window, which Google needs)
 
@@ -1759,6 +1767,74 @@ async function main() {
   }
 
   // ── Model Selector Test ──────────────────────────────────────────────────
+  // ── Selector diagnostics ──────────────────────────────────────────────────
+  // Answers "why did it stop working", not just "is it working": every candidate
+  // selector with its match count, the real buttons and editables on the page,
+  // and an optional live round trip.
+  if (args.diagnose) {
+    const modelName = typeof args.diagnose === 'string' ? args.diagnose : config.MODEL;
+    const { getModelDisplayName, getModelUrl } = require('./adapter-factory');
+    const diagnose = require('./diagnose');
+
+    console.log('');
+    console.log(`  Selector diagnostics — ${getModelDisplayName(modelName)}`);
+    console.log(`  ${getModelUrl(modelName)}`);
+    console.log('');
+
+    config.MODEL = modelName;
+    config.HEADLESS = !args.headed;
+
+    let agent;
+    try {
+      const ForgeAgent = require('./agent');
+      agent = new ForgeAgent({});
+
+      logger.thinking('Launching browser...');
+      await agent.init();
+      logger.clearLine();
+
+      const page = agent.browser.page;
+      const adapter = agent.browser.adapter;
+
+      await page.waitForTimeout(3000);
+
+      const selectors = await diagnose.probeSelectors(page, adapter);
+      const dom = await diagnose.probeDom(page);
+
+      let roundTrip = null;
+      if (args.roundTrip) {
+        const started = Date.now();
+        roundTrip = { sent: false, detected: false, elapsedMs: null, reply: null, error: null };
+        try {
+          await adapter.sendMessage('Reply with exactly: OK');
+          roundTrip.sent = true;
+          const reply = await adapter.waitForResponse();
+          roundTrip.detected = Boolean(reply && String(reply).trim());
+          roundTrip.reply = reply ? String(reply).trim() : null;
+          roundTrip.elapsedMs = Date.now() - started;
+        } catch (err) {
+          roundTrip.error = (err && err.message) || String(err);
+        }
+      }
+
+      console.log(diagnose.formatDiagnostics({
+        model: getModelDisplayName(modelName),
+        url: dom.url || getModelUrl(modelName),
+        selectors,
+        dom,
+        roundTrip,
+      }));
+
+      await agent.shutdown();
+      process.exit(0);
+    } catch (err) {
+      logger.clearLine();
+      console.error('  Diagnostics failed: ' + err.message);
+      try { if (agent) await agent.shutdown(); } catch (_) {}
+      process.exit(1);
+    }
+  }
+
   if (args.testModel) {
     try {
       const modelName = typeof args.testModel === 'string' ? args.testModel : config.MODEL;

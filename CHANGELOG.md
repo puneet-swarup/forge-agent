@@ -51,6 +51,14 @@ Versioning: [Semantic Versioning](https://semver.org/)
   page during shutdown is no longer reported as "Unexpected error".
 
 ### Added
+- **`--diagnose=<model>`** — answers "why did this model stop working", not just
+  "is it working". It prints every candidate selector with its match count and
+  visibility, then the real buttons and editables on the page with the attributes
+  that make a usable selector. `--round-trip` additionally sends one message and
+  reports whether the reply was detected, how long it took and what came back.
+  `--test-model` says "not ready"; this says which of eleven candidates failed
+  and what the DOM actually contains, so an adapter can be fixed from a report
+  instead of from guesswork.
 - **Sarvam AI as a model** — `--model=sarvam`. Unlike the eight browser
   adapters, Sarvam is an OpenAI-compatible HTTP API
   (`https://api.sarvam.ai/v1/chat/completions`), so it reuses the existing
