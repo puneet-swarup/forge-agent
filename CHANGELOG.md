@@ -6,6 +6,60 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ---
 
+## [Unreleased]
+
+**Loom slice 4 — the stored index.** Until now the digest was compiled by walking
+the project on every run, so hot-file order was alphabetical among ties: nothing
+recorded what the agent actually read or edited. The index is now stored, swept
+incrementally and ranked by real access.
+
+### Added
+- **`src/loom/refresh.js` — the incremental indexer.** One sweep writes the
+  `files`, `symbols`, `imports` and `summaries` rows, tombstones what
+  disappeared, and returns `{changed, added, gone, touched, rebuilt, indexed,
+  files, roleDrift, elapsedMs, graph}`. mtime is a **fast negative only**:
+  equal size and mtime means "assume unchanged", a mismatch is a candidate and
+  the hash decides, because checkout, rsync and Docker copies rewrite mtime
+  without changing bytes. Above `LOOM_REBUILD_THRESHOLD` (default 30% churn) the
+  whole index is re-indexed; a rebuild reuses rows matched on `rel_path`, so
+  file ids — and the access rows pointing at them — survive.
+- **Access tracking (§7).** `recordAccess(db, relPath, op)` writes
+  `edit|write|read|search_hit` rows; `accessRows(db)` reads them back in the
+  shape `renderDigest` takes. This is what makes the digest's hot-file order
+  real, and the reason the index exists at all.
+- **The dirty flag (§5.5).** `markDirty(db)` / `isDirty(db)` / `clearDirty(db)`.
+  `run_command`, `git_diff`, `git_status` and `git_log` can change arbitrary
+  files, so a dirty index rehashes every candidate on the next sweep instead of
+  trusting mtime — the only thing that catches same-size, same-mtime, different
+  bytes.
+- **Role drift (§5.6).** `files.importers_sig` is recomputed from the imports
+  table after every sweep; a file that gains or loses an importer without
+  changing its own bytes gets `summaries.role_stale = 1`, and its prose is then
+  withheld rather than served degraded.
+- **The digest now comes from the store.** `attach.buildContextDigest()` refreshes
+  the index, rebuilds the graph from the stored rows and renders with access
+  rows and notes; the old directory walk survives only as the fallback for a
+  project where no index can be opened.
+- `loom.counters()` returns the live counters object (not a copy), so the digest
+  can increment `digestTruncations` where the store records it.
+
+### Fixed
+- The generated `.forge/loom/.gitignore` now lists `index.json` and
+  `index.json.tmp`. The JSON store is the path most users run (no `node:sqlite`
+  on Node 20), so a project using Loom was showing an untracked index file.
+- `.forge/` itself is ignored at the repository root for the same reason.
+
+### Notes
+- Spec §5.3's git short-circuit (three `git` calls to narrow the candidate set)
+  is **not** implemented: the sweep stats every candidate, which is the same
+  answer without a subprocess or a dependency on git. The fast negative is what
+  keeps it cheap.
+- `LOOM_ENABLED` still defaults to false. The index is real and tested; wiring
+  `loom.around()` into the tool dispatcher (which is what feeds `recordAccess`)
+  is slice 5.
+
+---
+
 ## [2.3.0] - 2026-11-21
 
 **Robustness, and the first real index.** 2.2.0 closed the loop between what the

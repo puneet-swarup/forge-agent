@@ -13,10 +13,54 @@ tested.
 | Slice | Scope | Status |
 | --- | --- | --- |
 | 1 | Storage foundation: config, paths, hashing, ignore rules, driver (SQLite + JSON fallback), migrations, schema, `open`/`close`/`status`/`stats` | **done** (`src/loom/`) |
-| 2 | Extractors (`extract/js.js`, `py.js`, `go.js`, `rs.js`, `sql.js`, `md.js`, `data.js`), `findBlockEnd`, import resolution | not started |
-| 3 | Indexer: refresh sweep, git short-circuit, dirty flag, worker, tombstones, access rows, caps and warm-up order | not started |
-| 4 | Digest compiler, `recall` / `whats_here` / `related`, heat, summaries, portable export | not started |
-| 5 | Agent-loop integration: attach/reattach after `newChat`, `loom.around()` in the tool dispatcher, `search_codebase`, `--loom` CLI, chaos tests | not started |
+| 2 | Extractors (`extract/*.js`), `findBlockEnd`, import resolution (`resolve.js`), dependency graph (`graph.js`) | **done** |
+| 3 | Digest compiler (`digest.js`, §8 budget and §7 heat) and attach to the first message (`attach.js`) | **done** |
+| 4 | Indexer: refresh sweep, dirty flag, tombstones, access rows, role drift, caps; the digest now reads the store | **done** (`refresh.js`) — git short-circuit deferred, see below |
+| 5 | Query and prose: `recall` / `whats_here` / `related` (`query.js`), model summaries (`summarize.js`), portable export; then `loom.around()` in the tool dispatcher, reattach after `newChat`, `--loom` CLI, chaos tests | not started |
+
+## What slice 4 provides
+
+```
+src/loom/
+  refresh.js   the incremental sweep, the dirty flag, tombstones, access rows
+```
+
+`refresh({ db, root, env })` is the whole indexer:
+
+1. collect the candidates — the same walk `attach.js` used, now one shared list
+   (`collectCandidates`), filtered through `ignore.js` (hard deny, secret deny,
+   `.gitignore`) and capped by `LOOM_MAX_FILES`;
+2. per candidate, `stat`; a missing file is tombstoned, `statMatches` is the fast
+   negative, otherwise the hash decides;
+3. index the changed ones: `files` row, then `symbols` and `imports` replaced
+   wholesale, plus the §6.1 heuristic summary;
+4. re-index everything when churn crosses `LOOM_REBUILD_THRESHOLD`;
+5. recompute `importers_sig` (§5.6 role drift) and rebuild the graph.
+
+Reading back: `filesForGraph(db)` returns rows in the shape `graph.buildGraph`
+takes, and `readGraph(db, opts)` is the graph itself. A summary is only included
+when its `sha` matches the file's current content and it is not role-stale —
+prose is never served stale (I3).
+
+Access is what the index is for: `recordAccess(db, relPath, 'read'|'write'|
+'edit'|'search_hit')` writes a row, `accessRows(db)` returns them in the shape
+`renderDigest` takes, and the digest's §7 heat then ranks the files the agent
+actually touched above their alphabetical neighbours.
+
+### Deliberate deviation: no git short-circuit
+
+§5.3 narrows the candidate set with three `git` calls. This implementation stats
+every candidate instead: the same answer, no subprocess, no 3 s timeout, no
+dependency on git being installed. The §5.1 fast negative is what keeps that
+cheap, and the §5.5 dirty flag still forces a full rehash when a tool could have
+changed bytes without changing mtime.
+
+### Rebuilds keep their ids
+
+A rebuild re-indexes every candidate rather than dropping the tables, and reuses
+the row matched on `rel_path`. File ids stay stable, so the `access` rows that
+point at them — and the heat they carry — survive a rebuild instead of being
+silently orphaned.
 
 ## What slice 1 provides
 
@@ -87,7 +131,8 @@ by 500 ms; `close()` always writes synchronously.
 ## Verifying
 
 ```bash
-npx jest tests/loom                 # 162 passed, 2 skipped (SQLite, absent on Node 20)
+npx jest tests/loom                 # 354 passed, 2 skipped (SQLite, absent on Node 20)
+npx jest tests/loom/refresh.test.js # 20 — the sweep, the dirty flag, access, role drift
 npm run typecheck
 ```
 

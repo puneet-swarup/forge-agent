@@ -1,10 +1,6 @@
 # NEXT SESSION — Forge Agent workstreams
 
-## Claim
-
-IN PROGRESS: Loom slice 4 (the stored index + incremental refresh) — `feat/loom-refresh`
-
-**Verified:** 2026-11-21, against `main` @ `v2.3.0` (PRs #3-#21). The runner
+**Verified:** 2026-11-21, against `main` @ `v2.3.0` (PRs #3-#24). The runner
 never merges; the lead agent merges after CI is green.
 **Rule for this file:** implementation and tests are authoritative. A status here
 is only "done" if the evidence column can be re-run and passes. Anything carried
