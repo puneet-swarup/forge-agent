@@ -34,12 +34,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       - name: Set up Node.js 20
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 20
           cache: 'npm'
@@ -73,7 +73,16 @@ jobs:
         id: notes
         run: |
           node scripts/changelog-section.js "${GITHUB_REF_NAME}" > release-notes.md
-          echo "--- notes ---"
+          {
+            echo
+            echo "---"
+            echo
+            echo "**Install**"
+            echo
+            echo '```bash'
+            echo "npm install -g @puneet-swarup/forge-agent@${GITHUB_REF_NAME}"
+            echo '```'
+          } >> release-notes.md
           head -20 release-notes.md
 
       - name: Publish to npm
@@ -91,11 +100,3 @@ jobs:
           generate_release_notes: false
           files: |
             release-notes.md
-          footer: |
-            ---
-
-            **Install**
-
-            ```bash
-            npm install -g @puneet-swarup/forge-agent@${{ github.ref_name }}
-            ```
