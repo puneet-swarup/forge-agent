@@ -27,6 +27,21 @@ Versioning: [Semantic Versioning](https://semver.org/)
   project-relative with forward slashes. A corrupt or unknown-version index is
   quarantined (`.bad`) and rebuilt rather than repaired — the index is derivable,
   never authoritative. See `docs/LOOM.md`.
+- **The plan gate** — `FORGE_PLAN.md` is now enforced by the agent loop instead
+  of only declared in the prompt. Before the first mutating tool of a multi-step
+  task the plan must exist with at least one `- [ ]` step; at `TASK_COMPLETE`
+  every step must be ticked. A refusal is fed back to the model with the file
+  name and the open steps, bounded by `MAX_PLAN_GATE_ATTEMPTS` (default 2), so a
+  stubborn plan cannot loop. Writing the plan itself is always allowed, a
+  one-clause task is never asked for one, and `PLAN_GATE=false` turns both gates
+  off. See `docs/RELIABILITY.md` §14.
+
+### Changed
+- `checkStart` / `checkEnd` / `parseCheckboxItems` moved from
+  `scripts/lifecycle.js` into `src/lifecycle.js`, so the CLI and the loop run the
+  same check. The script still exports them.
+
+---
 
 ## [2.2.0] - 2026-11-21
 

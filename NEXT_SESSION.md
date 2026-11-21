@@ -15,6 +15,7 @@ node scripts/verify-prompt.js             # the prompt the agent actually sends
 grep -rn "encodeTransportArg" src/transport.js   # T1
 ls src/loom 2>/dev/null                   # T2
 npx jest tests/adapter-contract.test.js   # T3
+npx jest tests/lifecycle-gate.test.js     # T4 (27)
 ls scripts/lifecycle.js scripts/plan.js   # T4
 npx jest tests/loom                       # T2 slice 1 (162 passing / 2 skipped)
 ls src/loom/schema/001_init.sql           # T2 schema
@@ -201,12 +202,23 @@ drift. Recorded-DOM fixtures are the fix (see `docs/RELIABILITY.md`).
 
 - The artifact protocol (FORGE_PLAN.md created, ticked, deleted only on sign-off)
   is stated in the **live** prompt — it was previously only in the unused one.
-- `src/lifecycle.js` defines the artifact contract; `scripts/lifecycle.js`
-  implements `check-start` / `check-end`; `scripts/plan.js` provides
-  `status / list / tick / next`.
-- **Missing:** the agent loop does not call those gates. `TASK_COMPLETE` is not
-  refused when `FORGE_PLAN.md` still has unchecked items, and the plan file is not
-  created automatically at task start.
+- `src/lifecycle.js` defines the artifact contract **and** the checks
+  (`checkStart`, `checkEnd`, `parseCheckboxItems`); `scripts/lifecycle.js` is now
+  a thin CLI over them; `scripts/plan.js` provides `status / list / tick / next`.
+- **The loop calls the gates.** `src/lifecycle-gate.js` decides, `agent.js` acts,
+  in three places: before a single tool call, before a tool batch, and at the top
+  of the completion branch.
+  - start: the first *mutating* tool of a multi-step task is refused until
+    `FORGE_PLAN.md` exists with at least one `- [ ]` step. Writing the plan is
+    always allowed (otherwise the gate deadlocks), a read-only tool is never
+    gated, and a one-clause task (`create hello.js`) is never asked for a plan.
+  - end: `TASK_COMPLETE` is refused while a step is open; the refusal lists the
+    open steps by line number. It runs after the verification gate.
+  - bounded by `MAX_PLAN_GATE_ATTEMPTS` (default 2) in both directions; a missing
+    plan at completion is reported, not refused. `PLAN_GATE=false` kills both.
+- **Evidence:** `tests/lifecycle-gate.test.js` — 27 tests: every decision branch,
+  the plan-write exemption (POSIX and Windows paths), and six end-to-end loop
+  cases with a scripted browser.
 
 Implemented in PR #9 (`feat/plan-gate`, CI green, not merged): the loop calls
 `decideStart()` before the first mutating tool of a multi-step task and

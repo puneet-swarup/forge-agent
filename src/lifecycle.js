@@ -3,9 +3,15 @@
 // Every Forge project has a fixed set of markdown artifacts. Each artifact has
 // exactly ONE owner, ONE purpose, and a defined phase in the task lifecycle.
 // This module is the single source of truth for those rules: the system prompt
-// renders its table, and scripts/lifecycle.js enforces it at task start and at
-// TASK_COMPLETE time.
+// renders its table, src/lifecycle-gate.js turns checkStart()/checkEnd() into
+// decisions the agent loop acts on, and scripts/lifecycle.js exposes the same
+// checks on the command line.
 'use strict';
+
+const fs = require('fs');
+const path = require('path');
+
+const PLAN_FILE = 'FORGE_PLAN.md';
 
 const ARTIFACTS = [
   {
@@ -83,10 +89,105 @@ function renderArtifactTable() {
   }).join('\n');
 }
 
+/**
+ * Parse "- [ ] step" / "- [x] step" lines.
+ * The one parser for the plan format, shared by the CLI and the in-loop gate.
+ *
+ * @param {string} raw
+ * @returns {Array<{text: string, done: boolean, line: number}>}
+ */
+function parseCheckboxItems(raw) {
+  const out = [];
+  const lines = String(raw || '').split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^\s*[-*]\s+\[([ xX])\]\s+(.*)$/);
+    if (!m) continue;
+    out.push({ text: m[2].trim(), done: m[1].toLowerCase() === 'x', line: i + 1 });
+  }
+  return out;
+}
+
+/** Read a project artifact, or null when it is not there. Never throws. */
+function readArtifact(dir, file) {
+  try {
+    const p = path.join(path.resolve(dir || process.cwd()), file);
+    if (!fs.existsSync(p)) return null;
+    return fs.readFileSync(p, 'utf8');
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
+ * Task start: an agent-owned, start-required artifact must exist and, for the
+ * plan, must actually contain steps.
+ *
+ * @param {string} dir
+ * @returns {string[]} human-readable violations (empty when the start is clean)
+ */
+function checkStart(dir) {
+  const errors = [];
+
+  for (const file of requiredAtStart()) {
+    const raw = readArtifact(dir, file);
+    if (raw === null) {
+      // SESSION_CONTEXT.md is written by the framework; only agent-owned files
+      // are the agent's responsibility at this point.
+      const meta = getArtifact(file);
+      if (meta && meta.owner === 'agent') {
+        errors.push('missing ' + file + ' (agent-owned, required at task start)');
+      }
+      continue;
+    }
+    if (file === PLAN_FILE && parseCheckboxItems(raw).length === 0) {
+      errors.push(PLAN_FILE + ' has no "- [ ]" steps');
+    }
+  }
+
+  return errors;
+}
+
+/**
+ * Sign-off gate: every step of every end-required artifact must be ticked.
+ *
+ * @param {string} dir
+ * @returns {string[]} human-readable violations (empty when the end is clean)
+ */
+function checkEnd(dir) {
+  const errors = [];
+
+  for (const file of requiredCompleteAtEnd()) {
+    const raw = readArtifact(dir, file);
+    if (raw === null) {
+      errors.push('missing ' + file + ' (required at TASK_COMPLETE)');
+      continue;
+    }
+    const items = parseCheckboxItems(raw);
+    if (items.length === 0) {
+      errors.push(file + ' has no "- [ ]" steps');
+      continue;
+    }
+    const open = items.filter(i => !i.done);
+    if (open.length > 0) {
+      errors.push(
+        file + ' still has ' + open.length + ' unchecked step(s): ' +
+        open.map(i => '#' + i.line + ' ' + i.text).join('; ')
+      );
+    }
+  }
+
+  return errors;
+}
+
 module.exports = {
   ARTIFACTS,
   getArtifact,
   requiredAtStart,
   requiredCompleteAtEnd,
   renderArtifactTable,
+  parseCheckboxItems,
+  readArtifact,
+  checkStart,
+  checkEnd,
+  PLAN_FILE,
 };
