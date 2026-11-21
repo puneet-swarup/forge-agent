@@ -108,12 +108,18 @@ function runCheck(check, opts = {}) {
   const cwd = opts.cwd || process.cwd();
   const timeoutMs = opts.timeoutMs || 120_000;
 
+  // Windows cannot execFile('npm', …) — npm is a .cmd shim, and Node reports
+  // EINVAL synchronously. A spawn that cannot even start used to reject the
+  // promise, which surfaced as "Unexpected error: spawn EINVAL" at the end of
+  // every Windows run: the verification gate crashed the run it was meant to
+  // protect. Both are handled here.
+  const needsShell = process.platform === 'win32';
+
   return new Promise((resolve) => {
-    execFile(
-      check.command,
-      check.args,
-      { cwd, timeout: timeoutMs, maxBuffer: 8 * 1024 * 1024, env: process.env },
-      (err, stdout, stderr) => {
+    let settled = false;
+    const done = (value) => { if (!settled) { settled = true; resolve(value); } };
+
+    const onResult = (err, stdout, stderr) => {
         const timedOut = Boolean(err && (err.killed || err.signal));
         const exitCode = err ? (typeof err.code === 'number' ? err.code : 1) : 0;
 
@@ -122,7 +128,7 @@ function runCheck(check, opts = {}) {
           ? raw.slice(0, MAX_OUTPUT) + `\n… (${raw.length - MAX_OUTPUT} more characters)`
           : raw;
 
-        resolve({
+        done({
           name: check.name,
           command: [check.command, ...check.args].join(' '),
           ok: exitCode === 0 && !timedOut,
@@ -130,8 +136,28 @@ function runCheck(check, opts = {}) {
           timedOut,
           output: output.trim(),
         });
-      }
-    );
+    };
+
+    try {
+      execFile(
+        check.command,
+        check.args,
+        { cwd, timeout: timeoutMs, maxBuffer: 8 * 1024 * 1024, env: process.env, shell: needsShell },
+        onResult
+      );
+    } catch (err) {
+      // EINVAL, ENOENT, a bad cwd — report it as a check that could not run,
+      // never as an exception the caller has to catch.
+      done({
+        name: check.name,
+        command: [check.command, ...check.args].join(' '),
+        ok: false,
+        exitCode: null,
+        timedOut: false,
+        spawnFailed: true,
+        output: `Could not start \`${check.command}\`: ${err.message}`,
+      });
+    }
   });
 }
 
@@ -163,6 +189,7 @@ function describeVerification(verification) {
     return 'no project checks found — completion is unverified';
   }
   const r = verification.result;
+  if (r.spawnFailed) return `NOT verified: could not run \`${r.command}\``;
   if (r.ok) return `verified: \`${r.command}\` passed`;
   if (r.timedOut) return `NOT verified: \`${r.command}\` timed out`;
   return `NOT verified: \`${r.command}\` exited ${r.exitCode}`;

@@ -31,6 +31,27 @@ const MODEL_REGISTRY = Object.freeze({
     adapter: './adapters/colab-adapter',
   },
 
+  sarvam: {
+    displayName: 'Sarvam AI (Indus)',
+    dedicated: true,
+    // The browser-driven chat UI, like the other web models: sign in once and
+    // the session persists. Selectors live in SarvamAdapter, which also carries
+    // the TipTap/ProseMirror insertion workaround.
+    url: 'https://indus.sarvam.ai/indus',
+    aliases: ['sarvam', 'sarvam-ai', 'indus'],
+    adapter: './adapters/sarvam-adapter',
+  },
+
+  'sarvam-api': {
+    displayName: 'Sarvam AI (API)',
+    dedicated: true,
+    // The hosted API, for when you would rather use a key than a login. Same
+    // models (sarvam-105b), OpenAI-compatible, no browser.
+    url: 'https://api.sarvam.ai/v1',
+    aliases: ['sarvam-api', 'sarvam105b'],
+    adapter: './adapters/sarvam-api-adapter',
+  },
+
   deepseek: {
     displayName: 'DeepSeek',
     url: 'https://chat.deepseek.com',

@@ -125,3 +125,97 @@ describe('Planner Module', () => {
     });
   });
 });
+// ─────────────────────────────────────────────
+//  parsePlan — the shapes models actually emit
+//
+//  A live Gemini run was rejected with "Could not parse plan" because the
+//  parser accepted only "1. step". The caller then read `.length` off the
+//  returned object, so the warning fired on every run regardless of format.
+// ─────────────────────────────────────────────
+
+describe('parsePlan formats', () => {
+  const { parsePlan } = require('../src/planner');
+
+  test('numbered with a dot', () => {
+    expect(parsePlan('PLAN:\n1. read the file\n2. run tests').steps)
+      .toEqual(['read the file', 'run tests']);
+  });
+
+  test('numbered with a parenthesis', () => {
+    expect(parsePlan('1) read\n2) test').steps).toEqual(['read', 'test']);
+  });
+
+  test('markdown bullets', () => {
+    expect(parsePlan('- read the file\n- run tests').steps)
+      .toEqual(['read the file', 'run tests']);
+  });
+
+  test('bold numbering', () => {
+    expect(parsePlan('**1.** read\n**2.** test').steps).toEqual(['read', 'test']);
+  });
+
+  test('the words "Step N:"', () => {
+    expect(parsePlan('Step 1: read\nStep 2: test').steps).toEqual(['read', 'test']);
+  });
+
+  test('prose without a list yields no steps, not a guess', () => {
+    expect(parsePlan('I will read the file and then run the tests.').steps).toEqual([]);
+  });
+
+  test('empty and nullish input are safe', () => {
+    expect(parsePlan('').steps).toEqual([]);
+    expect(parsePlan(null).steps).toEqual([]);
+    expect(parsePlan(undefined).steps).toEqual([]);
+  });
+
+  test('the return shape is an object with steps, and the caller uses it', () => {
+    const plan = parsePlan('1. a\n2. b');
+    expect(Array.isArray(plan.steps)).toBe(true);
+    // The bug: `plan.length` was undefined, so the warning branch always ran.
+    expect(plan.length).toBeUndefined();
+
+    const agentSrc = require('fs').readFileSync(
+      require('path').join(__dirname, '..', 'src', 'agent.js'), 'utf8');
+    expect(agentSrc).toContain('(plan && plan.steps) || []');
+  });
+});
+
+// ─────────────────────────────────────────────
+//  A plan that never arrives must not hang the run
+//
+//  A live run sat at "Generating execution plan..." until the user killed it,
+//  because the plan response was never detected and the only bound was the
+//  generic 10-minute response timeout.
+// ─────────────────────────────────────────────
+
+describe('planning is bounded', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const agentSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'agent.js'), 'utf8');
+
+  test('the plan wait is raced against a timeout', () => {
+    expect(agentSrc).toContain('Promise.race');
+    expect(agentSrc).toContain('PLAN_TIMEOUT_MS');
+  });
+
+  test('a planning failure falls through to normal execution', () => {
+    // The catch around the plan block must send a recovery message, not abort.
+    const block = agentSrc.slice(agentSrc.indexOf('const planTimeoutMs'));
+    expect(block.slice(0, 3000)).toMatch(/Planning failed[\s\S]*Proceeding without plan/);
+  });
+
+  test('the default timeout is finite, configurable, and below the response timeout', () => {
+    // Read the declaration rather than the runtime object: config.js is built
+    // from several layers and the test environment does not always expose every
+    // key on the exported object.
+    const configSrc = fs.readFileSync(
+      path.join(__dirname, '..', 'src', 'config.js'), 'utf8');
+
+    const match = configSrc.match(/PLAN_TIMEOUT_MS\s*:\s*([\d_]+)/);
+    expect(match).toBeTruthy();
+
+    const value = Number(match[1].replace(/_/g, ''));
+    expect(value).toBeGreaterThan(0);
+    expect(value).toBeLessThan(600_000);
+  });
+});

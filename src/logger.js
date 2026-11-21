@@ -2,6 +2,19 @@
 
 const { TUI, color, colors, stripAnsi } = require('./tui');
 
+/**
+ * Join a message with any extra arguments.
+ *
+ * `logger.warn('[Gemini] Navigation fallback:', err.message)` used to drop
+ * everything after the first argument, so the operator saw a warning with no
+ * reason attached. Arguments are joined instead of discarded.
+ */
+function joinArgs(msg, rest) {
+  if (!rest || rest.length === 0) return msg;
+  const extra = rest.filter((r) => r !== undefined && r !== null && r !== '');
+  return extra.length ? [msg, ...extra].join(' ') : msg;
+}
+
 // Module-level TUI instance (shared across all imports)
 let _tui = null;
 let _config = {};
@@ -62,7 +75,7 @@ const logger = {
   banner()        { getTUI().banner(); },
   info(msg)       { getTUI().info(msg); },
   success(msg)    { getTUI().success(msg); },
-  warn(msg)       { getTUI().warn(msg); },
+  warn(msg, ...rest)   { getTUI().warn(joinArgs(msg, rest)); },
   error(msg)      { getTUI().error(msg); },
   dim(msg)        { getTUI().dim(msg); },
   answer(text)    { getTUI().renderAnswer(text); },
@@ -89,7 +102,11 @@ const logger = {
 
   // ── AI interaction ────────────────────────────────────────────────────────
   thinking(elapsedMs, charsReceived) {
-    getTUI().renderThinking(elapsedMs, charsReceived);
+    // A string here is a status message, not a duration — see TUI.renderThinking.
+    getTUI().renderThinking(
+      typeof elapsedMs === 'string' ? elapsedMs : elapsedMs,
+      charsReceived
+    );
   },
 
   clearThinking() {

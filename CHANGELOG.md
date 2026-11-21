@@ -8,7 +8,72 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ## [Unreleased]
 
+### Fixed
+- **An unknown model silently became deepseek.** `config.MODEL` was validated
+  against a hand-written list that predated the adapter registry, so
+  `--model=sarvam` (or `--diagnose=sarvam`) printed "Sarvam AI (Indus)" and then
+  launched **deepseek** — a command naming one model drove another, with only a
+  warning nobody was looking for. The list is now derived from the adapter
+  factory (aliases included), so adding an adapter can never leave a stale
+  whitelist behind. A test asserts the literal list cannot come back.
+- **Typographic quotes defeated tool-call parsing.** A web chat UI renders
+  straight quotes as curly ones, so `{"tool": "read_file"}` arrives as
+  `{“tool”: “read_file”}`. `JSON.parse` rejects that and the call was
+  reported as "plain text instead of a tool call" and retried. Both the JSON
+  candidate and `hasToolCall` now normalise curly quotes first. The regression
+  test for this existed on the `loom` branch but was written with `node:test`,
+  so jest never ran it and the bug stayed live.
+- **`--model=sarvam` now reaches the Indus adapter.** `SarvamAdapter` (the
+  browser-driven adapter for Sarvam's chat UI at `indus.sarvam.ai`, with its
+  TipTap/ProseMirror insertion workaround) existed on the `loom` branch but was
+  never registered in the adapter factory, so no model name could select it.
+  It is now `--model=sarvam` (aliases `indus`, `sarvam-ai`). Sarvam's hosted API
+  is available separately as `--model=sarvam-api`.
+- **Planning never ran — for any model.** `parsePlan()` returns
+  `{ steps, raw }`, and the caller read `.length` off that object, which is
+  `undefined`. The "Could not parse plan" branch therefore ran on every single
+  run and planning was silently skipped. The parser also accepted only
+  `1. step`, so a real plan in bullets or `Step 1:` form was rejected too; it now
+  accepts numbered, parenthesised, bulleted, bolded and `Step N:` shapes.
+- **The verification gate crashed every Windows run.** `execFile('npm', …)`
+  throws `EINVAL` synchronously on Windows because `npm` is a `.cmd` shim, which
+  rejected the promise and surfaced as `Unexpected error: spawn EINVAL` at the
+  end of the run. Checks now run through a shell on win32, and a spawn that
+  cannot start is reported as "could not run" instead of an exception.
+- **Gemini's send and new-chat buttons were not being found** on a live run —
+  reported by the first real selector test against the web UI. Both lists are
+  broader (aria-label, data-test-id, class, material icon), and
+  `discoverSendButton()` gained a structural fallback: if every named selector
+  has drifted, it takes the button sitting beside the composer rather than
+  falling through to pressing Enter, which cannot distinguish "send" from
+  "newline" in a composer that accepts both.
+- **`Thinking... NaNmNaNs`** — `logger.thinking('Launching browser...')` passes a
+  message where a duration was expected, so the string was parsed as
+  milliseconds. `renderThinking` now accepts either, and `formatMs` refuses to
+  render a non-finite number.
+- **A warning that dropped its own reason** — `logger.warn(msg)` took one
+  argument, so `warn('[Gemini] Navigation fallback:', err.message)` printed a
+  colon and nothing else. Log methods now join extra arguments.
+- **A clean Ctrl+C looked like a crash** — shutdown is idempotent, and a closed
+  page during shutdown is no longer reported as "Unexpected error".
+
 ### Added
+- **`--diagnose=<model>`** — answers "why did this model stop working", not just
+  "is it working". It prints every candidate selector with its match count and
+  visibility, then the real buttons and editables on the page with the attributes
+  that make a usable selector. `--round-trip` additionally sends one message and
+  reports whether the reply was detected, how long it took and what came back.
+  `--test-model` says "not ready"; this says which of eleven candidates failed
+  and what the DOM actually contains, so an adapter can be fixed from a report
+  instead of from guesswork.
+- **Sarvam AI as a model** — `--model=sarvam`. Unlike the eight browser
+  adapters, Sarvam is an OpenAI-compatible HTTP API
+  (`https://api.sarvam.ai/v1/chat/completions`), so it reuses the existing
+  remote-endpoint path with Sarvam's defaults: `sarvam-105b` (128K context),
+  key from `SARVAM_API_KEY` sent as a Bearer token. Two details that would
+  otherwise fail silently: a leftover `OLLAMA_BASE_URL` cannot redirect Sarvam
+  traffic to a Colab tunnel, and the default model is `sarvam-105b` — `sarvam-m`
+  is deprecated and rejected by the API.
 - **Background processes are visible outside the process that started them.**
   `src/process-manager.js` keeps its registry in memory, so the dashboard — a
   separate process — showed an empty Processes panel while children were running.

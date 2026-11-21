@@ -112,6 +112,10 @@ const DEFAULTS = {
   // Loom project index (src/loom_specs.md). Disabled by default until slice 3
   // lands: LOOM_ENABLED=0 makes every Loom call a no-op with no I/O (spec I2).
   LOOM_ENABLED             : false,
+
+  // Planning is optional. A plan response that never arrives must not stall the
+  // run at "Generating execution plan..." until the generic response timeout.
+  PLAN_TIMEOUT_MS          : 90_000,
   LOOM_DIGEST_TOKENS       : 1200,
 
   // Routine context rotation: start a fresh chat every N assistant turns and
@@ -250,6 +254,39 @@ function loadJsonSafe(filePath) {
 const globalConfigPath  = paths.resolveExisting('config.json');
 const projectConfigPath = path.join(process.cwd(), 'forge-agent.config.json');
 
+/**
+ * Is this a model the adapter factory can actually drive?
+ *
+ * Reads the registry rather than a copy of it. Falls back to the literal list
+ * only if the factory cannot be loaded, so a require cycle can never make every
+ * model invalid.
+ */
+function isKnownModel(value) {
+  const name = String(value || '').toLowerCase().trim();
+  if (!name) return false;
+
+  try {
+    // Lazy: config is required by nearly everything, including modules the
+    // factory itself loads.
+    // eslint-disable-next-line global-require
+    const factory = require('./adapter-factory');
+
+    // resolveModelName understands aliases (indus -> sarvam, gpt -> chatgpt)
+    // and throws for anything unknown.
+    try {
+      factory.resolveModelName(name);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  } catch (_) {
+    // Factory unavailable (require cycle, partial install): fall back to the
+    // static list rather than rejecting every model.
+  }
+
+  return ['deepseek', 'gemini', 'qwen', 'chatgpt', 'google', 'local', 'ollama', 'colab', 'sarvam', 'sarvam-api'].includes(name);
+}
+
 const fileOverrides = {
   ...loadJsonSafe(globalConfigPath),
   ...loadJsonSafe(projectConfigPath),
@@ -266,7 +303,13 @@ function validateConfigValue(key, value) {
     SEND_DELAY        : v => typeof v === 'number' && v >= 100 && v <= 5000,
     GENERATION_POLL   : v => typeof v === 'number' && v >= 100 && v <= 5000,
     TOOL_TIMEOUT      : v => typeof v === 'number' && v >= 1000,
-    MODEL             : v => ['deepseek','gemini','qwen','chatgpt','google','local','ollama','colab'].includes(String(v).toLowerCase()),
+    // Derived from the adapter registry, not maintained by hand.
+    //
+    // This used to be a literal list that drifted the moment an adapter was
+    // added: `--model=sarvam` was silently REJECTED and the run continued on
+    // deepseek, so a command that named one model drove another. Asking the
+    // factory means adding an adapter can never leave a stale whitelist behind.
+    MODEL             : v => isKnownModel(v),
     OLLAMA_BASE_URL   : v => typeof v === 'string',
     OLLAMA_API_KEY    : v => typeof v === 'string',
     OLLAMA_MODEL      : v => typeof v === 'string' && v.length > 0,

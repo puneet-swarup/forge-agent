@@ -198,3 +198,47 @@ describe('the agent refuses completion when the check fails', () => {
     expect(agent._lastVerification).toBe(null);
   }, 60000);
 });
+
+// ─────────────────────────────────────────────
+//  A check that cannot start must not crash the run
+//
+//  On Windows, execFile('npm', …) throws EINVAL synchronously (npm is a .cmd
+//  shim). That rejected the promise and surfaced as
+//  "Unexpected error: spawn EINVAL" at the end of every Windows run — the
+//  verification gate crashing the run it exists to protect.
+// ─────────────────────────────────────────────
+
+describe('runCheck resilience', () => {
+  const { runCheck, describeVerification } = require('../src/verify');
+
+  test('a command that cannot be spawned resolves instead of throwing', async () => {
+    const result = await runCheck(
+      { name: 'bogus', command: 'definitely-not-a-real-command-xyz', args: [] },
+      { cwd: process.cwd() }
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result).toHaveProperty('exitCode');
+    expect(typeof result.output).toBe('string');
+  });
+
+  test('a failing check is reported as not verified, with its command', async () => {
+    const result = await runCheck(
+      { name: 'false', command: process.platform === 'win32' ? 'cmd' : 'false',
+        args: process.platform === 'win32' ? ['/c', 'exit 1'] : [] },
+      { cwd: process.cwd() }
+    );
+
+    expect(result.ok).toBe(false);
+    const text = describeVerification({ ran: true, result });
+    expect(text).toMatch(/NOT verified/);
+  });
+
+  test('a spawn failure is described as "could not run", not as a test failure', () => {
+    const text = describeVerification({
+      ran: true,
+      result: { command: 'npm test', ok: false, spawnFailed: true, exitCode: null },
+    });
+    expect(text).toContain('could not run');
+  });
+});

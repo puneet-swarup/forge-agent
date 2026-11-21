@@ -220,7 +220,11 @@ class ForgeAgent {
     }
     try {
       if (!this.sessionContext.exists()) {
-        logger.warn(`Session context MISSING at ${this.sessionContext.file} — state was not written`);
+        // run() and shutdown() both verify, so this warned twice per run.
+        if (!this._sessionCtxWarned) {
+          this._sessionCtxWarned = true;
+          logger.warn(`Session context MISSING at ${this.sessionContext.file} — state was not written`);
+        }
         return false;
       }
       return true;
@@ -541,9 +545,28 @@ class ForgeAgent {
 
         try {
           await this.browser.sendMessage(firstMsg);
-          const planResponse = await this.browser.waitForResponse();
 
-          const steps = parsePlan(planResponse);
+          // A plan is an optimisation, not a requirement. Without a bound, a
+          // plan response that is never detected leaves the run sitting at
+          // "Generating execution plan..." until the generic 10-minute
+          // response timeout — which reads as a hang, and did.
+          const planTimeoutMs = config.PLAN_TIMEOUT_MS || 90_000;
+          const planResponse = await Promise.race([
+            this.browser.waitForResponse(),
+            new Promise((_, reject) => {
+              const timer = setTimeout(
+                () => reject(new Error(`no plan response within ${Math.round(planTimeoutMs / 1000)}s`)),
+                planTimeoutMs
+              );
+              if (typeof timer.unref === 'function') timer.unref();
+            }),
+          ]);
+
+          // parsePlan returns { steps, raw }. Reading `.length` off the object
+          // gave undefined, so the "could not parse plan" branch ran on EVERY
+          // run, for every model — planning was never actually used.
+          const plan  = parsePlan(planResponse);
+          const steps = (plan && plan.steps) || [];
           if (steps.length > 0) {
             process.stdout.write('\n' + formatPlanForDisplay(steps) + '\n');
 

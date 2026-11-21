@@ -98,6 +98,11 @@ function truncate(str, max, ellipsis = '…') {
 }
 
 function formatMs(ms) {
+  // Defensive: a NaN here reached the screen once ("Thinking... NaNmNaNs")
+  // because a caller passed a message string where a duration was expected.
+  const n = Number(ms);
+  if (!Number.isFinite(n) || n < 0) return '0s';
+  ms = n;
   if (ms < 1000) return `${ms}ms`;
   if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
   const m = Math.floor(ms / 60000);
@@ -336,6 +341,15 @@ class TUI {
    */
   renderThinking(elapsedMs, charsReceived) {
     if (!process.stdout.isTTY) return; // can't overwrite in non-TTY
+
+    // `logger.thinking('Launching browser...')` passes a message, not a
+    // duration. Treating the string as milliseconds produced "NaN m NaN s" and
+    // silently dropped the message the operator needed to see.
+    if (typeof elapsedMs === 'string') {
+      const msg = color('gray', `  ${elapsedMs}`);
+      process.stdout.write(`\r${colors(['dim', 'magenta'], '  💭')}${msg}          `);
+      return;
+    }
 
     const elapsed = formatMs(elapsedMs || 0);
     const hasChars = charsReceived > 0;

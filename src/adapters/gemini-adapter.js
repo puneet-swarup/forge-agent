@@ -24,14 +24,21 @@ class GeminiAdapter extends BaseAdapter {
   }
 
   _getSendSelectors() {
+    // Gemini's send button has moved more than once. Ordered most-specific to
+    // least, and discoverSendButton() falls back to a structural search when
+    // none of these match — a rename should not take the whole model offline.
     return [
       'button[aria-label*="Send message" i]',
-      'button[aria-label="Send"]',
+      'button[aria-label*="Send" i]',
       'button[data-test-id="send-button"]',
       'button.send-button',
       'button[mattooltip*="Send" i]',
       'button.send-message-button',
+      'button:has(mat-icon[data-mat-icon-name="send"])',
       'button:has(mat-icon:text-is("send"))',
+      'button:has(svg[data-test-id="send-icon"])',
+      'send-button button',
+      'rich-textarea ~ button',
     ];
   }
 
@@ -47,11 +54,15 @@ class GeminiAdapter extends BaseAdapter {
 
   _getNewChatSelectors() {
     return [
+      'expandable-button[data-test-id="new-chat-button"]',
+      '[data-test-id="new-chat-button"]',
       'a[href="/app"]',
       'button[aria-label*="New chat" i]',
+      'button[aria-label*="New conversation" i]',
       'button[data-test-id*="new-chat" i]',
       'button.new-conversation-button',
       'button[mattooltip*="New chat" i]',
+      'side-navigation-content a[href="/app"]',
       'button:has(mat-icon:text-is("add"))',
     ];
   }
@@ -107,6 +118,29 @@ class GeminiAdapter extends BaseAdapter {
       } catch (_) {
         // Try the next selector.
       }
+    }
+
+    // Structural fallback: Gemini renders the send control immediately after
+    // the composer. If every named selector has drifted, the button that sits
+    // beside the input is still the right one — and pressing Enter would lose
+    // the distinction between "send" and "newline".
+    try {
+      const composer = await this.discoverComposer();
+      if (composer) {
+        const container = composer.locator('xpath=ancestor::*[.//button][1]');
+        const buttons = container.locator('button');
+        const count = await buttons.count();
+
+        for (let i = count - 1; i >= 0; i--) {
+          const candidate = buttons.nth(i);
+          if (await candidate.isVisible() && await candidate.isEnabled()) {
+            logger.debug('[Gemini] Send button found structurally (no selector matched)');
+            return candidate;
+          }
+        }
+      }
+    } catch (_) {
+      // Fall through to the Enter key.
     }
 
     return null;

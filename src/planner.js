@@ -26,14 +26,30 @@ function parsePlan(text) {
   if (!text) return { steps: [], raw: '' };
 
   const steps = [];
-  const lines = text.split('\n');
+  const lines = String(text).split('\n');
 
-  // Look for lines starting with a number followed by a dot
+  // Models format plans differently. Accept the shapes that appear in practice
+  // rather than only "1. step", which was strict enough that a real Gemini plan
+  // was rejected outright:
+  //   1. step        1) step        Step 1: step
+  //   - step         * step         **1.** step
+  //   1. **step**    • step
+  const NUMBERED = /^\s*(?:\*\*)?(\d+)[.)\]]?(?:\*\*)?\s*[:\-–]?\s+(.*)$/;
+  const BULLET   = /^\s*[-*•]\s+(.*)$/;
+  const STEPWORD = /^\s*step\s*\d+\s*[:\-–]\s*(.*)$/i;
+
   for (const line of lines) {
-    const match = line.match(/^\s*(\d+)\.\s+(.*)$/);
-    if (match) {
-      steps.push(match[2].trim());
-    }
+    let match = line.match(NUMBERED) || line.match(STEPWORD) || line.match(BULLET);
+    if (!match) continue;
+
+    // The numbered regex captures the text in group 2; the others in group 1.
+    let step = (match[2] !== undefined ? match[2] : match[1]) || '';
+    step = step.replace(/\*\*/g, '').trim();
+
+    // Skip headings and empty fragments.
+    if (!step || /^plan\b/i.test(step) || step.length < 3) continue;
+
+    steps.push(step);
   }
 
   return {

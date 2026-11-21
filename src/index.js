@@ -191,6 +191,9 @@ function parseArgs(argv) {
       case 'ps':            opts.listInstances = true; break;
       case '--new-session': opts.newSession = true;   break;
       case '--dashboard':   opts.dashboard   = true;    break;
+      case '--headed':      opts.headed      = true;    break;
+      case '--diagnose':    opts.diagnose    = true;    break;
+      case '--round-trip':  opts.roundTrip   = true;    break;
       case '--port':        opts.port        = args[++i]; break;
       case '--json':        opts.json = true;         break;
       case '-a':
@@ -318,6 +321,8 @@ function parseArgs(argv) {
           opts.resume = a.split('=')[1];
         } else if (a && a.startsWith('--rerun=')) {
           opts.rerun = a.split('=')[1];
+        } else if (a && a.startsWith('--diagnose=')) {
+          opts.diagnose = a.split('=')[1];
         } else if (a && a.startsWith('--port=')) {
           opts.port = a.split('=')[1];
         } else if (a && a.startsWith('--help=')) {
@@ -415,6 +420,7 @@ ${c('1;36', 'CORE OPTIONS')}
       --model <name>     AI model: deepseek (default) | gemini | qwen | chatgpt | google
                            | local | ollama | colab
       --model-url <url>  Colab/Ollama endpoint for --model=colab|local (alias: --ollama-url)
+      --model=sarvam     Sarvam AI's API (needs SARVAM_API_KEY, no browser)
       --api-key <key>    Bearer token for that endpoint (alias: --ollama-api-key)
       --local-model <n>  Model name passed to the endpoint
       --local-port <n>   Local proxy port (default: 1337)
@@ -534,7 +540,12 @@ ${c('1;36', 'DEBUGGING')}
       --save-log         Save full conversation to disk
       --calibrate        Auto-detect browser selectors
       --test-model       Test current model selectors
-      --test-model=<n>   Test: deepseek | gemini
+      --diagnose=<n>     Why did this model stop working? Every candidate
+                         selector, the real DOM, and (with --round-trip) a live
+                         send/receive check. Add --headed to watch it.
+      --round-trip       With --diagnose: send one message and report the reply
+      --test-model=<n>   Test: deepseek | qwen | chatgpt | gemini | google | sarvam
+                         (add --headed to see the window, which Google needs)
 
 ${c('1;36', 'SHELL COMPLETIONS')}
       --completion-bash  Print bash completion script
@@ -1756,6 +1767,74 @@ async function main() {
   }
 
   // ── Model Selector Test ──────────────────────────────────────────────────
+  // ── Selector diagnostics ──────────────────────────────────────────────────
+  // Answers "why did it stop working", not just "is it working": every candidate
+  // selector with its match count, the real buttons and editables on the page,
+  // and an optional live round trip.
+  if (args.diagnose) {
+    const modelName = typeof args.diagnose === 'string' ? args.diagnose : config.MODEL;
+    const { getModelDisplayName, getModelUrl } = require('./adapter-factory');
+    const diagnose = require('./diagnose');
+
+    console.log('');
+    console.log(`  Selector diagnostics — ${getModelDisplayName(modelName)}`);
+    console.log(`  ${getModelUrl(modelName)}`);
+    console.log('');
+
+    config.MODEL = modelName;
+    config.HEADLESS = !args.headed;
+
+    let agent;
+    try {
+      const ForgeAgent = require('./agent');
+      agent = new ForgeAgent({});
+
+      logger.thinking('Launching browser...');
+      await agent.init();
+      logger.clearLine();
+
+      const page = agent.browser.page;
+      const adapter = agent.browser.adapter;
+
+      await page.waitForTimeout(3000);
+
+      const selectors = await diagnose.probeSelectors(page, adapter);
+      const dom = await diagnose.probeDom(page);
+
+      let roundTrip = null;
+      if (args.roundTrip) {
+        const started = Date.now();
+        roundTrip = { sent: false, detected: false, elapsedMs: null, reply: null, error: null };
+        try {
+          await adapter.sendMessage('Reply with exactly: OK');
+          roundTrip.sent = true;
+          const reply = await adapter.waitForResponse();
+          roundTrip.detected = Boolean(reply && String(reply).trim());
+          roundTrip.reply = reply ? String(reply).trim() : null;
+          roundTrip.elapsedMs = Date.now() - started;
+        } catch (err) {
+          roundTrip.error = (err && err.message) || String(err);
+        }
+      }
+
+      console.log(diagnose.formatDiagnostics({
+        model: getModelDisplayName(modelName),
+        url: dom.url || getModelUrl(modelName),
+        selectors,
+        dom,
+        roundTrip,
+      }));
+
+      await agent.shutdown();
+      process.exit(0);
+    } catch (err) {
+      logger.clearLine();
+      console.error('  Diagnostics failed: ' + err.message);
+      try { if (agent) await agent.shutdown(); } catch (_) {}
+      process.exit(1);
+    }
+  }
+
   if (args.testModel) {
     try {
       const modelName = typeof args.testModel === 'string' ? args.testModel : config.MODEL;
@@ -1768,9 +1847,13 @@ async function main() {
       console.log(`  \x1b[1mURL:\x1b[0m       ${getModelUrl(modelName)}`);
       console.log('');
 
-      // Force model in config for this test
+      // Force model in config for this test.
+      // Headless is the default because it is faster, but Google and ChatGPT
+      // frequently refuse a headless session that they would accept visibly —
+      // and a selector test that fails on a login wall tells you nothing about
+      // the selectors. `--headed` runs the same test in a real window.
       config.MODEL = modelName;
-      config.HEADLESS = true; // Use headless for test
+      config.HEADLESS = !args.headed;
       
       const ForgeAgent = require('./agent');
       const agent = new ForgeAgent();
@@ -1859,7 +1942,12 @@ async function main() {
   const agent = new ForgeAgent({ saveLog: args.saveLog });
 
   // ── Graceful shutdown handler ──────────────────────────────────────────────
+  // Idempotent: Ctrl+C twice used to print "Shutting down..." twice, run
+  // agent.shutdown() twice, and surface a browser-closed error on the way out.
+  let shuttingDown = false;
   const shutdown = async (code = 0) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     logger.info('\nShutting down...');
     try { if (heartbeatHandle) heartbeatHandle.stop(); } catch (_) {}
     try { require('./heartbeat').stop(); } catch (_) {}
@@ -1875,13 +1963,32 @@ async function main() {
 
   process.on('SIGINT',  () => shutdown(0));
   process.on('SIGTERM', () => shutdown(0));
+  // A closed page during shutdown is not a failure — it is the shutdown
+  // working. Reporting it as "Unexpected error" made a clean Ctrl+C look like a
+  // crash.
+  const isShutdownNoise = (err) => {
+    const msg = (err && err.message) || String(err || '');
+    return /Target page, context or browser has been closed|browser has been closed|Protocol error/i.test(msg);
+  };
+
   process.on('uncaughtException', async err => {
+    if (shuttingDown || isShutdownNoise(err)) {
+      if (config.DEBUG) logger.dim('  (ignored during shutdown: ' + ((err && err.message) || err) + ')');
+      await shutdown(0);
+      return;
+    }
     displayError(err);
     if (config.DEBUG) console.error(err.stack);
     await shutdown(1);
   });
   process.on('unhandledRejection', async reason => {
-    displayError(reason instanceof Error ? reason : new Error(String(reason)));
+    const err = reason instanceof Error ? reason : new Error(String(reason));
+    if (shuttingDown || isShutdownNoise(err)) {
+      if (config.DEBUG) logger.dim('  (ignored during shutdown: ' + err.message + ')');
+      await shutdown(0);
+      return;
+    }
+    displayError(err);
     if (config.DEBUG) console.error(reason);
     await shutdown(1);
   });
