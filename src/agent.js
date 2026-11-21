@@ -547,7 +547,11 @@ class ForgeAgent {
           await this.browser.sendMessage(firstMsg);
           const planResponse = await this.browser.waitForResponse();
 
-          const steps = parsePlan(planResponse);
+          // parsePlan returns { steps, raw }. Reading `.length` off the object
+          // gave undefined, so the "could not parse plan" branch ran on EVERY
+          // run, for every model — planning was never actually used.
+          const plan  = parsePlan(planResponse);
+          const steps = (plan && plan.steps) || [];
           if (steps.length > 0) {
             process.stdout.write('\n' + formatPlanForDisplay(steps) + '\n');
 

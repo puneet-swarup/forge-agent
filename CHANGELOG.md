@@ -9,6 +9,17 @@ Versioning: [Semantic Versioning](https://semver.org/)
 ## [Unreleased]
 
 ### Fixed
+- **Planning never ran — for any model.** `parsePlan()` returns
+  `{ steps, raw }`, and the caller read `.length` off that object, which is
+  `undefined`. The "Could not parse plan" branch therefore ran on every single
+  run and planning was silently skipped. The parser also accepted only
+  `1. step`, so a real plan in bullets or `Step 1:` form was rejected too; it now
+  accepts numbered, parenthesised, bulleted, bolded and `Step N:` shapes.
+- **The verification gate crashed every Windows run.** `execFile('npm', …)`
+  throws `EINVAL` synchronously on Windows because `npm` is a `.cmd` shim, which
+  rejected the promise and surfaced as `Unexpected error: spawn EINVAL` at the
+  end of the run. Checks now run through a shell on win32, and a spawn that
+  cannot start is reported as "could not run" instead of an exception.
 - **Gemini's send and new-chat buttons were not being found** on a live run —
   reported by the first real selector test against the web UI. Both lists are
   broader (aria-label, data-test-id, class, material icon), and

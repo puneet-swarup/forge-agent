@@ -125,3 +125,57 @@ describe('Planner Module', () => {
     });
   });
 });
+// ─────────────────────────────────────────────
+//  parsePlan — the shapes models actually emit
+//
+//  A live Gemini run was rejected with "Could not parse plan" because the
+//  parser accepted only "1. step". The caller then read `.length` off the
+//  returned object, so the warning fired on every run regardless of format.
+// ─────────────────────────────────────────────
+
+describe('parsePlan formats', () => {
+  const { parsePlan } = require('../src/planner');
+
+  test('numbered with a dot', () => {
+    expect(parsePlan('PLAN:\n1. read the file\n2. run tests').steps)
+      .toEqual(['read the file', 'run tests']);
+  });
+
+  test('numbered with a parenthesis', () => {
+    expect(parsePlan('1) read\n2) test').steps).toEqual(['read', 'test']);
+  });
+
+  test('markdown bullets', () => {
+    expect(parsePlan('- read the file\n- run tests').steps)
+      .toEqual(['read the file', 'run tests']);
+  });
+
+  test('bold numbering', () => {
+    expect(parsePlan('**1.** read\n**2.** test').steps).toEqual(['read', 'test']);
+  });
+
+  test('the words "Step N:"', () => {
+    expect(parsePlan('Step 1: read\nStep 2: test').steps).toEqual(['read', 'test']);
+  });
+
+  test('prose without a list yields no steps, not a guess', () => {
+    expect(parsePlan('I will read the file and then run the tests.').steps).toEqual([]);
+  });
+
+  test('empty and nullish input are safe', () => {
+    expect(parsePlan('').steps).toEqual([]);
+    expect(parsePlan(null).steps).toEqual([]);
+    expect(parsePlan(undefined).steps).toEqual([]);
+  });
+
+  test('the return shape is an object with steps, and the caller uses it', () => {
+    const plan = parsePlan('1. a\n2. b');
+    expect(Array.isArray(plan.steps)).toBe(true);
+    // The bug: `plan.length` was undefined, so the warning branch always ran.
+    expect(plan.length).toBeUndefined();
+
+    const agentSrc = require('fs').readFileSync(
+      require('path').join(__dirname, '..', 'src', 'agent.js'), 'utf8');
+    expect(agentSrc).toContain('(plan && plan.steps) || []');
+  });
+});
