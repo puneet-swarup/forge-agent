@@ -9,6 +9,24 @@ Versioning: [Semantic Versioning](https://semver.org/)
 ## [Unreleased]
 
 ### Added
+- **Loom slice 3a — the dependency graph** (`src/loom/graph.js`). Edges,
+  importers and role drift over the `imports` table, with no new dependency and
+  no re-parse. `writeEdges()` resolves an extractor's specifiers through
+  `resolve.js` and *replaces* a file's edges, so a deleted import disappears; an
+  unresolved or external specifier is recorded as `resolved = NULL` — an edge not
+  followed, never a guess. `importers()` and `dependencies()` read the graph back
+  for live files only, sorted and de-duplicated. `rebuildGraph()` computes
+  `importers_sig` (§5.6, `sha256` of the sorted importer paths, 16 hex chars) in
+  one pass over `files` and `imports` joined in memory — the store has no
+  `GROUP BY`, and 2,000 files must not become 2,000 queries — and sets
+  `summaries.role_stale` when a signature moves while `content_sha` does not: the
+  file's role changed and a re-read of the file could not tell you that. The
+  first computation is a baseline rather than drift, drift is one-way until a
+  fresh summary clears it, and a file with no importers signs as
+  `sha256('')[:16]` rather than the `''` sentinel. `tests/loom/graph.test.js`
+  (16 tests) covers signature stability under reorder, drift on a new importer,
+  tombstones, unresolved edges, idempotence, and the neutral result when the
+  store is absent.
 - **Loom slice 2b — import resolution** (`src/loom/resolve.js`). Turns a
   specifier into a project-relative path, or `null`. Narrow on purpose: a
   silently dropped edge loses a dependency, and a wrongly resolved one invents

@@ -1,5 +1,10 @@
 # NEXT SESSION — Forge Agent workstreams
 
+## Claim
+
+IN PROGRESS: T2 Loom slice 3a (dependency graph) — feat/loom-slice3-graph
+
+
 **Verified:** 2026-11-21, against `main` @ `704d182` (after PRs #3-#16). The
 runner never merges; the lead agent merges after CI is green.
 **Rule for this file:** implementation and tests are authoritative. A status here
@@ -17,7 +22,8 @@ ls src/loom 2>/dev/null                   # T2
 npx jest tests/adapter-contract.test.js   # T3
 npx jest tests/lifecycle-gate.test.js     # T4 (27)
 ls scripts/lifecycle.js scripts/plan.js   # T4
-npx jest tests/loom                       # T2 slice 1 (162 passing / 2 skipped)
+npx jest tests/loom                       # T2 slices 1-2 + graph (271 passing / 2 skipped)
+npx jest tests/loom/graph.test.js         # T2 slice 3a (16)
 ls src/loom/schema/001_init.sql           # T2 schema
 grep -rn "['\"\`]/(var/)?tmp/" src/       # T5 (must be empty)
 npx jest tests/markdown-scope.test.js     # T6 (14)
@@ -60,7 +66,7 @@ rotation are all on `main`.
 | Task | Workstream | Status | Evidence | Next action |
 | --- | --- | --- | --- | --- |
 | **T1** | Transport | **DONE** | `src/transport.js` exports `encodeTransportArg` / `decodeTransportArg` / `md5hex`; `content_md5`, `is_hex`, `find_md5`, `replace_md5` are in `src/tools.js`; `tests/transport-integrity.test.js` (19) green | none — see limitation below |
-| **T2** | Loom | **IN PROGRESS — slices 1 and 2 merged** | storage (`config, paths, hash, ignore, db, migrate, schema`), extractors for js/ts/py/go/rs/sql/md/data (`src/loom/extract/`), and import resolution (`src/loom/resolve.js`); `tests/loom/` 257 tests green; nothing wired into the loop yet | slice 3: the graph, then the digest |
+| **T2** | Loom | **IN PROGRESS — slices 1, 2 and 3a merged** | storage (`config, paths, hash, ignore, db, migrate, schema`), extractors for js/ts/py/go/rs/sql/md/data (`src/loom/extract/`), import resolution (`src/loom/resolve.js`), dependency graph (`src/loom/graph.js`); `tests/loom/` 271 tests green; nothing wired into the loop yet | slice 3b: the indexer (`refresh.js`), then the digest |
 | **T3** | Adapters | **OPEN — live-DOM accuracy only** | all 8 adapters implement the 6 contract methods; `tests/adapter-contract.test.js` (50) green | per-adapter live smoke test with a real login |
 | **T4** | Plan lifecycle | **DONE** (PR #9 merged) | `src/lifecycle-gate.js` gates the first mutating tool and `TASK_COMPLETE`, bounded by `MAX_PLAN_GATE_ATTEMPTS`; `PLAN_GATE=false` disables it | nothing |
 | **T5** | Cross-platform paths | **DONE (targeted)** | no literal `/tmp` in `src/`; `icacls` hints on win32; `tests/path-portability.test.js` green | extend only if a new path bug appears |
@@ -94,7 +100,7 @@ include a hash only when certain, because a wrong hash blocks a legitimate write
 
 ---
 
-## T2 — ClickHouse Loom · IN PROGRESS (slice 1 of 5)
+## T2 — ClickHouse Loom · IN PROGRESS (slice 3a of 5)
 
 The normative specification is **`src/loom_specs.md`** (v1, 839 lines, "ready for
 implementation"). It is self-contained: where a design choice existed, it is
@@ -147,12 +153,33 @@ Three invariants are already enforced, not just intended:
 - **I6** — path normalisation rejects absolute and escaping paths rather than
   rewriting them; storage is always project-relative, forward slashes.
 
+**Progress — slices 2 and 3a (done).** Slice 2 is the extractors
+(`src/loom/extract/`, seven languages) and import resolution
+(`src/loom/resolve.js`). Slice 3a is the dependency graph
+(`src/loom/graph.js`, `tests/loom/graph.test.js` 16 tests):
+
+- `writeEdges()` turns an extractor's `{specifier, kind}` list into `imports`
+  rows via `resolve.js`, replacing the file's previous edges so a removed import
+  disappears instead of lingering. `opts.exists` keeps it off the disk in tests.
+- `importers()` / `dependencies()` read the graph back, live files only, sorted
+  and de-duplicated. An unresolved or external specifier is an edge *not
+  followed* (`resolved = NULL`), never a guessed dependency.
+- `rebuildGraph()` computes `importers_sig` (§5.6) in one pass over `files` and
+  `imports` joined in memory — the store has no `GROUP BY`, and 2,000 files must
+  not become 2,000 queries. A moved signature with an unchanged `content_sha`
+  sets `summaries.role_stale = 1`: the file's role changed while its bytes did
+  not, which is exactly the staleness a re-parse cannot detect.
+- Three decisions worth knowing: the first computation of a signature is a
+  baseline, not drift (`role_stale` untouched, otherwise the first index of any
+  project halves its prose confidence for nothing); drift is one-way (only a
+  fresh summary clears the flag); a file with no importers gets
+  `sha256('')[:16]`, not `''`, which is the "never computed" sentinel.
+
 **Remaining slices** (one PR each, in order):
 
-2. extractors (`extract/*.js`), `findBlockEnd`, `resolve.js` — fixture-tested
-   against real files, no database needed;
-3. indexer — `refresh.js` sweep, git short-circuit, dirty flag, worker,
-   tombstones, access rows, caps and warm-up order;
+3b. indexer — `refresh.js` sweep, git short-circuit, dirty flag, worker,
+   tombstones, access rows, caps and warm-up order (it will call
+   `graph.rebuildGraph()` as step 7 of §5.2);
 4. digest, `query.js`, `heat.js`, `summarize.js`, `portable.js`;
 5. integration — `attach()` / reattach after `newChat`, `loom.around()` in the
    tool dispatcher, `search_codebase`, `--loom` CLI, chaos tests (delete / lock /
@@ -305,9 +332,11 @@ and the test enforces that.
 
 ## What is next, in order
 
-1. **Loom slice 3** — the dependency graph over `extract` + `resolve`, then the
-   digest that compiles it to a token budget. Slices 1-2 are storage and
-   extraction only; nothing is wired into the loop yet.
+1. **Loom slice 3b** — the indexer (`refresh.js`: stat sweep, git short-circuit,
+   dirty flag, worker, tombstones, access rows, caps and warm-up order), which is
+   the first caller of `graph.rebuildGraph()`. Then slice 4's digest, which
+   compiles the graph to a token budget. Slices 1-3a are storage, extraction and
+   edges only; nothing is wired into the loop yet.
 2. **T3 live adapter repair** — blocked on a human with a login. The offline
    contract suite is green; the selectors are unverified against the real UIs.
 3. **Coverage uplift** — the gate is 69/61/72/70 against a 70.4/62.7/73.3/71.9

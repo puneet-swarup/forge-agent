@@ -13,8 +13,9 @@ tested.
 | Slice | Scope | Status |
 | --- | --- | --- |
 | 1 | Storage foundation: config, paths, hashing, ignore rules, driver (SQLite + JSON fallback), migrations, schema, `open`/`close`/`status`/`stats` | **done** (`src/loom/`) |
-| 2 | Extractors (`extract/js.js`, `py.js`, `go.js`, `rs.js`, `sql.js`, `md.js`, `data.js`), `findBlockEnd`, import resolution | not started |
-| 3 | Indexer: refresh sweep, git short-circuit, dirty flag, worker, tombstones, access rows, caps and warm-up order | not started |
+| 2 | Extractors (`extract/js.js`, `py.js`, `go.js`, `rs.js`, `sql.js`, `md.js`, `data.js`), `findBlockEnd`, import resolution | **done** (`src/loom/extract/`, `resolve.js`) |
+| 3a | Dependency graph: edge writing, `importers` / `dependencies`, `importers_sig`, role drift | **done** (`src/loom/graph.js`) |
+| 3b | Indexer: refresh sweep, git short-circuit, dirty flag, worker, tombstones, access rows, caps and warm-up order | not started |
 | 4 | Digest compiler, `recall` / `whats_here` / `related`, heat, summaries, portable export | not started |
 | 5 | Agent-loop integration: attach/reattach after `newChat`, `loom.around()` in the tool dispatcher, `search_codebase`, `--loom` CLI, chaos tests | not started |
 
@@ -68,6 +69,49 @@ by 500 ms; `close()` always writes synchronously.
 | Project directory not writable | Index moves to `~/.forge-agent/loom/<project-id>/` |
 | Store cannot be created | Loom disabled for the run; the task continues |
 
+## The dependency graph (slice 3a)
+
+`src/loom/graph.js` sits between the extractors and the indexer. It owns three
+things and nothing else.
+
+**Edges.** `writeEdges(db, {relPath, imports, exists})` takes one extractor
+result, resolves each specifier with `resolve.js`, and *replaces* the file's
+`imports` rows. Replacement, not append: a deleted import must disappear, and an
+edge left behind is a dependency the digest would report and the model would
+trust. A specifier that does not resolve keeps `resolved = NULL` — recorded as
+"not followed", never guessed into a path.
+
+**Reads.** `importers(db, relPath)` and `dependencies(db, relPath)` return live,
+sorted, de-duplicated path lists. Tombstoned files appear in neither: a deleted
+file is not a dependency, and an edge into one is skipped by `rebuildGraph()`
+rather than counted.
+
+**Role drift.** `rebuildGraph(db)` computes §5.6's `importers_sig` for every live
+file — `sha256` over the sorted importer paths, truncated to 16 hex characters —
+and sets `summaries.role_stale = 1` when the signature moved while the file's
+`content_sha` did not. That is the whole reason the graph exists as a separate
+layer: a helper that suddenly has eight importers has a different *role* with
+byte-identical content, and no amount of re-reading the file would reveal it.
+The signature comes from the `imports` table, so the check is one query per
+rebuild, not one re-parse per file.
+
+Three decisions the spec leaves implicit, taken here:
+
+- **The first computation is a baseline, not drift.** A row with
+  `importers_sig = ''` has never been compared. `rebuildGraph()` writes the
+  signature and leaves `role_stale` alone; otherwise the first index of any
+  project would mark every summary stale and halve its prose confidence for no
+  reason at all.
+- **Drift is one-way.** Only a fresh summary (new `sha`) clears `role_stale`. A
+  signature that drifts back is still a summary written against a different
+  import set.
+- **No importers is `sha256('')[:16]`, not `''`.** `''` is the "never computed"
+  sentinel; a file whose last importer leaves must still move its signature.
+
+Both loops are one pass over `files` and one over `imports`, joined in memory:
+the store interface has no `GROUP BY`, and a 2,000-file rebuild must not become
+2,000 queries.
+
 ## Deviations from the spec, and why
 
 - **Test runner.** The spec decides `node:test` for `tests/loom/`. The suite here
@@ -87,7 +131,8 @@ by 500 ms; `close()` always writes synchronously.
 ## Verifying
 
 ```bash
-npx jest tests/loom                 # 162 passed, 2 skipped (SQLite, absent on Node 20)
+npx jest tests/loom                 # 271 passed, 2 skipped (SQLite, absent on Node 20)
+npx jest tests/loom/graph.test.js   # 16, the graph on its own
 npm run typecheck
 ```
 
