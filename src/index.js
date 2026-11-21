@@ -191,6 +191,7 @@ function parseArgs(argv) {
       case 'ps':            opts.listInstances = true; break;
       case '--new-session': opts.newSession = true;   break;
       case '--dashboard':   opts.dashboard   = true;    break;
+      case '--headed':      opts.headed      = true;    break;
       case '--port':        opts.port        = args[++i]; break;
       case '--json':        opts.json = true;         break;
       case '-a':
@@ -534,7 +535,8 @@ ${c('1;36', 'DEBUGGING')}
       --save-log         Save full conversation to disk
       --calibrate        Auto-detect browser selectors
       --test-model       Test current model selectors
-      --test-model=<n>   Test: deepseek | gemini
+      --test-model=<n>   Test: deepseek | qwen | chatgpt | gemini | google
+                         (add --headed to see the window, which Google needs)
 
 ${c('1;36', 'SHELL COMPLETIONS')}
       --completion-bash  Print bash completion script
@@ -1768,9 +1770,13 @@ async function main() {
       console.log(`  \x1b[1mURL:\x1b[0m       ${getModelUrl(modelName)}`);
       console.log('');
 
-      // Force model in config for this test
+      // Force model in config for this test.
+      // Headless is the default because it is faster, but Google and ChatGPT
+      // frequently refuse a headless session that they would accept visibly —
+      // and a selector test that fails on a login wall tells you nothing about
+      // the selectors. `--headed` runs the same test in a real window.
       config.MODEL = modelName;
-      config.HEADLESS = true; // Use headless for test
+      config.HEADLESS = !args.headed;
       
       const ForgeAgent = require('./agent');
       const agent = new ForgeAgent();
