@@ -31,6 +31,16 @@ const MODEL_REGISTRY = Object.freeze({
     adapter: './adapters/colab-adapter',
   },
 
+  sarvam: {
+    displayName: 'Sarvam AI',
+    dedicated: true,
+    // Sarvam is an OpenAI-compatible HTTP API, not a browser-driven chat UI.
+    // It reuses the remote-endpoint path; the key comes from SARVAM_API_KEY.
+    url: 'https://api.sarvam.ai/v1',
+    aliases: ['sarvam', 'sarvam-ai', 'sarvam105b'],
+    adapter: './adapters/sarvam-adapter',
+  },
+
   deepseek: {
     displayName: 'DeepSeek',
     url: 'https://chat.deepseek.com',

@@ -38,6 +38,14 @@ Versioning: [Semantic Versioning](https://semver.org/)
   page during shutdown is no longer reported as "Unexpected error".
 
 ### Added
+- **Sarvam AI as a model** — `--model=sarvam`. Unlike the eight browser
+  adapters, Sarvam is an OpenAI-compatible HTTP API
+  (`https://api.sarvam.ai/v1/chat/completions`), so it reuses the existing
+  remote-endpoint path with Sarvam's defaults: `sarvam-105b` (128K context),
+  key from `SARVAM_API_KEY` sent as a Bearer token. Two details that would
+  otherwise fail silently: a leftover `OLLAMA_BASE_URL` cannot redirect Sarvam
+  traffic to a Colab tunnel, and the default model is `sarvam-105b` — `sarvam-m`
+  is deprecated and rejected by the API.
 - **Background processes are visible outside the process that started them.**
   `src/process-manager.js` keeps its registry in memory, so the dashboard — a
   separate process — showed an empty Processes panel while children were running.

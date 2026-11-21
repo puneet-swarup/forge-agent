@@ -416,6 +416,7 @@ ${c('1;36', 'CORE OPTIONS')}
       --model <name>     AI model: deepseek (default) | gemini | qwen | chatgpt | google
                            | local | ollama | colab
       --model-url <url>  Colab/Ollama endpoint for --model=colab|local (alias: --ollama-url)
+      --model=sarvam     Sarvam AI's API (needs SARVAM_API_KEY, no browser)
       --api-key <key>    Bearer token for that endpoint (alias: --ollama-api-key)
       --local-model <n>  Model name passed to the endpoint
       --local-port <n>   Local proxy port (default: 1337)
@@ -535,7 +536,7 @@ ${c('1;36', 'DEBUGGING')}
       --save-log         Save full conversation to disk
       --calibrate        Auto-detect browser selectors
       --test-model       Test current model selectors
-      --test-model=<n>   Test: deepseek | qwen | chatgpt | gemini | google
+      --test-model=<n>   Test: deepseek | qwen | chatgpt | gemini | google | sarvam
                          (add --headed to see the window, which Google needs)
 
 ${c('1;36', 'SHELL COMPLETIONS')}
