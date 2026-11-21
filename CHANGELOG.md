@@ -9,6 +9,15 @@ Versioning: [Semantic Versioning](https://semver.org/)
 ## [Unreleased]
 
 ### Added
+- **Loom slice 2b — import resolution** (`src/loom/resolve.js`). Turns a
+  specifier into a project-relative path, or `null`. Narrow on purpose: a
+  silently dropped edge loses a dependency, and a wrongly resolved one invents
+  a dependency that does not exist, so the failure mode is `null`, never a guess.
+  `./`, `../`, `/`, `@/` and `~/` are local (the last three from the project
+  root); candidates are tried in spec order — bare path, six source extensions,
+  then `index.<ext>`. Existence is injectable (`opts.exists`), so the graph can
+  be rebuilt from a file list without touching disk and the tests need no
+  fixtures. `tsconfig.json` `paths` are deliberately not read in v1.
 - **Loom, slice 1 — the project index's storage layer** (`src/loom/`). Loom is
   the persistent index described in `src/loom_specs.md`: files, symbols,
   dependency edges and one-line purposes, compiled into a digest for the first

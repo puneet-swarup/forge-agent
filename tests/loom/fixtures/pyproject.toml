@@ -1,0 +1,8 @@
+# a project
+title = "fixture"
+
+[build-system]
+requires = ["setuptools"]
+
+[tool.black]
+line-length = 88
