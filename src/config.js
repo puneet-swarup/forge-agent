@@ -112,6 +112,10 @@ const DEFAULTS = {
   // Loom project index (src/loom_specs.md). Disabled by default until slice 3
   // lands: LOOM_ENABLED=0 makes every Loom call a no-op with no I/O (spec I2).
   LOOM_ENABLED             : false,
+
+  // Planning is optional. A plan response that never arrives must not stall the
+  // run at "Generating execution plan..." until the generic response timeout.
+  PLAN_TIMEOUT_MS          : 90_000,
   LOOM_DIGEST_TOKENS       : 1200,
 
   // Routine context rotation: start a fresh chat every N assistant turns and

@@ -179,3 +179,43 @@ describe('parsePlan formats', () => {
     expect(agentSrc).toContain('(plan && plan.steps) || []');
   });
 });
+
+// ─────────────────────────────────────────────
+//  A plan that never arrives must not hang the run
+//
+//  A live run sat at "Generating execution plan..." until the user killed it,
+//  because the plan response was never detected and the only bound was the
+//  generic 10-minute response timeout.
+// ─────────────────────────────────────────────
+
+describe('planning is bounded', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const agentSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'agent.js'), 'utf8');
+
+  test('the plan wait is raced against a timeout', () => {
+    expect(agentSrc).toContain('Promise.race');
+    expect(agentSrc).toContain('PLAN_TIMEOUT_MS');
+  });
+
+  test('a planning failure falls through to normal execution', () => {
+    // The catch around the plan block must send a recovery message, not abort.
+    const block = agentSrc.slice(agentSrc.indexOf('const planTimeoutMs'));
+    expect(block.slice(0, 3000)).toMatch(/Planning failed[\s\S]*Proceeding without plan/);
+  });
+
+  test('the default timeout is finite, configurable, and below the response timeout', () => {
+    // Read the declaration rather than the runtime object: config.js is built
+    // from several layers and the test environment does not always expose every
+    // key on the exported object.
+    const configSrc = fs.readFileSync(
+      path.join(__dirname, '..', 'src', 'config.js'), 'utf8');
+
+    const match = configSrc.match(/PLAN_TIMEOUT_MS\s*:\s*([\d_]+)/);
+    expect(match).toBeTruthy();
+
+    const value = Number(match[1].replace(/_/g, ''));
+    expect(value).toBeGreaterThan(0);
+    expect(value).toBeLessThan(600_000);
+  });
+});

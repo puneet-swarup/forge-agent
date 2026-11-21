@@ -545,7 +545,22 @@ class ForgeAgent {
 
         try {
           await this.browser.sendMessage(firstMsg);
-          const planResponse = await this.browser.waitForResponse();
+
+          // A plan is an optimisation, not a requirement. Without a bound, a
+          // plan response that is never detected leaves the run sitting at
+          // "Generating execution plan..." until the generic 10-minute
+          // response timeout — which reads as a hang, and did.
+          const planTimeoutMs = config.PLAN_TIMEOUT_MS || 90_000;
+          const planResponse = await Promise.race([
+            this.browser.waitForResponse(),
+            new Promise((_, reject) => {
+              const timer = setTimeout(
+                () => reject(new Error(`no plan response within ${Math.round(planTimeoutMs / 1000)}s`)),
+                planTimeoutMs
+              );
+              if (typeof timer.unref === 'function') timer.unref();
+            }),
+          ]);
 
           // parsePlan returns { steps, raw }. Reading `.length` off the object
           // gave undefined, so the "could not parse plan" branch ran on EVERY
