@@ -138,6 +138,23 @@ const PAGE = `<!doctype html>
       if (!text) return;
       addMessage('user', text);
       input.value = '';
+
+      // NO_REPLY_TEST: simulate a submit the UI silently dropped. The user
+      // bubble appears but no assistant bubble is ever created, so a scraper
+      // that keys off "last visible reply" would return the PREVIOUS answer.
+      if (text.includes('NO_REPLY_TEST')) return;
+
+      // SLOW_TEST: the assistant bubble appears only after a delay longer than
+      // STABLE_DELAY. A scraper without a transcript baseline will read the
+      // previous reply during that window; one with a baseline waits.
+      if (text.includes('SLOW_TEST')) {
+        setTimeout(() => {
+          const n = addMessage('assistant', '');
+          streamInto(n, 'Echo: SLOW_TEST');
+        }, 700);
+        return;
+      }
+
       const node = addMessage('assistant', '');
 
       // PAUSE_TEST: stream "part one", pause longer than STABLE_DELAY

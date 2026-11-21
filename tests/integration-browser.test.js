@@ -290,4 +290,61 @@ describe('browser integration (mock chat)', () => {
     expect(reply).not.toContain('<<<FORGE_END>>>');
     expect(reply).toContain('answer-body');
   }, 30000);
+
+  itBrowser('never returns the previous reply when the new one is slow to appear', async () => {
+    const { getAdapter } = require('../src/adapter-factory');
+    const config = {
+      DEEPSEEK_URL: server.url,
+      HEALTH_CHECK_TIMEOUT: 5000,
+      SEND_DELAY: 50,
+      GENERATION_POLL: 40,
+      STABLE_DELAY: 150,   // shorter than the 700 ms bubble delay in the mock
+      APPEAR_TIMEOUT: 8000,
+      RESPONSE_TIMEOUT: 15000,
+      ACTIVE_PROFILE: 'default',
+      PLANNING_MODE: false,
+      WORKING_DIR: process.cwd(),
+    };
+    const adapter = getAdapter('deepseek', page, config);
+
+    // Turn 1 — establishes a previous reply in the transcript.
+    await adapter.sendMessage('first message');
+    expect(await adapter.waitForResponse()).toContain('Echo: first message');
+
+    // Turn 2 — the assistant bubble is delayed. Without a baseline the
+    // scraper reads turn 1's bubble and returns it here.
+    await adapter.sendMessage('SLOW_TEST');
+    const reply = await adapter.waitForResponse();
+
+    expect(reply).toContain('SLOW_TEST');
+    expect(reply).not.toContain('first message');
+  }, 30000);
+
+  itBrowser('reports a turn-boundary failure when no reply arrives, instead of returning stale text', async () => {
+    const { getAdapter } = require('../src/adapter-factory');
+    const config = {
+      DEEPSEEK_URL: server.url,
+      HEALTH_CHECK_TIMEOUT: 5000,
+      SEND_DELAY: 50,
+      GENERATION_POLL: 40,
+      STABLE_DELAY: 150,
+      APPEAR_TIMEOUT: 500,     // fail fast for this test
+      RESPONSE_TIMEOUT: 15000,
+      ACTIVE_PROFILE: 'default',
+      PLANNING_MODE: false,
+      WORKING_DIR: process.cwd(),
+    };
+    const adapter = getAdapter('deepseek', page, config);
+
+    await adapter.sendMessage('first message');
+    expect(await adapter.waitForResponse()).toContain('Echo: first message');
+
+    // The UI silently drops this submit: no assistant bubble is created.
+    await adapter.sendMessage('NO_REPLY_TEST');
+
+    await expect(adapter.waitForResponse()).rejects.toMatchObject({
+      turnBoundary: 'appear',
+      retryable: true,
+    });
+  }, 30000);
 });

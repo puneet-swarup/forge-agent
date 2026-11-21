@@ -15,6 +15,14 @@ class BaseAdapter {
     this.config = config;
     this._projectContext = '';
     this._isFirstMessage = true;
+
+    // Turn-boundary bookkeeping (see "Turn boundary" below).
+    // `_pendingTurn` holds the transcript baseline captured by sendMessage(),
+    // so waitForResponse() can prove it is reading the NEW reply rather than
+    // the previous one. `_lastCompletionSignal` records which signal ended the
+    // last turn ('marker' | 'idle' | 'baseline'), for traces and metrics.
+    this._pendingTurn = null;
+    this._lastCompletionSignal = null;
   }
 
   // ── Adapter interface ────────────────────────────────────────────────────
@@ -147,6 +155,8 @@ class BaseAdapter {
 
     await this.page.waitForTimeout(2000);
     this._isFirstMessage = true;
+    // A new conversation invalidates any transcript baseline.
+    this._pendingTurn = null;
   }
 
   // ── Send message ────────────────────────────────────────────────────────
@@ -194,6 +204,12 @@ class BaseAdapter {
       );
     }
 
+    // Capture the transcript BEFORE typing, so waitForResponse() can tell a
+    // new reply from the previous one. Captured here rather than after the
+    // click because the new bubble can appear within milliseconds.
+    this._pendingTurn = await this._transcriptBaseline();
+    this._lastSentText = fullText;
+
     await this._typeText(input, fullText);
 
  // Shared web UIs need a small pause between prompts so we do not look
@@ -232,7 +248,19 @@ class BaseAdapter {
       ? 24 * 60 * 60 * 1000
       : (configuredTimeout || 600_000);
 
+    // Single-use: the baseline captured by sendMessage(). A waitForResponse()
+    // with no preceding send falls back to idle detection alone, which keeps
+    // the old behaviour for callers that drive the page themselves.
+    const baseline = this._pendingTurn;
+    this._pendingTurn = null;
+
     try {
+      if (baseline) {
+        await this._waitForNewBubble(baseline, {
+          timeoutMs: this.config.APPEAR_TIMEOUT || 20_000,
+        });
+      }
+
       const text = await this._waitForTextStable({
         containerSelectors: this._getResponseSelectors(),
         timeoutMs,
@@ -247,6 +275,10 @@ class BaseAdapter {
 
       return cleaned;
     } catch (err) {
+      // A turn-boundary failure is already specific and actionable; do not
+      // bury it under the generic "no response after N seconds" wrapper.
+      if (err && err.turnBoundary) throw err;
+
       const wrapped = new Error(
         `No response received from ${this.constructor.name} ` +
         `after ${Math.round(timeoutMs / 1000)} seconds.\n` +
@@ -467,6 +499,110 @@ class BaseAdapter {
     }
   }
 
+  // ── Turn boundary ───────────────────────────────────────────────────────
+  //
+  // Deciding when a reply has finished is the single most important guess in
+  // the loop. It used to be "the text stopped changing for STABLE_DELAY", which
+  // has two failure modes: it costs 1.5-3 s on every turn, and if the new
+  // bubble has not rendered yet it happily returns the PREVIOUS reply.
+  //
+  // The boundary is now measured in three steps:
+  //   1. baseline  — sendMessage() records how many replies exist and a hash
+  //                  of the last one, before typing.
+  //   2. appear    — waitForResponse() waits for that transcript to change,
+  //                  so a stale reply can never be mistaken for a new one.
+  //   3. complete  — the END marker wins if present; otherwise idle text plus
+  //                  a stopped generator; otherwise the timeout.
+
+  /**
+   * Snapshot the assistant transcript before a send.
+   *
+   * @returns {Promise<{selector: string|null, count: number, lastHash: string}>}
+   */
+  async _transcriptBaseline() {
+    const selector = await this._resolveResponseSelector();
+
+    if (!selector) {
+      return { selector: null, count: 0, lastHash: '' };
+    }
+
+    const nodes = await this.page.$$(selector).catch(() => []);
+    const last  = nodes.length ? await nodes[nodes.length - 1].innerText().catch(() => '') : '';
+
+    return {
+      selector,
+      count: nodes.length,
+      lastHash: this._hashText(last),
+    };
+  }
+
+  /**
+   * First response selector that currently matches at least one node.
+   * Adapters list selectors most-specific-first, so this is the transcript
+   * container the scraper would actually read.
+   */
+  async _resolveResponseSelector() {
+    for (const selector of this._getResponseSelectors()) {
+      try {
+        const nodes = await this.page.$$(selector);
+        if (nodes.length > 0) return selector;
+      } catch (_) {
+        // Try the next selector.
+      }
+    }
+    return null;
+  }
+
+  /** Cheap non-cryptographic hash — used only to detect change, never for security. */
+  _hashText(text) {
+    const s = String(text || '');
+    let h = 5381;
+    for (let i = 0; i < s.length; i++) {
+      h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+    }
+    return (h >>> 0).toString(36) + ':' + s.length;
+  }
+
+  /**
+   * Wait until the transcript differs from the baseline — a new bubble, or the
+   * last one changed. Throws a retryable, turnBoundary-marked error on timeout
+   * instead of silently returning stale text.
+   */
+  async _waitForNewBubble(baseline, options = {}) {
+    const timeoutMs = options.timeoutMs || this.config.APPEAR_TIMEOUT || 20_000;
+    const pollMs    = this.config.GENERATION_POLL || 400;
+    const start     = Date.now();
+
+    while (Date.now() - start < timeoutMs) {
+      const selector = baseline.selector || await this._resolveResponseSelector();
+
+      if (selector) {
+        const nodes = await this.page.$$(selector).catch(() => []);
+
+        if (nodes.length > baseline.count) return true;
+
+        if (nodes.length > 0 && nodes.length === baseline.count) {
+          const last = await nodes[nodes.length - 1].innerText().catch(() => '');
+          if (last && this._hashText(last) !== baseline.lastHash) return true;
+        }
+      }
+
+      await this.page.waitForTimeout(pollMs);
+    }
+
+    const err = new Error(
+      `${this.constructor.name}: no new reply appeared within ` +
+      `${Math.round(timeoutMs / 1000)}s of sending. The previous reply was ` +
+      `NOT used (that is the stale-response guard). The UI may have failed to ` +
+      `submit the message, or the response container selector may have drifted.\n` +
+      `  - Check the browser window; re-run with --debug to keep the raw log\n` +
+      `  - Run: forge-agent --test-model\n`
+    );
+    err.retryable   = true;
+    err.turnBoundary = 'appear';
+    throw err;
+  }
+
   // ── Response text stability ─────────────────────────────────────────────
 
   async _waitForTextStable(options = {}) {
@@ -487,6 +623,23 @@ class BaseAdapter {
     while (Date.now() - start < timeoutMs) {
       const text = await this._extractText(containerSelectors);
 
+      // Guard against reading our own prompt back. Some UIs render the user
+      // bubble in a container that also matches a response selector; if that
+      // bubble is the newest node, a naive stability check would return it.
+      if (this._lastSentText && text.trim() === this._lastSentText.trim()) {
+        await this.page.waitForTimeout(pollMs);
+        continue;
+      }
+
+      // Deterministic completion: the model wrote its END marker. One settle
+      // poll lets any trailing characters land before we take the text.
+      if (this._hasEndMarker(text)) {
+        await this.page.waitForTimeout(pollMs);
+        const settled = await this._extractText(containerSelectors);
+        this._lastCompletionSignal = 'marker';
+        return settled || text;
+      }
+
       if (text !== lastText) {
         lastText = text;
         stableStart = Date.now();
@@ -498,6 +651,7 @@ class BaseAdapter {
         const generating = await this.getGenerationState();
 
         if (!generating) {
+          this._lastCompletionSignal = 'idle';
           return text;
         }
 
