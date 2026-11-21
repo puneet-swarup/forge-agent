@@ -9,6 +9,13 @@ Versioning: [Semantic Versioning](https://semver.org/)
 ## [Unreleased]
 
 ### Fixed
+- **An unknown model silently became deepseek.** `config.MODEL` was validated
+  against a hand-written list that predated the adapter registry, so
+  `--model=sarvam` (or `--diagnose=sarvam`) printed "Sarvam AI (Indus)" and then
+  launched **deepseek** — a command naming one model drove another, with only a
+  warning nobody was looking for. The list is now derived from the adapter
+  factory (aliases included), so adding an adapter can never leave a stale
+  whitelist behind. A test asserts the literal list cannot come back.
 - **Typographic quotes defeated tool-call parsing.** A web chat UI renders
   straight quotes as curly ones, so `{"tool": "read_file"}` arrives as
   `{“tool”: “read_file”}`. `JSON.parse` rejects that and the call was
