@@ -78,6 +78,32 @@ describe('buildContextDigest', () => {
     expect(Math.ceil(out.length / 4)).toBeLessThanOrEqual(1200);
   }, 60000);
 
+  test('the digest comes from the stored index, not a fresh walk', () => {
+    const { digestFromStore } = require('../../src/loom/attach');
+    const loom = require('../../src/loom');
+
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'forge-attach-store-'));
+    fs.mkdirSync(path.join(dir, 'src'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({
+      name: 'fixture-app', engines: { node: '>=20' }, type: 'commonjs', main: 'src/main.js',
+    }));
+    fs.writeFileSync(path.join(dir, 'src', 'main.js'), "const util = require('./util');\n");
+    fs.writeFileSync(path.join(dir, 'src', 'util.js'), 'function helper() { return 1; }\n');
+
+    try {
+      const out = digestFromStore(dir, 1200, { forceJson: true });
+      expect(out).toContain('# Project map');
+      expect(out).toContain('src/main.js');
+      // The store exists and holds the rows, which is what slice 4 was for.
+      expect(fs.existsSync(path.join(dir, '.forge', 'loom'))).toBe(true);
+      // package.json, src/main.js, src/util.js — every indexable file.
+      expect(loom.status().files).toBe(3);
+    } finally {
+      loom.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }, 30000);
+
   test('collectFiles skips the directories that are never worth indexing', () => {
     const { collectFiles } = require('../../src/loom/attach');
     const files = collectFiles(path.join(__dirname, '..', '..'));

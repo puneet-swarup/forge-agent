@@ -127,7 +127,7 @@ describe('loom/paths.ensureGitignore', () => {
     const dir = path.join(tmp, '.forge', 'loom');
     const result = paths.ensureGitignore(dir);
     expect(result.created).toBe(true);
-    expect(fs.readFileSync(result.path, 'utf8')).toBe('index.db\nindex.db-wal\nindex.db-shm\n*.bad\n');
+    expect(fs.readFileSync(result.path, 'utf8')).toBe('index.db\nindex.db-wal\nindex.db-shm\nindex.json\nindex.json.tmp\n*.bad\n');
   });
 
   it('never modifies an existing .gitignore', () => {

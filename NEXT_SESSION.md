@@ -1,5 +1,9 @@
 # NEXT SESSION — Forge Agent workstreams
 
+## Claim
+
+IN PROGRESS: Loom slice 4 (the stored index + incremental refresh) — `feat/loom-refresh`
+
 **Verified:** 2026-11-21, against `main` @ `v2.3.0` (PRs #3-#21). The runner
 never merges; the lead agent merges after CI is green.
 **Rule for this file:** implementation and tests are authoritative. A status here
@@ -9,7 +13,7 @@ over from an earlier handoff is marked *(unverified)* until someone checks it.
 Re-verify everything in one pass:
 
 ```bash
-npm test                                  # suite must be green (2,359 passing / 19 skipped)
+npm test                                  # suite must be green (2,621 passing / 19 skipped)
 npm run typecheck
 node scripts/verify-prompt.js             # the prompt the agent actually sends
 grep -rn "encodeTransportArg" src/transport.js   # T1
@@ -17,8 +21,10 @@ ls src/loom 2>/dev/null                   # T2
 npx jest tests/adapter-contract.test.js   # T3
 npx jest tests/lifecycle-gate.test.js     # T4 (27)
 ls scripts/lifecycle.js scripts/plan.js   # T4
-npx jest tests/loom                       # T2 slice 1 (162 passing / 2 skipped)
+npx jest tests/loom                       # T2 slices 1-4 (354 passing / 2 skipped)
+npx jest tests/loom/refresh.test.js       # T2 slice 4 (20)
 ls src/loom/schema/001_init.sql           # T2 schema
+ls src/loom/refresh.js                    # T2 slice 4
 grep -rn "['\"\`]/(var/)?tmp/" src/       # T5 (must be empty)
 npx jest tests/markdown-scope.test.js     # T6 (14)
 ```
@@ -60,7 +66,7 @@ rotation are all on `main`.
 | Task | Workstream | Status | Evidence | Next action |
 | --- | --- | --- | --- | --- |
 | **T1** | Transport | **DONE** | `src/transport.js` exports `encodeTransportArg` / `decodeTransportArg` / `md5hex`; `content_md5`, `is_hex`, `find_md5`, `replace_md5` are in `src/tools.js`; `tests/transport-integrity.test.js` (19) green | none — see limitation below |
-| **T2** | Loom | **IN PROGRESS — slices 1-3 merged** | storage (`config, paths, hash, ignore, db, migrate, schema`), extractors for js/ts/py/go/rs/sql/md/data (`src/loom/extract/`), import resolution (`src/loom/resolve.js`), the dependency graph (`src/loom/graph.js`) and the digest (`src/loom/digest.js`); 333 tests green; attached to the first message behind `src/loom/attach.js`, `LOOM_ENABLED` default false | slice 4: the stored index + refresh, so the digest ranks by real access instead of alphabetical ties |
+| **T2** | Loom | **IN PROGRESS — slices 1-4 merged** | storage, extractors, `resolve.js`, `graph.js`, `digest.js`, and now the indexer `src/loom/refresh.js` (sweep, dirty flag, tombstones, access rows, role drift); 354 loom tests green; the digest is compiled from the stored index behind `src/loom/attach.js`, `LOOM_ENABLED` default false | slice 5: `query.js` (`recall`/`whats_here`/`related`), `summarize.js`, then `loom.around()` + `recordAccess` in the dispatcher |
 | **T3** | Adapters | **OPEN — live-DOM accuracy only** | all 8 adapters implement the 6 contract methods; `tests/adapter-contract.test.js` (50) green | per-adapter live smoke test with a real login |
 | **T4** | Plan lifecycle | **DONE** (PR #9 merged) | `src/lifecycle-gate.js` gates the first mutating tool and `TASK_COMPLETE`, bounded by `MAX_PLAN_GATE_ATTEMPTS`; `PLAN_GATE=false` disables it | nothing |
 | **T5** | Cross-platform paths | **DONE (targeted)** | no literal `/tmp` in `src/`; `icacls` hints on win32; `tests/path-portability.test.js` green | extend only if a new path bug appears |
@@ -147,16 +153,45 @@ Three invariants are already enforced, not just intended:
 - **I6** — path normalisation rejects absolute and escaping paths rather than
   rewriting them; storage is always project-relative, forward slashes.
 
+**Progress — slice 4, the stored index (this PR).** `src/loom/refresh.js` is the
+indexer: one sweep collects the candidates (one shared walk, filtered by
+`ignore.js`), stats each one, hashes only the candidates the fast negative did
+not clear, and writes `files` / `symbols` / `imports` / `summaries` for what
+changed. Deleted files are tombstoned (`deleted = 1`, structure dropped) rather
+than removed, so ids stay stable and access rows keep pointing at something.
+
+- **mtime is a fast negative only** (§5.1) — equal size *and* mtime means
+  "assume unchanged"; anything else is a candidate and the hash decides.
+- **the dirty flag** (§5.5) — `markDirty` / `isDirty` / `clearDirty`. A dirty
+  index rehashes every candidate, which is the only way to catch same-size,
+  same-mtime, different bytes after `run_command`.
+- **role drift** (§5.6) — `files.importers_sig` is recomputed from the imports
+  table; a file whose importers changed but whose bytes did not gets
+  `summaries.role_stale = 1`, and `filesForGraph` then withholds its prose.
+- **access rows** (§7) — `recordAccess(db, rel, op)` / `accessRows(db)`. The
+  digest now ranks by decayed access weight instead of alphabetical ties, which
+  was the stated reason slice 4 existed.
+- **rebuilds keep their ids** — above `LOOM_REBUILD_THRESHOLD` every candidate is
+  re-indexed in place (rows reused by `rel_path`), so the access trail survives.
+- **`attach.js` reads the store**: `digestFromStore()` refreshes, rebuilds the
+  graph from stored rows and renders with access + notes; the old walk remains
+  as `digestFromWalk()` for a project where no index can be opened.
+
+**Evidence:** `npx jest tests/loom/refresh.test.js` (20) plus the full loom
+suite (354 passing / 2 skipped). Deliberate deviation: §5.3's git short-circuit
+is not implemented — the sweep stats every candidate, which is the same answer
+without a subprocess or a git dependency. Recorded in `docs/LOOM.md`.
+
 **Remaining slices** (one PR each, in order):
 
-2. extractors (`extract/*.js`), `findBlockEnd`, `resolve.js` — fixture-tested
-   against real files, no database needed;
-3. indexer — `refresh.js` sweep, git short-circuit, dirty flag, worker,
-   tombstones, access rows, caps and warm-up order;
-4. digest, `query.js`, `heat.js`, `summarize.js`, `portable.js`;
-5. integration — `attach()` / reattach after `newChat`, `loom.around()` in the
-   tool dispatcher, `search_codebase`, `--loom` CLI, chaos tests (delete / lock /
-   truncate the index mid-task).
+2. ~~extractors (`extract/*.js`), `findBlockEnd`, `resolve.js`~~ — done;
+3. ~~indexer — `refresh.js` sweep, dirty flag, tombstones, access rows, caps~~ —
+   done (git short-circuit deferred);
+4. ~~digest~~ — done; `query.js` (`recall` / `whats_here` / `related`),
+   `summarize.js` (model-assisted prose) and `portable.js` remain;
+5. integration — reattach after `newChat`, `loom.around()` in the tool
+   dispatcher (which is what feeds `recordAccess`), `search_codebase`, `--loom`
+   CLI, chaos tests (delete / lock / truncate the index mid-task).
 
 **Deviations from the spec, recorded deliberately** (also in `docs/LOOM.md`):
 tests are jest, not `node:test`, because CI runs one runner over
@@ -305,10 +340,11 @@ and the test enforces that.
 
 ## What is next, in order
 
-1. **Loom slice 4** — the stored index and incremental refresh, plus access
-   tracking so the digest ranks by what the agent actually reads and edits.
-   Until then `LOOM_ENABLED` stays false: the digest is real but its hot-file
-   order is alphabetical among ties.
+1. **Loom slice 5** — `query.js` (`recall`, `whats_here`, `related`),
+   `summarize.js` and `portable.js`; then `loom.around()` in the tool dispatcher
+   plus `recordAccess` on every read/write/edit, reattach after `newChat`, and
+   the `--loom` CLI. The index is stored and tested now, but nothing feeds it
+   access rows yet, so `LOOM_ENABLED` still defaults to false.
 2. **T3 live adapter repair** — blocked on a human with a login. The offline
    contract suite is green; the selectors are unverified against the real UIs.
 3. **Coverage uplift** — the gate is 69/61/72/70 against a 70.4/62.7/73.3/71.9

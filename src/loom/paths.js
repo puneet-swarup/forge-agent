@@ -12,7 +12,10 @@ const path = require('path');
 
 const { sha256Text } = require('./hash');
 
-const GITIGNORE_CONTENT = 'index.db\nindex.db-wal\nindex.db-shm\n*.bad\n';
+// The JSON store is the path most users run (no `node:sqlite` on Node 20), so
+// it belongs here too: a `.forge/loom` directory that leaves `index.json`
+// untracked would show up as a dirty tree in every project that uses Loom.
+const GITIGNORE_CONTENT = 'index.db\nindex.db-wal\nindex.db-shm\nindex.json\nindex.json.tmp\n*.bad\n';
 
 /**
  * Normalise a path to the form Loom stores: project-relative, forward slashes,

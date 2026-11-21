@@ -48,6 +48,9 @@ out/
 
 .forge-permissions.json
 
+# ── Loom's index (generated, derived from the working tree) ──────
+.forge/
+
 # ── Forge session working memory (never commit) ──────
 SESSION_CONTEXT.md
 FORGE_TODO.md

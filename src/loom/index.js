@@ -10,9 +10,11 @@
 //   I2 — `LOOM_ENABLED=0` performs no I/O at all: `open()` returns before the
 //        first `fs` call, so a disabled Loom cannot create `.forge/loom`.
 //
-// Scope of this slice: the store (open / migrate / status / counters). The
-// indexer, digest and tool middleware land in later slices; see
-// docs/LOOM.md for the plan and NEXT_SESSION.md for the current position.
+// Scope: the store (open / migrate / status / counters) plus the surface the
+// indexer, digest and tool middleware reach for. `refresh.js` owns the sweep,
+// `attach.js` owns what the agent sees; this file stays the error boundary and
+// the only owner of module state. See docs/LOOM.md for the plan and
+// NEXT_SESSION.md for the current position.
 
 const fs = require('fs');
 const path = require('path');
@@ -174,6 +176,14 @@ function db() {
   return _state ? _state.db : null;
 }
 
+/**
+ * The live counters object, so a caller can increment into it.
+ * `stats()` returns a copy; this returns the object the store writes to.
+ */
+function counters() {
+  return _state ? _state.counters : emptyCounters();
+}
+
 /** Counters, as reported by `--loom stats` and `--loom doctor`. */
 function stats() {
   const counters = _state ? { ..._state.counters } : emptyCounters();
@@ -248,6 +258,7 @@ module.exports = {
   isEnabled,
   config,
   db,
+  counters,
   stats,
   status,
 };

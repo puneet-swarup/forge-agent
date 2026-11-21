@@ -12,30 +12,31 @@
 //   - a bounded digest when it works.
 // Nothing else in the loop knows Loom exists.
 //
-// Slice 3 note: this walks the project on each run. That is the "no stored
-// index" path and is deliberately simple; slice 4 replaces the walk with the
-// incremental refresh over the SQLite index, at which point this file should
-// only call refresh() + renderDigest().
+// Slice 4 note: the digest now comes from the stored index — `refresh()` sweeps
+// the tree incrementally, and the digest ranks hot files by recorded access
+// instead of alphabetically. The direct walk below is kept as the fallback for
+// the one case the store cannot serve: a project where Loom could not open an
+// index at all (read-only home, no writable directory). It is a fallback, not
+// the main path.
 'use strict';
 
 const fs = require('fs');
 const path = require('path');
 
 const config = require('../config');
+// eslint-disable-next-line global-require
+const refreshMod = require('./refresh');
 
-/** Directories never worth indexing. */
-const SKIP_DIRS = new Set([
-  'node_modules', '.git', 'coverage', 'assets', 'docs', 'dist', 'build',
-  '.next', '.cache', 'vendor', '.venv', 'venv', '__pycache__',
-]);
+/** Directories never worth indexing. One list, shared with the indexer. */
+const SKIP_DIRS = refreshMod.SKIP_DIRS;
 
 /** Extensions the extractors understand. */
-const EXTRACTABLE = /\.(js|mjs|cjs|jsx|ts|tsx|py|go|rs|sql|md|json|ya?ml|toml)$/;
+const EXTRACTABLE = refreshMod.EXTRACTABLE;
 
 /** Files that are generated or too large to be worth indexing. */
-const SKIP_FILES = new Set(['package-lock.json', 'yarn.lock', 'pnpm-lock.yaml']);
+const SKIP_FILES = refreshMod.SKIP_FILES;
 
-const MAX_FILES = 2000;
+const MAX_FILES = refreshMod.DEFAULT_MAX_FILES;
 
 /**
  * Collect indexable files under `root`, bounded and deterministic.
@@ -43,34 +44,7 @@ const MAX_FILES = 2000;
  * @returns {string[]} project-relative paths, forward slashes, sorted
  */
 function collectFiles(root) {
-  const out = [];
-
-  const walk = (dir) => {
-    if (out.length >= MAX_FILES) return;
-
-    let entries;
-    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (_) { return; }
-    entries.sort((a, b) => a.name.localeCompare(b.name));
-
-    for (const entry of entries) {
-      if (out.length >= MAX_FILES) return;
-      const full = path.join(dir, entry.name);
-
-      if (entry.isDirectory()) {
-        if (SKIP_DIRS.has(entry.name)) continue;
-        walk(full);
-        continue;
-      }
-      if (!entry.isFile()) continue;
-      if (SKIP_FILES.has(entry.name)) continue;
-      if (!EXTRACTABLE.test(entry.name)) continue;
-
-      out.push(path.relative(root, full).split(path.sep).join('/'));
-    }
-  };
-
-  walk(root);
-  return out.sort();
+  return refreshMod.collectCandidates(root, { maxFiles: MAX_FILES });
 }
 
 /**
@@ -124,6 +98,69 @@ function buildContextDigest(opts = {}) {
   const root = opts.cwd || config.WORKING_DIR;
   const maxTokens = opts.maxTokens || config.LOOM_DIGEST_TOKENS || 1200;
 
+  // The stored index is the main path: it is what makes hot-file order real.
+  try {
+    const stored = digestFromStore(root, maxTokens, opts);
+    if (stored) return stored;
+  } catch (_) {
+    // A store that cannot be opened is not a failed run — fall through.
+  }
+
+  return digestFromWalk(root, maxTokens, opts);
+}
+
+/**
+ * The digest from the stored index: refresh, then render.
+ *
+ * @returns {string} '' when the store cannot serve a digest
+ */
+function digestFromStore(root, maxTokens, opts) {
+  // eslint-disable-next-line global-require
+  const loom = require('./index');
+  // eslint-disable-next-line global-require
+  const { renderDigest } = require('./digest');
+
+  // I2: a disabled Loom does no I/O at all, including no directory walk.
+  if (!loom.config().enabled) return '';
+
+  const resolved = path.resolve(root);
+  const current = loom.status();
+  if (!loom.isEnabled() || current.root !== resolved) {
+    loom.open({ root: resolved, env: opts.env, forceJson: opts.forceJson === true, silent: true });
+  }
+  const db = loom.db();
+  if (!db) return '';
+
+  const meta = projectMeta(resolved);
+  const swept = refreshMod.refresh({
+    db,
+    root: resolved,
+    env: opts.env,
+    entries: meta.entries,
+    now: opts.now,
+  });
+  if (!swept || swept.skipped === true || swept.error || !swept.files) return '';
+
+  const graph = refreshMod.readGraph(db, { root: resolved, entries: meta.entries });
+  if (!graph || !Array.isArray(graph.nodes) || graph.nodes.length === 0) return '';
+
+  const digest = renderDigest(graph, {
+    maxTokens,
+    root: meta.name || path.basename(resolved),
+    stack: meta.stack ? meta.stack.split(', ') : undefined,
+    // §7 heat: the reason the index exists. Alphabetical ties are over.
+    access: refreshMod.accessRows(db),
+    notes: db.all('notes'),
+    counters: loom.counters(),
+  });
+  return typeof digest === 'string' ? digest : '';
+}
+
+/**
+ * The fallback digest: walk the tree and render without a store.
+ * @returns {string} '' on any failure
+ */
+function digestFromWalk(root, maxTokens, opts) {
   try {
     // Required lazily so a partially built Loom degrades to "no digest".
     // eslint-disable-next-line global-require
@@ -162,4 +199,14 @@ function buildContextDigest(opts = {}) {
   }
 }
 
-module.exports = { buildContextDigest, collectFiles, projectMeta, SKIP_DIRS, MAX_FILES };
+module.exports = {
+  buildContextDigest,
+  digestFromStore,
+  digestFromWalk,
+  collectFiles,
+  projectMeta,
+  SKIP_DIRS,
+  SKIP_FILES,
+  EXTRACTABLE,
+  MAX_FILES,
+};
