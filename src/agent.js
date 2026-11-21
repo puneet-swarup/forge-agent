@@ -217,16 +217,22 @@ class DeepSeekAgent {
     const MAX_CORRECTION_ATTEMPTS = 3;
 
     try {
-      // ── 0. Inject Memory ──────────────────────────────────────────────────
+      // ── 0. Gather memory + project context ────────────────────────────────
+      // Both are passed INTO buildFirstMessage. Previously the memory text was
+      // prepended to conversation.messages[0], which did not exist yet, so the
+      // injection was a no-op.
+      let memoryContext = '';
       if (config.MEMORY_ENABLED) {
         try {
           this.memory.extractTechStackFromFiles(config.WORKING_DIR);
-          const memContext = this.memory.buildMemoryContext(config.WORKING_DIR);
-          if (memContext) this.conversation.prependMemoryContext(memContext);
+          memoryContext = this.memory.buildMemoryContext(config.WORKING_DIR) || '';
         } catch (err) {
           logger.warn(`Failed to inject memory: ${err.message}`);
         }
       }
+      const projectContext = [memoryContext, this._buildProjectContextString()]
+        .filter(Boolean)
+        .join('\n\n');
 
       // ── 1. Snapshot working directory ──────────────────────────────────────
       const dirListing = this._getWorkingDirListing();
@@ -242,7 +248,10 @@ class DeepSeekAgent {
       if (config.PLANNING_MODE) {
         logger.info('Generating execution plan...');
         const planPrompt = buildPlanPrompt(task, dirListing);
-        const firstMsg   = this.conversation.buildFirstMessage(planPrompt, null, config.ACTIVE_PROFILE, profileAddition);
+        const firstMsg   = this.conversation.buildFirstMessage(
+          planPrompt, null, config.ACTIVE_PROFILE, profileAddition,
+          { projectContext, workingDir: config.WORKING_DIR }
+        );
 
         try {
           await this.browser.sendMessage(firstMsg);
@@ -269,7 +278,10 @@ class DeepSeekAgent {
           await this.browser.sendMessage(recovery);
         }
       } else {
-        const firstMsg = this.conversation.buildFirstMessage(task, dirListing, config.ACTIVE_PROFILE, profileAddition);
+        const firstMsg = this.conversation.buildFirstMessage(
+          task, dirListing, config.ACTIVE_PROFILE, profileAddition,
+          { projectContext, workingDir: config.WORKING_DIR }
+        );
 
         if (config.DEBUG) {
           logger.dim('--- First message (truncated) ---');
