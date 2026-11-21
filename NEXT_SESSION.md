@@ -1,6 +1,7 @@
 # NEXT SESSION — Forge Agent workstreams
 
-**Verified:** 2026-11-21, against `main` @ `f534883` (after PRs #3-#8).
+**Verified:** 2026-11-21, against `main` @ `b10bab4` (after PRs #3-#8; PR #9 is
+open and green, waiting to be merged by a human — the runner never merges).
 **Rule for this file:** implementation and tests are authoritative. A status here
 is only "done" if the evidence column can be re-run and passes. Anything carried
 over from an earlier handoff is marked *(unverified)* until someone checks it.
@@ -8,13 +9,15 @@ over from an earlier handoff is marked *(unverified)* until someone checks it.
 Re-verify everything in one pass:
 
 ```bash
-npm test                                  # suite must be green (2,197 passing / 17 skipped)
+npm test                                  # suite must be green (2,359 passing / 19 skipped)
 npm run typecheck
 node scripts/verify-prompt.js             # the prompt the agent actually sends
 grep -rn "encodeTransportArg" src/transport.js   # T1
 ls src/loom 2>/dev/null                   # T2
 npx jest tests/adapter-contract.test.js   # T3
 ls scripts/lifecycle.js scripts/plan.js   # T4
+npx jest tests/loom                       # T2 slice 1 (162 passing / 2 skipped)
+ls src/loom/schema/001_init.sql           # T2 schema
 grep -rn "['\"\`]/(var/)?tmp/" src/       # T5 (must be empty)
 ```
 
@@ -37,9 +40,9 @@ rotation are all on `main`.
 | Task | Workstream | Status | Evidence | Next action |
 | --- | --- | --- | --- | --- |
 | **T1** | Transport | **DONE** | `src/transport.js` exports `encodeTransportArg` / `decodeTransportArg` / `md5hex`; `content_md5`, `is_hex`, `find_md5`, `replace_md5` are in `src/tools.js`; `tests/transport-integrity.test.js` (19) green | none — see limitation below |
-| **T2** | Loom | **NOT STARTED on `main`** | `src/loom/` absent; spec at `src/loom_specs.md` (839 lines, v1) | implement from the spec; own PR |
+| **T2** | Loom | **IN PROGRESS — slice 1 of 5** | `src/loom/` has config, paths, hash, ignore, db (SQLite + JSON), migrate, schema, `open`/`close`/`status`/`stats`; `tests/loom/` (162) green; see `docs/LOOM.md` | slice 2: extractors + import resolution |
 | **T3** | Adapters | **OPEN — live-DOM accuracy only** | all 8 adapters implement the 6 contract methods; `tests/adapter-contract.test.js` (50) green | per-adapter live smoke test with a real login |
-| **T4** | Plan lifecycle | **PARTIAL** | artifact protocol is in the live prompt; `src/lifecycle.js`, `scripts/lifecycle.js`, `scripts/plan.js` exist; context rotation now re-sends the plan on every rotation | enforce start/end gates in the agent loop |
+| **T4** | Plan lifecycle | **DONE in PR #9 (open, CI green)** | `src/lifecycle-gate.js` gates the first mutating tool and `TASK_COMPLETE`; PR #9 open on `feat/plan-gate` | merge PR #9; no further work in this workstream |
 | **T5** | Cross-platform paths | **DONE (targeted)** | no literal `/tmp` in `src/`; `icacls` hints on win32; `tests/path-portability.test.js` green | extend only if a new path bug appears |
 | **T6** | Markdown governance | **OPEN** | inventory at `docs/MARKDOWN_SCOPE.md` (imported, needs re-audit — its counts predate this branch) | re-audit, then rewrite the docs set |
 
@@ -71,7 +74,7 @@ include a hash only when certain, because a wrong hash blocks a legitimate write
 
 ---
 
-## T2 — ClickHouse Loom · NOT STARTED on `main`
+## T2 — ClickHouse Loom · IN PROGRESS (slice 1 of 5)
 
 The normative specification is **`src/loom_specs.md`** (v1, 839 lines, "ready for
 implementation"). It is self-contained: where a design choice existed, it is
@@ -100,12 +103,49 @@ attach to the adapter, reattach after `newChat`), the tool dispatcher
 (`loom.around(tool, args, invoke)`), and `search_codebase` (Loom first, filesystem
 fallback).
 
-**Prior art, not to be merged:** branch `loom` (commit `0488c62`) carries a
+**Prior art, not to be merged:** branch `loom` (commit `0488c62`) carried a
 partial storage layer — `config, db, hash, ignore, migrate, paths,
 schema/001_init.sql` — but that branch is based on the old `v2.0.2` lineage, not
-on `main`. Merging it would delete ~19.7k lines. Its 19 files are all *additions*,
-so anything worth keeping can be cherry-picked; the spec is the authority, not
-that code.
+on `main`, and merging it would delete ~19.7k lines. It is no longer fetchable by
+SHA from `origin`, so slice 1 was written from the spec instead. That is the
+better outcome anyway: the spec is the authority, not that code.
+
+**Progress — slice 1, storage foundation (done).** `src/loom/` now holds
+`config.js`, `paths.js`, `hash.js`, `ignore.js`, `db.js`, `migrate.js`,
+`log.js`, `schema/001_init.sql` and `index.js`. `open()` resolves the index
+directory (`<root>/.forge/loom`, global fallback when the project is not
+writable), writes the generated-artifact `.gitignore`, opens the store, runs
+migrations and seeds `meta`. `status()` and `stats()` expose what `--loom doctor`
+will print. Nothing is wired into the agent loop yet — that is slice 5.
+
+Three invariants are already enforced, not just intended:
+
+- **I1** — every exported function catches and returns a neutral value; a store
+  that cannot be created disables Loom for the run instead of failing the task;
+- **I2** — `LOOM_ENABLED=0` returns before the first `fs` call (a test asserts
+  `.forge/` is never created);
+- **I6** — path normalisation rejects absolute and escaping paths rather than
+  rewriting them; storage is always project-relative, forward slashes.
+
+**Remaining slices** (one PR each, in order):
+
+2. extractors (`extract/*.js`), `findBlockEnd`, `resolve.js` — fixture-tested
+   against real files, no database needed;
+3. indexer — `refresh.js` sweep, git short-circuit, dirty flag, worker,
+   tombstones, access rows, caps and warm-up order;
+4. digest, `query.js`, `heat.js`, `summarize.js`, `portable.js`;
+5. integration — `attach()` / reattach after `newChat`, `loom.around()` in the
+   tool dispatcher, `search_codebase`, `--loom` CLI, chaos tests (delete / lock /
+   truncate the index mid-task).
+
+**Deviations from the spec, recorded deliberately** (also in `docs/LOOM.md`):
+tests are jest, not `node:test`, because CI runs one runner over
+`tests/**/*.test.js`; `log.js` exists because `src/logger.js` has no `debug`;
+keyed inserts are upserts so the SQLite and JSON backends behave identically.
+
+**Note on runtime:** `node:sqlite` is absent on Node 20 (`engines: >=20`), so the
+JSON store is the path most users run, not a fallback of last resort. Two SQLite
+tests skip where the module does not load and run where it does.
 
 **Acceptance:** `node --test tests/loom/` green, digest within its token budget,
 and a chaos test (delete / lock / truncate the index mid-task) that still
@@ -157,7 +197,7 @@ drift. Recorded-DOM fixtures are the fix (see `docs/RELIABILITY.md`).
 
 ---
 
-## T4 — Plan lifecycle · PARTIAL
+## T4 — Plan lifecycle · DONE in PR #9 (open)
 
 - The artifact protocol (FORGE_PLAN.md created, ticked, deleted only on sign-off)
   is stated in the **live** prompt — it was previously only in the unused one.
@@ -168,9 +208,12 @@ drift. Recorded-DOM fixtures are the fix (see `docs/RELIABILITY.md`).
   refused when `FORGE_PLAN.md` still has unchecked items, and the plan file is not
   created automatically at task start.
 
-Next: call `check-start` before the first mutating tool of a multi-step task and
-`check-end` at completion, reusing the verification-gate pattern (refuse, feed
-back, bounded attempts).
+Implemented in PR #9 (`feat/plan-gate`, CI green, not merged): the loop calls
+`decideStart()` before the first mutating tool of a multi-step task and
+`decideEnd()` at `TASK_COMPLETE`, using the verification-gate pattern (refuse,
+feed back, bounded by `MAX_PLAN_GATE_ATTEMPTS`). The remaining limitation is that
+the plan is still written by the model; deriving it from the request is a
+separate change.
 
 ---
 
