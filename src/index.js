@@ -190,6 +190,8 @@ function parseArgs(argv) {
       case '--ps':
       case 'ps':            opts.listInstances = true; break;
       case '--new-session': opts.newSession = true;   break;
+      case '--dashboard':   opts.dashboard   = true;    break;
+      case '--port':        opts.port        = args[++i]; break;
       case '--json':        opts.json = true;         break;
       case '-a':
       case '--auto':        opts.auto = true;         break;
@@ -316,6 +318,8 @@ function parseArgs(argv) {
           opts.resume = a.split('=')[1];
         } else if (a && a.startsWith('--rerun=')) {
           opts.rerun = a.split('=')[1];
+        } else if (a && a.startsWith('--port=')) {
+          opts.port = a.split('=')[1];
         } else if (a && a.startsWith('--help=')) {
           opts.help = a.split('=')[1];
         } else if (a && a.startsWith('--watch-pattern=')) {
@@ -434,6 +438,8 @@ ${c('1;36', 'MEMORY & SESSIONS')}
                          (e.g. brave-otter-9f3a) with its own profile.
       --new-session      Alias for --session auto.
       ps, --ps, --instances  List all running instances (use --json for JSON).
+      --dashboard        Local web view of agents, sessions, projects and tasks
+      --port=<n>         Dashboard port (default 7777)
       --session-dir <p>  Explicit session directory (advanced).
       --role <name>      Role label. Defaults to session name.
   -a, --auto             Run open FORGE_TODO.md items unattended (no prompt).
@@ -868,6 +874,29 @@ async function main() {
   const args = parseArgs(process.argv);
 
   // ── Instance listing (Item 6) ──────────────────────────────────────────────
+  // ── Dashboard: a local web view of everything Forge is doing ─────────────
+  if (args.dashboard) {
+    try {
+      const { createDashboardServer } = require('./dashboard/server');
+      const port = Number(args.port) || 7777;
+      const { url, close } = createDashboardServer({ port });
+
+      console.log('');
+      console.log(`  Dashboard  ${url}`);
+      console.log(`  Token      required in the URL — do not share the link`);
+      console.log('  Loopback only (127.0.0.1). Ctrl+C to stop.');
+      console.log('');
+
+      const stop = () => { try { close(); } catch (_) {} process.exit(0); };
+      process.on('SIGINT', stop);
+      process.on('SIGTERM', stop);
+      return;   // the http server keeps the process alive
+    } catch (e) {
+      console.error('Could not start the dashboard: ' + e.message);
+      process.exit(1);
+    }
+  }
+
   if (args.listInstances) {
     try {
       const registry = require('./session-registry');

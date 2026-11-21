@@ -6,6 +6,23 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ---
 
+## [Unreleased]
+
+### Added
+- **`--dashboard`** — a local web view of everything Forge is doing: every agent
+  (with a Stop button), session, project, task and background process on one
+  page, refreshed every two seconds. `forge-agent --dashboard [--port=7777]`
+  prints a tokenised URL; the server binds **127.0.0.1 only**, requires the token
+  on every request, and serves one self-contained HTML document with no external
+  requests, so it works offline and cannot phone home. It reads state from disk
+  (`instances/`, session dirs, `history.json`) rather than its own memory, because
+  it runs in a different process from the agents it reports on. With nothing
+  running it says so explicitly rather than showing blank panels.
+- **A completion panel that states the verification result** — the end of a run
+  is a box with one fact per line (duration, steps, files, commands, verified,
+  model) instead of a joined sentence. A run with nothing to check reads
+  "unverified" rather than staying silent.
+
 ## [2.3.0] - 2026-11-21
 
 **Robustness, and the first real index.** 2.2.0 closed the loop between what the
