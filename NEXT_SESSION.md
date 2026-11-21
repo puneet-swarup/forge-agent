@@ -1,6 +1,6 @@
 # NEXT SESSION — Forge Agent workstreams
 
-**Verified:** 2026-11-21, against `main` @ `b3bf9ab` (after PRs #3, #4, #5).
+**Verified:** 2026-11-21, against `main` @ `f534883` (after PRs #3-#8).
 **Rule for this file:** implementation and tests are authoritative. A status here
 is only "done" if the evidence column can be re-run and passes. Anything carried
 over from an earlier handoff is marked *(unverified)* until someone checks it.
@@ -8,7 +8,7 @@ over from an earlier handoff is marked *(unverified)* until someone checks it.
 Re-verify everything in one pass:
 
 ```bash
-npm test                                  # suite must be green
+npm test                                  # suite must be green (2,197 passing / 17 skipped)
 npm run typecheck
 node scripts/verify-prompt.js             # the prompt the agent actually sends
 grep -rn "encodeTransportArg" src/transport.js   # T1
@@ -20,6 +20,18 @@ grep -rn "['\"\`]/(var/)?tmp/" src/       # T5 (must be empty)
 
 ---
 
+## Running autonomously
+
+A cron job (`forge-agent roadmap runner`, every 2 hours) reads this file, takes
+the next unblocked item, implements it with tests, opens a PR and updates this
+file. It never merges and never force-pushes. If CI fails twice on the same item
+it leaves the branch and reports the failure.
+
+Phase A (robustness) is now **complete**: turn boundary, one prompt, recovery,
+redaction, workspace safety, budgets, parser validation, throttling, transport
+integrity, verification gate, path portability, shell policy and context
+rotation are all on `main`.
+
 ## Status at a glance
 
 | Task | Workstream | Status | Evidence | Next action |
@@ -27,7 +39,7 @@ grep -rn "['\"\`]/(var/)?tmp/" src/       # T5 (must be empty)
 | **T1** | Transport | **DONE** | `src/transport.js` exports `encodeTransportArg` / `decodeTransportArg` / `md5hex`; `content_md5`, `is_hex`, `find_md5`, `replace_md5` are in `src/tools.js`; `tests/transport-integrity.test.js` (19) green | none — see limitation below |
 | **T2** | Loom | **NOT STARTED on `main`** | `src/loom/` absent; spec at `src/loom_specs.md` (839 lines, v1) | implement from the spec; own PR |
 | **T3** | Adapters | **OPEN — live-DOM accuracy only** | all 8 adapters implement the 6 contract methods; `tests/adapter-contract.test.js` (50) green | per-adapter live smoke test with a real login |
-| **T4** | Plan lifecycle | **PARTIAL** | artifact protocol is in the live prompt; `src/lifecycle.js`, `scripts/lifecycle.js`, `scripts/plan.js` exist | enforce start/end gates in the agent loop |
+| **T4** | Plan lifecycle | **PARTIAL** | artifact protocol is in the live prompt; `src/lifecycle.js`, `scripts/lifecycle.js`, `scripts/plan.js` exist; context rotation now re-sends the plan on every rotation | enforce start/end gates in the agent loop |
 | **T5** | Cross-platform paths | **DONE (targeted)** | no literal `/tmp` in `src/`; `icacls` hints on win32; `tests/path-portability.test.js` green | extend only if a new path bug appears |
 | **T6** | Markdown governance | **OPEN** | inventory at `docs/MARKDOWN_SCOPE.md` (imported, needs re-audit — its counts predate this branch) | re-audit, then rewrite the docs set |
 
