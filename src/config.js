@@ -109,6 +109,11 @@ const DEFAULTS = {
   PROMPT_PAUSE           : false,
   PROMPT_PAUSE_MIN_MS    : 10_000,
   PROMPT_PAUSE_MAX_MS    : 20_000,
+  // Loom project index (src/loom_specs.md). Disabled by default until slice 3
+  // lands: LOOM_ENABLED=0 makes every Loom call a no-op with no I/O (spec I2).
+  LOOM_ENABLED             : false,
+  LOOM_DIGEST_TOKENS       : 1200,
+
   // Routine context rotation: start a fresh chat every N assistant turns and
   // re-send the contract plus a state digest. 0 disables it. The model's real
   // context lives in the remote chat, so this is what keeps it bounded.

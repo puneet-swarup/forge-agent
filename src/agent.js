@@ -23,6 +23,7 @@ const shellPolicy                  = require('./shell-policy');
 const { Budget, BudgetExceeded }    = require('./budget');
 const { Throttle }                  = require('./throttle');
 const { verifyProject, describeVerification } = require('./verify');
+const { buildContextDigest }        = require('./loom/attach');
 const { decideStart, decideEnd, isPlanWrite } = require('./lifecycle-gate');
 const { sleep }                    = require('./retry');
 const { ProgressTracker }          = require('./progress');
@@ -517,6 +518,18 @@ class DeepSeekAgent {
       });
 
       const profileAddition = getProfileSystemPromptAddition(config.ACTIVE_PROFILE);
+
+      // ── Loom: project orientation for the first message ─────────────────
+      // One integration point, one boundary (src/loom/attach.js). A digest
+      // that is empty — Loom off, not built, or broken — changes nothing.
+      const loomDigest = buildContextDigest({ cwd: config.WORKING_DIR });
+      if (loomDigest) {
+        if (this.browser && this.browser.adapter &&
+            typeof this.browser.adapter.setProjectContext === 'function') {
+          this.browser.adapter.setProjectContext(loomDigest);
+          logger.dim(`  Loom digest attached (${Math.ceil(loomDigest.length / 4)} tokens)`);
+        }
+      }
 
       if (config.PLANNING_MODE) {
         logger.info('Generating execution plan...');
