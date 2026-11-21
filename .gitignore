@@ -87,3 +87,6 @@ summary.md
 
 # Forge Agent child task (never commit)
 SESSION_TASK.md
+
+# Generated coverage output — never committed
+coverage/
