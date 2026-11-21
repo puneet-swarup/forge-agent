@@ -1,9 +1,5 @@
 # NEXT SESSION — Forge Agent workstreams
 
-## Claim
-
-IN PROGRESS: T2 Loom slice 3a (dependency graph) — feat/loom-slice3-graph
-
 
 **Verified:** 2026-11-21, against `main` @ `704d182` (after PRs #3-#16). The
 runner never merges; the lead agent merges after CI is green.
