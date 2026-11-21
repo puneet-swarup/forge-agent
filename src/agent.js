@@ -18,6 +18,7 @@ const { PermissionStore, isReadOnly, getCategory, CATEGORY_LABELS } = require('.
 const { showPermissionMenu } = require('./permission-menu');
 const { ConversationManager }      = require('./prompt');
 const { Errors, displayError }     = require('./errors');
+const security                     = require('./security');
 const { sleep }                    = require('./retry');
 const { ProgressTracker }          = require('./progress');
 const { MemoryStore }              = require('./memory');
@@ -223,6 +224,35 @@ class DeepSeekAgent {
 
     await this.browser.sendMessage(message);
     logger.dim('  Contract re-sent: system prompt + plan + progress');
+  }
+
+  /**
+   * Redact secrets from a tool result before it is sent to the chat UI.
+   *
+   * Everything the agent reads leaves the machine: the chat UI is a third-party
+   * service and keeps its own history. `.env` files are masked by read_file,
+   * but a key in a config module, a k8s manifest or a PEM was forwarded
+   * verbatim. The redactor is deliberately narrow (see security.SECRET_PATTERNS)
+   * so ordinary source code is never mangled.
+   *
+   * @param {string} toolName
+   * @param {*} result
+   * @returns {string}
+   */
+  _forEgress(toolName, result) {
+    const text = typeof result === 'string' ? result : String(result);
+    try {
+      const { text: safe, redactions } = security.redactSecrets(text);
+      if (redactions.length) {
+        const summary = redactions.map((r) => `${r.kind}×${r.count}`).join(', ');
+        logger.warn(`  ⚠ redacted ${summary} from ${toolName} output before sending`);
+      }
+      return safe;
+    } catch (err) {
+      // Never let redaction break a run; fail closed on the side of sending.
+      logger.warn(`Secret redaction failed for ${toolName}: ${err.message}`);
+      return text;
+    }
   }
 
   /**
@@ -640,7 +670,9 @@ class DeepSeekAgent {
 
           progress.recordToolResult(parsed.name, result, isError);
 
-          const feedbackMsg = this.conversation.addToolResult(parsed.name, result, isError);
+          const feedbackMsg = this.conversation.addToolResult(
+            parsed.name, this._forEgress(parsed.name, result), isError
+          );
 
           // Phase 1: refresh durable session context after each tool result.
           if (typeof this._sessionCtxUpdate === 'function') {
@@ -977,7 +1009,7 @@ class DeepSeekAgent {
       progress.recordToolResult(r.name, r.result, r.isError);
       if (r.isError) anyError = true;
       const status = r.isError ? 'ERROR' : 'SUCCESS';
-      parts.push('[TOOL RESULT: ' + r.name + ' | ' + status + ']\n' + String(r.result) + '\n[END TOOL RESULT]');
+      parts.push('[TOOL RESULT: ' + r.name + ' | ' + status + ']\n' + this._forEgress(r.name, r.result) + '\n[END TOOL RESULT]');
     }
 
     const combined =
