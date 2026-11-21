@@ -9,6 +9,19 @@ Versioning: [Semantic Versioning](https://semver.org/)
 ## [Unreleased]
 
 ### Fixed
+- **Typographic quotes defeated tool-call parsing.** A web chat UI renders
+  straight quotes as curly ones, so `{"tool": "read_file"}` arrives as
+  `{“tool”: “read_file”}`. `JSON.parse` rejects that and the call was
+  reported as "plain text instead of a tool call" and retried. Both the JSON
+  candidate and `hasToolCall` now normalise curly quotes first. The regression
+  test for this existed on the `loom` branch but was written with `node:test`,
+  so jest never ran it and the bug stayed live.
+- **`--model=sarvam` now reaches the Indus adapter.** `SarvamAdapter` (the
+  browser-driven adapter for Sarvam's chat UI at `indus.sarvam.ai`, with its
+  TipTap/ProseMirror insertion workaround) existed on the `loom` branch but was
+  never registered in the adapter factory, so no model name could select it.
+  It is now `--model=sarvam` (aliases `indus`, `sarvam-ai`). Sarvam's hosted API
+  is available separately as `--model=sarvam-api`.
 - **Planning never ran — for any model.** `parsePlan()` returns
   `{ steps, raw }`, and the caller read `.length` off that object, which is
   `undefined`. The "Could not parse plan" branch therefore ran on every single

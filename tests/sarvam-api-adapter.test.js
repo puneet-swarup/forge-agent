@@ -6,11 +6,11 @@
 // key being dropped, and the model defaulting to a deprecated id.
 'use strict';
 
-const SarvamAdapter = require('../src/adapters/sarvam-adapter');
+const SarvamApiAdapter = require('../src/adapters/sarvam-api-adapter');
 const factory = require('../src/adapter-factory');
 
 function build(extra = {}) {
-  const adapter = factory.getAdapter('sarvam', null, { SARVAM_API_KEY: 'test-key', ...extra });
+  const adapter = factory.getAdapter('sarvam-api', null, { SARVAM_API_KEY: 'test-key', ...extra });
   return adapter;
 }
 
@@ -21,17 +21,17 @@ describe('Sarvam adapter', () => {
     try { if (adapter && adapter._server) adapter._server.close(); } catch (_) { /* ignore */ }
   });
 
-  test('is registered under the model name and its aliases', () => {
-    expect(factory.getModelDisplayName('sarvam')).toBe('Sarvam AI');
-    for (const alias of ['sarvam', 'sarvam-ai', 'sarvam105b']) {
-      expect(factory.getModelDisplayName(alias)).toBe('Sarvam AI');
-    }
+  test('is registered separately from the chat UI', () => {
+    expect(factory.getModelDisplayName('sarvam-api')).toBe('Sarvam AI (API)');
+    expect(factory.getModelDisplayName('sarvam105b')).toBe('Sarvam AI (API)');
+    // The plain name belongs to the browser-driven UI adapter.
+    expect(factory.getModelDisplayName('sarvam')).toBe('Sarvam AI (Indus)');
   });
 
   test('points at the Sarvam endpoint', () => {
     adapter = build();
-    expect(adapter._ollamaBaseUrl).toBe(SarvamAdapter.BASE_URL);
-    expect(adapter.getModelUrl()).toBe(SarvamAdapter.BASE_URL);
+    expect(adapter._ollamaBaseUrl).toBe(SarvamApiAdapter.BASE_URL);
+    expect(adapter.getModelUrl()).toBe(SarvamApiAdapter.BASE_URL);
   });
 
   test('a leftover OLLAMA_BASE_URL cannot redirect Sarvam traffic', () => {
@@ -40,7 +40,7 @@ describe('Sarvam adapter', () => {
     process.env.OLLAMA_BASE_URL = 'https://someone-else.ngrok.app';
     try {
       adapter = build();
-      expect(adapter._ollamaBaseUrl).toBe(SarvamAdapter.BASE_URL);
+      expect(adapter._ollamaBaseUrl).toBe(SarvamApiAdapter.BASE_URL);
     } finally {
       if (previous === undefined) delete process.env.OLLAMA_BASE_URL;
       else process.env.OLLAMA_BASE_URL = previous;
@@ -59,7 +59,7 @@ describe('Sarvam adapter', () => {
   });
 
   test('OLLAMA_API_KEY still works as a fallback', () => {
-    adapter = factory.getAdapter('sarvam', null, { OLLAMA_API_KEY: 'fallback-key' });
+    adapter = factory.getAdapter('sarvam-api', null, { OLLAMA_API_KEY: 'fallback-key' });
     expect(adapter._ollamaApiKey).toBe('fallback-key');
   });
 
@@ -70,12 +70,12 @@ describe('Sarvam adapter', () => {
 
   test('it is a distinct adapter, not a rebadged colab tunnel', () => {
     adapter = build();
-    expect(adapter.constructor.name).toBe('SarvamAdapter');
+    expect(adapter.constructor.name).toBe('SarvamApiAdapter');
     expect(adapter._isSarvam).toBe(true);
   });
 
   test('the documented models are the ones the API still serves', () => {
     // Sarvam-M was deprecated; shipping it as a default would fail on first use.
-    expect(SarvamAdapter.DEFAULT_MODEL).toBe('sarvam-105b');
+    expect(SarvamApiAdapter.DEFAULT_MODEL).toBe('sarvam-105b');
   });
 });

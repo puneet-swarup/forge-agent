@@ -163,10 +163,25 @@ function _parseBatchJSON(obj, rawText) {
 //  and attempts repair of broken JSON
 // ─────────────────────────────────────────────
 
+/**
+ * Web chat UIs render straight quotes as typographic ones, and a model echoing
+ * JSON through such a surface emits them: {"tool": "x"} arrives as
+ * {“tool”: “x”}. JSON.parse rejects that, so the call was reported
+ * as "plain text" and retried forever — the exact symptom of a live run.
+ *
+ * Only the JSON candidate is normalised, never the raw text used for display.
+ */
+function _normaliseQuotes(str) {
+  if (typeof str !== 'string') return str;
+  return str
+    .replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB]/g, '"')
+    .replace(/[\u2018\u2019\u201A\u201B]/g, "'");
+}
+
 function _parseToolJSON(jsonStr, rawText) {
   if (!jsonStr || typeof jsonStr !== 'string') return null;
 
-  const clean = jsonStr.trim();
+  const clean = _normaliseQuotes(jsonStr.trim());
   if (!clean || clean[0] !== '{') return null;
 
   let parsed = _tryJSONParse(clean);
@@ -527,10 +542,14 @@ function containsTaskComplete(text) { return _containsTaskComplete(text); }
 
 function hasToolCall(text) {
   if (!text) return false;
-  return /<tool_call>/i.test(text)
-    || /```(?:tool_call|json)/i.test(text)
-    || /\{[\s\S]*"(?:tool|name)"\s*:/i.test(text)
-    || /^\s*[a-zA-Z_]\w*\s*\(/.test(text);  // function call style
+  // Same typographic-quote tolerance as _parseToolJSON: a UI that curls the
+  // quotes would otherwise hide a perfectly good tool call from this check, and
+  // the caller would treat it as prose.
+  const normalised = _normaliseQuotes(text);
+  return /<tool_call>/i.test(normalised)
+    || /```(?:tool_call|json)/i.test(normalised)
+    || /\{[\s\S]*"(?:tool|name)"\s*:/i.test(normalised)
+    || /^\s*[a-zA-Z_]\w*\s*\(/.test(normalised);  // function call style
 }
 
 function extractLeadingText(text) {
