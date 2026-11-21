@@ -1,7 +1,7 @@
 # NEXT SESSION — Forge Agent workstreams
 
-**Verified:** 2026-11-21, against `main` @ `b10bab4` (after PRs #3-#8; PR #9 is
-open and green, waiting to be merged by a human — the runner never merges).
+**Verified:** 2026-11-21, against `main` @ `f6cf197` (after PRs #3-#13). The
+runner never merges; a human or the lead agent merges after CI is green.
 **Rule for this file:** implementation and tests are authoritative. A status here
 is only "done" if the evidence column can be re-run and passes. Anything carried
 over from an earlier handoff is marked *(unverified)* until someone checks it.
@@ -42,9 +42,9 @@ rotation are all on `main`.
 | Task | Workstream | Status | Evidence | Next action |
 | --- | --- | --- | --- | --- |
 | **T1** | Transport | **DONE** | `src/transport.js` exports `encodeTransportArg` / `decodeTransportArg` / `md5hex`; `content_md5`, `is_hex`, `find_md5`, `replace_md5` are in `src/tools.js`; `tests/transport-integrity.test.js` (19) green | none — see limitation below |
-| **T2** | Loom | **IN PROGRESS — slice 1 of 5** | `src/loom/` has config, paths, hash, ignore, db (SQLite + JSON), migrate, schema, `open`/`close`/`status`/`stats`; `tests/loom/` (162) green; see `docs/LOOM.md` | slice 2: extractors + import resolution |
+| **T2** | Loom | **IN PROGRESS — slice 1 of 5 merged** | `src/loom/` has config, paths, hash, ignore, db (SQLite + JSON), migrate, schema, `open`/`close`/`status`/`stats`; `tests/loom/` (162) green; see `docs/LOOM.md` | slice 2: extractors + import resolution |
 | **T3** | Adapters | **OPEN — live-DOM accuracy only** | all 8 adapters implement the 6 contract methods; `tests/adapter-contract.test.js` (50) green | per-adapter live smoke test with a real login |
-| **T4** | Plan lifecycle | **DONE in PR #9 (open, CI green)** | `src/lifecycle-gate.js` gates the first mutating tool and `TASK_COMPLETE`; PR #9 open on `feat/plan-gate` | merge PR #9; no further work in this workstream |
+| **T4** | Plan lifecycle | **DONE** (PR #9 merged) | `src/lifecycle-gate.js` gates the first mutating tool and `TASK_COMPLETE`, bounded by `MAX_PLAN_GATE_ATTEMPTS`; `PLAN_GATE=false` disables it | nothing |
 | **T5** | Cross-platform paths | **DONE (targeted)** | no literal `/tmp` in `src/`; `icacls` hints on win32; `tests/path-portability.test.js` green | extend only if a new path bug appears |
 | **T6** | Markdown governance | **DONE** | `docs/MARKDOWN_SCOPE.md` re-audited (21 tracked files, verified against the tree); `tests/markdown-scope.test.js` (14) green and fails on any undocumented `.md` | follow the three open findings below |
 
@@ -284,6 +284,17 @@ and the test enforces that.
    Attribution stays (MIT requires it); the framing is its own workstream.
 
 ---
+
+## What is next, in order
+
+1. **Loom slice 2** — extractors (js/ts/py/go/rs/sql/md/data) and import
+   resolution. Slice 1 is storage only; nothing is wired into the loop yet.
+2. **T3 live adapter repair** — blocked on a human with a login. The offline
+   contract suite is green; the selectors are unverified against the real UIs.
+3. **README rewrite** — still reads as a fork. Attribution stays (MIT); the
+   document should describe this agent.
+4. **Coverage uplift** — the gate is 69/61/72/70 against a 70.4/62.7/73.3/71.9
+   baseline; raise both together.
 
 ## How the six fit together
 
