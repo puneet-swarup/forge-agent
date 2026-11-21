@@ -126,7 +126,10 @@ describe('startProcess', () => {
 
   test('captures stderr output', async () => {
     startProcess('stderr-test', 'node -e "process.stderr.write(\'error output\\n\')"');
-    await new Promise(r => setTimeout(r, 300));
+    await waitFor(
+      () => (getProcessLogs('stderr-test', 50) || []).some((l) => l.includes('error output')),
+      { label: 'stderr' }
+    );
     const logs = getProcessLogs('stderr-test', 50);
     expect(logs.some(l => l.includes('error output'))).toBe(true);
   });
@@ -270,7 +273,10 @@ describe('getProcessLogs', () => {
 
   test('stdout lines are prefixed with [stdout]', async () => {
     startProcess('prefix-test', 'node -e "console.log(\'test output\')"');
-    await new Promise(r => setTimeout(r, 300));
+    await waitFor(
+      () => (getProcessLogs('prefix-test', 50) || []).some((l) => l.startsWith('[stdout]')),
+      { label: 'prefixed stdout' }
+    );
     const logs = getProcessLogs('prefix-test', 50);
     expect(logs.some(l => l.startsWith('[stdout]'))).toBe(true);
   });
@@ -374,5 +380,70 @@ describe('Process manager tool registration', () => {
   test('start_process description mentions wait_for', () => {
     const { TOOLS } = require('../src/tools');
     expect(TOOLS.start_process.description).toMatch(/background/i);
+  });
+});
+
+// ─────────────────────────────────────────────
+//  On-disk snapshot
+//
+//  The registry is in memory, so nothing outside this process can see it —
+//  including the dashboard, which runs in its own process. These tests pin the
+//  snapshot that fixes that.
+// ─────────────────────────────────────────────
+
+describe('process snapshot on disk', () => {
+  const fsMod = require('fs');
+  const pathMod = require('path');
+  const osMod = require('os');
+  let home;
+
+  beforeEach(() => {
+    home = fsMod.mkdtempSync(pathMod.join(osMod.tmpdir(), 'forge-proc-'));
+    process.env.FORGE_HOME = home;
+  });
+
+  afterEach(() => {
+    REGISTRY.clear();
+    try { fsMod.rmSync(home, { recursive: true, force: true }); } catch (_) { /* ignore */ }
+  });
+
+  test('snapshotPath lives under the forge home', () => {
+    const { snapshotPath } = require('../src/process-manager');
+    expect(snapshotPath()).toBe(pathMod.join(home, 'processes.json'));
+  });
+
+  test('starting a process writes a row the dashboard can read', async () => {
+    const { persistSnapshot, snapshotPath } = require('../src/process-manager');
+    startProcess('snap-one', 'node -e "setTimeout(()=>{}, 400)"');
+    persistSnapshot();
+
+    const data = JSON.parse(fsMod.readFileSync(snapshotPath(), 'utf8'));
+    expect(Array.isArray(data.processes)).toBe(true);
+
+    const row = data.processes.find((p) => p.name === 'snap-one');
+    expect(row).toBeTruthy();
+    expect(row.status).toBe('running');
+    expect(typeof row.pid).toBe('number');
+    expect(row.command).toContain('node -e');
+
+    stopProcess('snap-one');
+  });
+
+  test('an exit is reflected in the snapshot', async () => {
+    const { persistSnapshot, snapshotPath } = require('../src/process-manager');
+    startProcess('snap-exit', 'node -e "process.exit(0)"');
+    await waitFor(() => getProcessStatus('snap-exit').status !== 'running', { label: 'exit' });
+    persistSnapshot();
+
+    const data = JSON.parse(fsMod.readFileSync(snapshotPath(), 'utf8'));
+    const row = data.processes.find((p) => p.name === 'snap-exit');
+    expect(['stopped', 'crashed']).toContain(row.status);
+  });
+
+  test('a failed write never throws into the caller', () => {
+    const { persistSnapshot } = require('../src/process-manager');
+    process.env.FORGE_HOME = '/proc/definitely/not/writable';
+    expect(() => persistSnapshot()).not.toThrow();
+    process.env.FORGE_HOME = home;
   });
 });

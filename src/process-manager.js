@@ -19,6 +19,52 @@ const fs         = require('fs');
 // Map<name, ProcessEntry>
 const REGISTRY = new Map();
 
+// ── On-disk snapshot ─────────────────────────────────────────────────────
+//
+// The registry is in memory, which means nothing outside this process can see
+// it — including the dashboard, which runs in its own process. A small JSON
+// snapshot fixes that: written whenever a process starts, exits or is stopped,
+// and read back by anything that wants to know what is running.
+//
+// It is a snapshot, not a source of truth: the live Map still wins in this
+// process, and a snapshot whose pid is gone is reported as such.
+
+/** Where the snapshot lives; overridable for tests. */
+function snapshotPath() {
+  try {
+    return require('./paths').forgePath('processes.json');
+  } catch (_) {
+    return null;
+  }
+}
+
+/** Write the registry to disk. Never throws — a failed snapshot is not fatal. */
+function persistSnapshot() {
+  const file = snapshotPath();
+  if (!file) return;
+
+  try {
+    const rows = [...REGISTRY.entries()].map(([name, e]) => ({
+      name,
+      pid: e.pid || null,
+      status: e.status,
+      startedAt: e.startedAt,
+      command: e.command,
+      cwd: e.cwd,
+      exitCode: e.exitCode,
+      lastLine: e.logs && e.logs.length ? e.logs[e.logs.length - 1] : null,
+    }));
+
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const tmp = file + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify({ updatedAt: Date.now(), processes: rows }, null, 2));
+    fs.renameSync(tmp, file);
+  } catch (_) {
+    // Read-only home, full disk, a race with another writer — none of these
+    // should break a running process.
+  }
+}
+
 const MAX_LOG_LINES = 500; // per process
 
 // ─────────────────────────────────────────────
@@ -109,6 +155,7 @@ function startProcess(name, command, opts = {}) {
   entry.process = child;
   entry.pid     = child.pid;
   entry.status  = 'running';
+  persistSnapshot();
 
   // Collect stdout
   child.stdout.on('data', (data) => {
@@ -134,11 +181,13 @@ function startProcess(name, command, opts = {}) {
     entry.status   = (code === 0 || signal === 'SIGTERM') ? 'stopped' : 'crashed';
     entry.process  = null;
     entry.logs.push(`[system] Process exited with code ${code}, signal ${signal}`);
+    persistSnapshot();
   });
 
   child.on('error', (err) => {
     entry.status = 'crashed';
     entry.logs.push(`[system] Spawn error: ${err.message}`);
+    persistSnapshot();
   });
 
   return {
@@ -335,5 +384,7 @@ module.exports = {
   formatProcessList,
   formatProcessLogs,
   REGISTRY,        // exported for testing
+  persistSnapshot,
+  snapshotPath,
   statusIcon,
 };
