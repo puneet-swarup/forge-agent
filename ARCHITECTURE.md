@@ -194,30 +194,51 @@ single most important caveat when reading the badge.
 
 ## 10. Known weaknesses / pitfalls (read before changing anything)
 
-### 10.1 Two contradicting system prompts
-`prompt.js` (fenced block, no prose) vs `system-prompt.js` (FORGE markers, prose
-allowed). `agent.js` uses the first, `base-adapter.js` the second. Unify into one.
+The runtime invariants — what the agent guarantees, where each is enforced and
+which test proves it — live in **`docs/RELIABILITY.md`**. This section is the
+shorter, older list of things to watch out for while changing the code.
 
-### 10.2 Unrecognised `text` responses are not handled explicitly
-The parser returns `{type:'text', content}` for plain prose. The `agent.js` loop switch
-handles `tool_batch`, `tool_call`, `error`, `final`/`task_complete` — a bare `text`
-result falls through. In the deep-study run this manifested as quiet stalls until the
-empty-streak breaker fired. The `_consecutiveUnrecognised` counter is declared but
-under-used; wire it into a correction nudge.
+### 10.1 Resolved in 2.2.0 (kept here so the history is not repeated)
+- **Two contradicting system prompts.** `prompt.js` (fenced block, no prose) vs
+  `system-prompt.js` (FORGE markers, prose allowed); `agent.js` used the first
+  while the tests validated the second. There is now one builder
+  (`system-prompt.js`) and `scripts/verify-prompt.js` validates the message the
+  agent actually sends. Guard: `tests/prompt-single-source.test.js`.
+- **Unrecognised `text` responses.** The loop has an explicit `text` branch with
+  a correction nudge and a bounded streak.
+- **The response envelope was dead code.** `_hasEndMarker()` was unit-tested and
+  never called, so completion was a 1.5 s timing guess and a stale reply could be
+  returned. The boundary is now measured (`docs/RELIABILITY.md` §1).
+- **Recovery was unreachable.** The restart-chat level of the stall ladder could
+  never fire, and when it did it sent no contract.
+- **Stale baseline numbers.** Replaced by `npm test` (see §10.4).
 
-### 10.3 Selector drift (the product-level bug)
-Every interaction depends on CSS-class heuristics vs a third-party UI that ships
-hashed class names. A silent mismatch returns empty text rather than a retryable
-error, so the loop flails until `_emptyStreak` hits threshold. `dumpDebugInfo()` /
-`calibrate.js` / `doctor.js` exist to diagnose this.
+### 10.2 Selector drift (the product-level bug)
+Every interaction depends on CSS-class heuristics against a third-party UI that
+ships hashed class names. A mismatch now surfaces as a turn-boundary error
+(`turnBoundary: 'appear'`) rather than as a stale reply, but it is still a
+guess. `dumpDebugInfo()` / `calibrate.js` / `doctor.js` exist to diagnose it, and
+`tests/integration-browser.test.js` exercises the adapter against a mock page —
+which encodes the adapter's own selectors, so it cannot detect real drift.
+Recorded-DOM fixtures are the next step.
 
-### 10.4 Inconsistent `logger.finalOutput` call sites
-Some call sites pass a formatted string, others a `ProgressTracker`. `logger.js`
-branches on `typeof progress === 'string'`. Works, but easy to break. Prefer one signature.
+### 10.3 Inconsistent `logger.finalOutput` call sites
+Some call sites pass a formatted string, others a `ProgressTracker`.
+`logger.js` branches on `typeof progress === 'string'`. Works, but easy to
+break. Prefer one signature.
 
-### 10.5 Baseline before touching anything
-`node node_modules/jest/bin/jest.js --runInBand` -> 79 suites / 1656 tests should pass
-on a clean tree. (On Windows `npx` may be unavailable in the agent shell; call jest directly.)
+### 10.4 Baseline before touching anything
+`npx jest --runInBand` should be fully green (2,036 tests / 106 suites at the
+time of writing). On Windows `npx` may be unavailable in the agent shell; call
+`node node_modules/jest/bin/jest.js --runInBand` directly. If you change a
+guarantee, update `docs/RELIABILITY.md` and the test it names in the same commit.
+
+### 10.5 Things this release deliberately did not fix
+- No verification gate before `TASK_COMPLETE` (the model still decides it is done).
+- Local context compression is bookkeeping; the model's real context is remote.
+- The shell guard is a six-string blocklist and `run_command` inherits `process.env`.
+- No provenance marking on untrusted web content.
+- The CLI is still one large file with a hand-written flag loop.
 
 ---
 

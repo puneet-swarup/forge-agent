@@ -6,6 +6,113 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ---
 
+## [2.2.0] - 2026-11-21
+
+**Reliability pass.** The theme of this release is one sentence: several
+capabilities had been designed, documented, unit-tested and then never connected
+to the code path that runs. Each one surfaced as a different-looking failure,
+which is why the agent "broke in many ways" instead of one. This release closes
+the loop between what the code declares and what the code does, and adds the
+guarantees an autonomous agent needs before it can be pointed at a real
+repository. See `docs/RELIABILITY.md` for the invariants and how to verify them.
+
+### Fixed
+- **The turn boundary is measured, not guessed** — completion was decided by
+  "the text stopped changing for `STABLE_DELAY`". That cost 1.5–3 s on every
+  turn, and if the new assistant bubble had not rendered yet the scraper
+  returned the **previous reply** as the new one. `sendMessage()` now baselines
+  the transcript (reply count + content hash) before typing, `waitForResponse()`
+  waits for that transcript to change, and only then decides completion. A
+  submit the UI silently drops now fails loudly with a retryable
+  `turnBoundary: 'appear'` error instead of replaying the old answer.
+  *Correction to 2.1.0: the changelog claimed the END marker "stops
+  immediately"; `_hasEndMarker()` existed and was unit-tested but was never
+  called. It is now on the hot path.*
+- **One system prompt** — `src/prompt.js` and `src/system-prompt.js` each built
+  a complete, different prompt. `agent.js` sent the first; the tests and
+  `scripts/verify-prompt.js` validated the second, so the model was scored
+  against a contract it had never been shown and the mandatory-artifacts
+  protocol enforced by `scripts/lifecycle.js` was never stated to it. There is
+  now one builder, it includes the envelope and the artifact protocol, and
+  `scripts/verify-prompt.js` validates the message the agent actually builds.
+- **Recovery no longer destroys the contract** — restarting a stalled chat used
+  to send a three-line "you are a coding agent, continue" note into a chat with
+  no system prompt, so the next reply was prose and the run aborted. Recovery
+  now re-sends the full prompt plus the task, progress, `FORGE_PLAN.md` and the
+  last three errors. The stall ladder is also reachable: it previously aborted
+  before it could ever recover (see `docs/RELIABILITY.md` §3).
+- **Secrets no longer leave the machine unredacted** — `security.sanitiseOutput()`
+  was applied only to the saved history file. Tool output is now passed through
+  `security.redactSecrets()` before it is sent to the chat UI: PEM blocks,
+  `sk-`/`AKIA`/`ghp_`/`xoxb-`/`AIza`/`sk_live_` tokens, JWTs, credential
+  assignments and secret `.env` lines. Deliberately narrow, so ordinary source
+  code, hashes and lockfile integrity strings are untouched.
+- **Writes are atomic, reversible and guarded** — `write_file` called
+  `fs.writeFileSync` on the target: a crash truncated the file, an unread
+  overwrite destroyed content silently, and nothing could be undone. All
+  mutating file operations now go through `src/workspace.js`: temp-file +
+  fsync + rename, a per-session snapshot of the pre-image, a read-before-write
+  guard keyed on a content hash (so a change made by `run_command` invalidates
+  an earlier read), and a unified diff in the result.
+- **Budgets are enforced** — the loop's only breaker was a literal
+  `if (step > 10000)`. `MAX_ITERATIONS` was read for display and never
+  consulted, and `--max-iterations` was in the help text and never parsed.
+  `src/budget.js` now enforces steps, wall clock and tool calls, and exceeding
+  one produces a partial summary instead of a runaway process.
+- **Prose is not a program** — the parser accepted the first JSON object with a
+  `name`/`tool` key anywhere in the reply, so `{"name": "my-app"}` in a
+  package.json explanation became a tool call and a fenced *example* of a
+  `run_command` call executed for real. Fenced data-language blocks are now
+  illustrations, bare JSON with an unknown name is prose, and an unknown tool
+  name returns `invalid_tool` with a nearest-name suggestion instead of dumping
+  all 45 tool names into the context.
+- **Session context is real** — `_sessionCtxStart()` was called twice and
+  defined nowhere, `_sessionCtxUpdate()` was declared twice, `create()` was
+  never called and nothing ever read the file back. It is now created at task
+  start (with the task attached — the agent is built before the task is known)
+  and injected into the restart message, which is what makes it worth writing.
+- **No endpoint is guessed for the user** — the `colab` adapter shipped a
+  personal ngrok tunnel as its default URL. It now has no default and
+  `getModelUrl()` fails with an actionable message naming `--model-url`.
+
+### Added
+- `src/workspace.js` — atomic writes, snapshots, read-before-write, diffs.
+- `src/budget.js` — per-run resource envelope (`Budget`, `BudgetExceeded`).
+- `--rollback <path>` and `--snapshots` — restore a file from its snapshot, or
+  list what can be restored (snapshot paths are deterministic, so a later
+  process can find them).
+- `--max-iterations`, `--max-runtime` (`90`, `30s`, `2h`) and
+  `--max-tool-calls` — now parsed, applied and documented in `--help`.
+- `MAX_ITERATIONS`, `MAX_RUNTIME_MS`, `MAX_TOOL_CALLS`,
+  `MAX_CHAT_RECOVERIES` and `REQUIRE_READ_BEFORE_WRITE` config keys.
+- `ProgressTracker.recentErrors(n)` and `ConversationManager.buildResumeMessage()`
+  so recovery and any future context rotation share one wording.
+- `docs/RELIABILITY.md` — the invariants, where each is enforced, and how to
+  test it.
+
+### Changed
+- The system prompt is ~12 k characters (~3 k tokens), down from ~22.5 k, while
+  gaining the response envelope and the artifact protocol. Tool documentation is
+  now **generated** from the tool registry, so a tool cannot be added without
+  appearing in the prompt (seven were previously undocumented), and each entry
+  is one signature plus one clause.
+- The base64-for-code instruction is gone. It inflated payloads by a third,
+  models produce long base64 unreliably, and it moved a scraping bug into the
+  prompt. `is_base64` remains, for genuinely binary content only.
+- `write_file` now reports `Updated` (rather than `Wrote`) when it overwrites,
+  and returns a diff. `delete_file` mentions the snapshot it kept.
+
+### Tests
+- 2,036 tests across 106 suites, all green (`npm test`). New suites:
+  `turn-boundary`, `adapter-turn-contract`, `prompt-single-source`, `recovery`,
+  `secret-redaction`, `workspace`, `budget`, `protocol-validation`,
+  `session-context-wiring`, `adapter-factory-urls`.
+- Removed the public-internet dependency from the `read_url` unit test and the
+  startup race from the `kill-escalation` test (both were failing or flaky in
+  sandboxed CI).
+
+---
+
 ## [2.1.0] - 2026-11-12
 
 ### Changed

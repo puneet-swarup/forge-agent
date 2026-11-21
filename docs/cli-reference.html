@@ -279,10 +279,37 @@ forge-agent --summary mybot</code></pre>
             <p>Watch files for changes and re-run the task automatically.</p>
           </div>
 
-          <h2 id="performance">Performance</h2>
+          <h2 id="performance">Performance &amp; budget</h2>
           <div class="flag-card">
             <h3><code>--max-iterations=&lt;N&gt;</code></h3>
-            <p>Maximum steps before stopping (default: 100).</p>
+            <p>Maximum loop iterations for this run (default: 100). Exceeding it
+               ends the run with a partial summary rather than a crash.</p>
+          </div>
+          <div class="flag-card">
+            <h3><code>--max-runtime=&lt;duration&gt;</code></h3>
+            <p>Wall-clock limit for the run. Accepts <code>90</code> (minutes),
+               <code>30s</code>, <code>90m</code> or <code>2h</code>. Default: off.</p>
+          </div>
+          <div class="flag-card">
+            <h3><code>--max-tool-calls=&lt;N&gt;</code></h3>
+            <p>Maximum executed tool calls for the run. Default: off.</p>
+          </div>
+          <div class="flag-card">
+            <h3><code>--no-timeout</code></h3>
+            <p>Wait indefinitely for a model response.</p>
+          </div>
+
+          <h2 id="recovery">Recovery</h2>
+          <div class="flag-card">
+            <h3><code>--snapshots</code></h3>
+            <p>List the files in this project that can be restored from a
+               session snapshot.</p>
+          </div>
+          <div class="flag-card">
+            <h3><code>--rollback=&lt;path&gt;</code></h3>
+            <p>Restore a file to the state it was in before this session first
+               modified it. Snapshots are taken automatically on the first write
+               to a file.</p>
           </div>
 
           <h2 id="configuration">Configuration</h2>
