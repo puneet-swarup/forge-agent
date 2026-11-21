@@ -25,6 +25,7 @@ const ToolCache = require('./tool-cache');
 const { smartTruncate } = require('./truncator');
 const security = require('./security');
 const { Workspace } = require('./workspace');
+const shellPolicy = require('./shell-policy');
 const os = require('os');
 const readline = require('readline');
 const { decodeTransportArg } = require('./transport');
@@ -705,7 +706,16 @@ const TOOLS = {
     async execute({ command, cwd, timeout, env = {} }) {
       const workDir = cwd ? resolve(cwd) : config.WORKING_DIR;
 
-      // Fix 5 — Block dangerous commands
+      // Shell policy: allow / confirm / deny. `deny` is binding here; `confirm`
+      // is the permission menu's job (agent.js skips the prompt for `allow`).
+      const verdict = shellPolicy.evaluate(command, { policy: config.SHELL_POLICY });
+      if (verdict.verdict === 'deny') {
+        const err = new Error(verdict.reason);
+        err.retryable = false;
+        throw err;
+      }
+
+      // Legacy blocklist, kept for SHELL_POLICY=off and as a second opinion.
       if (!config.ALLOW_DANGEROUS_COMMANDS) {
         const validation = security.validateCommand(command);
         if (!validation.safe) {
@@ -729,7 +739,9 @@ const TOOLS = {
           encoding  : 'utf8',
           timeout   : timeoutMs,
           maxBuffer : 20 * 1024 * 1024,
-          env       : Object.assign({}, process.env, env),
+          // Scrubbed by default: PATH and the OS basics, never the operator's
+          // tokens. See shellPolicy.scrubbedEnv().
+          env       : shellPolicy.scrubbedEnv(env, { scrub: config.SHELL_ENV_SCRUB !== false }),
  }, function (err, stdout, stderr) {
  if (err) {
  // Surface real output: exit-1 commands usually explain

@@ -180,6 +180,10 @@ const DEFAULTS = {
 
   // Security
   ALLOW_DANGEROUS_COMMANDS: false,
+  // Shell policy: 'standard' (allowlist + confirm), 'strict' (unknown = deny),
+  // 'off' (legacy blocklist only). See src/shell-policy.js.
+  SHELL_POLICY            : 'standard',
+  SHELL_ENV_SCRUB         : true,
   ALLOW_ENV_PLAIN_READ    : false,
   // Overwriting a file the agent has neither read nor written this session is
   // refused. Set false to restore the old silent-overwrite behaviour.

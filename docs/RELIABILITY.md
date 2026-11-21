@@ -291,6 +291,37 @@ four call sites.
 "no test specified" default, timeout handling, honest wording, and three
 end-to-end loop cases (refused, accepted, disabled).
 
+## 12. The shell is governed
+
+**Invariant.** A command that can destroy data irreversibly never runs; a
+command the policy does not recognise requires the user; and the child process
+cannot read the operator's credentials.
+
+**Enforced by.** `src/shell-policy.js`, used by `tools.js` (`run_command`) and
+`agent.js` (`_needsPermission`).
+
+| Verdict | Meaning | Effect |
+| --- | --- | --- |
+| `allow` | allowlisted development binary (`npm`, `git status`, `ls`, `pytest`, `make`, `cd`, …) | runs, no prompt |
+| `confirm` | unrecognised binary, or known-destructive (`git push`, `git reset --hard`, `git clean`, `rm -rf`, `find -delete`, nested shells) | the permission menu asks |
+| `deny` | irreversible — root deletes, `mkfs`, `dd` to a device, fork bomb, `chmod -R 777 /`, download piped into a shell, force-push to `main` | never runs |
+
+Deny rules are evaluated against the **whole command line**, so quoting and pipes
+cannot hide the shape (`echo start && rm -rf /` is still denied). The allowlist is
+deliberately narrow and inspectable; `SHELL_POLICY=strict` denies unknown
+binaries outright, `SHELL_POLICY=off` steps aside (the legacy blocklist still
+applies unless `ALLOW_DANGEROUS_COMMANDS` is set).
+
+**Environment.** `run_command` builds the child's environment from an allowlist
+(`PATH`, `HOME`/`USERPROFILE`, `SystemRoot`, `TEMP`, `LANG`, …) and drops any
+variable whose name matches a credential pattern — including ones the model asks
+for explicitly. `SHELL_ENV_SCRUB=false` restores inheritance.
+
+**Verify.** `tests/shell-policy.test.js` (55) — allow/confirm/deny corpora,
+quoting and pipe evasion, `strict` mode, segment and binary parsing (including a
+quoted Windows path), environment scrubbing, an end-to-end `run_command` proving
+a secret in `process.env` is absent from the child, and the prompt-skipping rule.
+
 ## What is still missing
 
 Honest list of gaps this release does **not** close. Each one has a test-shaped
