@@ -222,9 +222,11 @@ share files, never the browser.
 
 Every Forge project has a fixed set of markdown artifacts. Each artifact has
 exactly **one owner, one purpose, and one phase** in the task lifecycle. The
-contract lives in `src/lifecycle.js` and is enforced by `scripts/lifecycle.js`;
-the same table is rendered into the agent system prompt so the rules and docs
-cannot drift.
+contract lives in `src/lifecycle.js` and is enforced by the agent loop
+(`src/lifecycle-gate.js`): a mutating tool is refused until `FORGE_PLAN.md`
+exists, and `TASK_COMPLETE` is refused while it has unchecked steps. The same
+table is rendered into the agent system prompt so the rules and docs cannot
+drift.
 
 | Artifact | Owner | Purpose | Phase |
 | --- | --- | --- | --- |
