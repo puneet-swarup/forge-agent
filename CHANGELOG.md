@@ -89,6 +89,11 @@ repository. See `docs/RELIABILITY.md` for the invariants and how to verify them.
   so recovery and any future context rotation share one wording.
 - `docs/RELIABILITY.md` — the invariants, where each is enforced, and how to
   test it.
+- `tests/cli-docs-sync.test.js` — runs the real `--help` and fails if a parsed
+  flag is undocumented (this immediately found 11: `--audit-log`,
+  `--clear-memory`, `--continue`, `--history-clear`, `--no-cache`,
+  `--no-interactive`, `--remove-template`, `--security`, `--strict-sandbox`,
+  `--task`, `--verbose`). They are now documented.
 
 ### Changed
 - The system prompt is ~12 k characters (~3 k tokens), down from ~22.5 k, while
@@ -103,10 +108,10 @@ repository. See `docs/RELIABILITY.md` for the invariants and how to verify them.
   and returns a diff. `delete_file` mentions the snapshot it kept.
 
 ### Tests
-- 2,036 tests across 106 suites, all green (`npm test`). New suites:
+- 2,041 tests across 114 suites, all green (`npm test`). New suites:
   `turn-boundary`, `adapter-turn-contract`, `prompt-single-source`, `recovery`,
   `secret-redaction`, `workspace`, `budget`, `protocol-validation`,
-  `session-context-wiring`, `adapter-factory-urls`.
+  `session-context-wiring`, `adapter-factory-urls`, `cli-docs-sync`.
 - Removed the public-internet dependency from the `read_url` unit test and the
   startup race from the `kill-escalation` test (both were failing or flaky in
   sandboxed CI).

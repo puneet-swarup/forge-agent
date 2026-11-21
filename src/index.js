@@ -477,7 +477,26 @@ ${c('1;36', 'BENCHMARKING')}
 ${c('1;36', 'PERFORMANCE')} (for slow machines / slow internet)
       --timeout=<secs>        Response timeout in seconds (default: 600)
       --no-timeout            Wait forever for AI responses
+      --task=<task>, -t <task>  Provide the task as a flag instead of positionally
+      --continue              Continue pending work from the last session
+      --no-cache              Disable the in-session tool result cache
+      --no-interactive        Never prompt; auto-continue (CI / scripts)
+      --verbose               Extra diagnostic output
       --tool-timeout=<secs>   Shell command timeout (default: 300)
+
+${c('1;36', 'RUN BUDGET')} (enforced by src/budget.js)
+      --max-iterations=<n>    Loop iterations for this run (default: 100)
+      --max-runtime=<dur>     Wall clock: 90, 30s, 90m, 2h (default: off)
+      --max-tool-calls=<n>    Executed tool calls for this run (default: off)
+
+${c('1;36', 'RECOVERY')} (snapshots of files this agent changed)
+      --snapshots             List files that can be restored
+      --rollback=<path>       Restore a file to its pre-session state
+
+${c('1;36', 'HISTORY & HOUSEKEEPING')}
+      --history-clear         Delete saved task history
+      --clear-memory          Forget project memory for this working directory
+      --remove-template <n>   Delete a saved task template
 
 ${c('1;36', 'PLUGINS & PROFILES')}
       --list-plugins     List all loaded custom plugins
@@ -489,6 +508,11 @@ ${c('1;36', 'CONFIGURATION')}
       --setup            Run the interactive setup wizard
       --config           Alias for --setup
       --config-path      Show path to active config file
+
+${c('1;36', 'SECURITY')}
+      --security              Show the current security posture
+      --strict-sandbox        Restrict all file access to the working directory
+      --audit-log             Append every tool call to ~/.forge-agent/audit.log
 
 ${c('1;36', 'DEBUGGING')}
       --debug            Verbose output with raw AI responses
