@@ -62,6 +62,18 @@ describe('ci.yml', () => {
   test('workflows get read-only permissions by default', () => {
     expect(ci).toMatch(/permissions:\s*\n\s*contents:\s*read/);
   });
+
+  test('every job has a timeout, so a stall fails instead of blocking merges', () => {
+    // A hung test job sat "in progress" for 20+ minutes on a 4-minute suite and
+    // held every merge behind it. A cap turns that into a fast, visible failure.
+    // Count jobs by their `runs-on` line, and require a timeout near each one.
+    const blocks = ci.split('runs-on:').slice(1);
+    expect(blocks.length).toBeGreaterThan(0);
+
+    for (const block of blocks) {
+      expect(block.slice(0, 300)).toMatch(/timeout-minutes:\s*\d+/);
+    }
+  });
 });
 
 describe('release.yml', () => {
