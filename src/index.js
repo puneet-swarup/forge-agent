@@ -1845,6 +1845,7 @@ async function main() {
 
       let roundTrip = null;
       let messages = null;
+      let responseAfterReply = null;
       if (args.roundTrip) {
         const started = Date.now();
         roundTrip = { sent: false, detected: false, elapsedMs: null, reply: null, error: null };
@@ -1856,9 +1857,13 @@ async function main() {
           roundTrip.reply = reply ? String(reply).trim() : null;
           roundTrip.elapsedMs = Date.now() - started;
 
-          // Now that a reply exists, find out which container holds it.
+          // Now that a reply exists, find out which container holds it — and
+          // re-check the response selectors, which cannot match on an empty
+          // chat. Reporting "NONE of 9 matched" there was a false negative.
           await page.waitForTimeout(1500);
           messages = await diagnose.probeMessages(page);
+          const after = await diagnose.probeSelectors(page, adapter);
+          responseAfterReply = after.response;
         } catch (err) {
           roundTrip.error = (err && err.message) || String(err);
         }
@@ -1872,6 +1877,7 @@ async function main() {
         sendWithText,
         roundTrip,
         messages,
+        responseAfterReply,
       }));
 
       await agent.shutdown();

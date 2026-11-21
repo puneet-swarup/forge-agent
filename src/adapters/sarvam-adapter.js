@@ -65,18 +65,20 @@ _getInputSelectors() {
   }
 
   _getResponseSelectors() {
+    // Indus uses Tailwind utility classes, so there are no semantic names to
+    // match on: a --diagnose dump of a live reply showed the transcript inside
+    // `<section class="flex h-full">` with no markdown/prose/assistant class
+    // anywhere. The named selectors are kept for when they appear; the
+    // structural fallback in discoverLatestResponse does the real work.
     return [
-      // Markdown/prose containers are the most reliable signal
+      '[data-message-author-role="assistant"]',
+      '[data-role="assistant"]',
       '.markdown',
       '[class*="markdown"]',
       '[class*="prose"]',
-      '[data-message-author="assistant"]',
-      '[data-role="assistant"]',
-      'div[class*="assistant"] div[class*="content"]',
+      'section.flex.h-full',
+      'section[class*="h-full"]',
       'div[class*="message-content"]',
-      // Broad fallbacks for generic chat bubbles
-      'div[class="assistant"] span[class="reply"]',
-      'div[class*="assistant"]',
     ];
   }
 
@@ -169,6 +171,46 @@ _getInputSelectors() {
         // Try next selector.
       }
     }
+
+    // Structural fallback. With no semantic class names, the transcript is best
+    // identified by shape: the largest visible block of text that is not the
+    // composer and not the sidebar. This is what makes the adapter work when the
+    // utility classes change, which they do.
+    try {
+      const handle = await this.page.evaluateHandle(() => {
+        const visible = (el) => {
+          const style = window.getComputedStyle(el);
+          return style.display !== 'none' && style.visibility !== 'hidden' &&
+            style.opacity !== '0' && el.getClientRects().length > 0;
+        };
+
+        let best = null;
+        let bestLen = 0;
+
+        for (const el of document.querySelectorAll('section, main, article, div[class*="flex-col"]')) {
+          if (!visible(el)) continue;
+          if (el.closest('[contenteditable="true"]')) continue;
+          // The sidebar and the nav chrome carry long text too; skip anything
+          // that looks like navigation.
+          const text = (el.innerText || '').trim();
+          if (text.length < 20) continue;
+          if (/^(New chat|Connectors|Skills|Agents|Scheduled tasks|Knowledge base)\b/.test(text)) continue;
+
+          if (text.length > bestLen) { bestLen = text.length; best = el; }
+        }
+
+        return best;
+      });
+
+      const element = handle.asElement();
+      if (element) {
+        logger.debug('[Sarvam] Response container found structurally (no selector matched)');
+        return element;
+      }
+    } catch (_) {
+      // Fall through to null.
+    }
+
     return null;
   }
 

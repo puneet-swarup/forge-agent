@@ -252,6 +252,19 @@ function formatDiagnostics(report) {
     if (roundTrip.error) lines.push(`    error:     ${roundTrip.error}`);
   }
 
+  // ── Response selectors, re-checked with a reply on screen ───────────────
+  if (Array.isArray(safe.responseAfterReply) && safe.responseAfterReply.length) {
+    const rows = safe.responseAfterReply;
+    const matched = rows.filter((r) => r.count > 0 && r.visible && !r.error);
+
+    lines.push('');
+    lines.push(`  response (with a reply on screen)  ${matched.length} of ${rows.length} matched`);
+    for (const row of rows) {
+      const mark = row.error ? 'ERR' : row.count === 0 ? ' · ' : row.visible ? ' ✓ ' : ' ~ ';
+      lines.push(`    ${mark} ${row.selector}`);
+    }
+  }
+
   // ── Where the reply actually lives ─────────────────────────────────────
   if (Array.isArray(messages) && messages.length) {
     lines.push('');

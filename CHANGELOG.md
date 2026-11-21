@@ -9,6 +9,13 @@ Versioning: [Semantic Versioning](https://semver.org/)
 ## [Unreleased]
 
 ### Fixed
+- **Sarvam's response selectors could never match.** Indus is built with Tailwind
+  utility classes — a live dump of a real reply showed the transcript inside
+  `<section class="flex h-full">` with no markdown, prose or assistant class
+  anywhere. `discoverLatestResponse` now also identifies the transcript by shape:
+  the largest visible text block that is not the composer and not the sidebar.
+  The `--diagnose` report re-checks the response group *after* the round trip,
+  because on an empty chat "NONE of 9 matched" is a false negative, not a fault.
 - **`--model=<name>` was never parsed.** Only the two-token form worked, so
   every documented example — `--model=gemini`, `--model=sarvam` — was silently
   ignored and the run used whatever the config file held. That is why

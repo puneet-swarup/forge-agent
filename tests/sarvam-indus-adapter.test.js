@@ -42,9 +42,18 @@ describe('Sarvam Indus adapter', () => {
     expect(sels.join(' ')).toMatch(/:not\(\[disabled\]\)|:not\(\[aria-disabled/);
   });
 
-  test('response detection prefers markdown containers', () => {
+  test('response detection includes the structural containers Indus actually uses', () => {
     const sels = selectorsFor('_getResponseSelectors');
-    expect(sels[0]).toBe('.markdown');
+    // Indus has no markdown/prose class; a live dump showed the transcript in
+    // <section class="flex h-full">.
+    expect(sels).toContain('section.flex.h-full');
+    expect(sels).toContain('[data-message-author-role="assistant"]');
+  });
+
+  test('response detection has a structural fallback for utility-class markup', () => {
+    const src = require('fs').readFileSync(
+      require('path').join(__dirname, '..', 'src', 'adapters', 'sarvam-adapter.js'), 'utf8');
+    expect(src).toContain('Response container found structurally');
   });
 
   test('every selector list is non-empty and duplicate-free', () => {
