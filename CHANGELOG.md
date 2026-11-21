@@ -17,8 +17,19 @@ Versioning: [Semantic Versioning](https://semver.org/)
   stubborn plan cannot loop. Writing the plan itself is always allowed, a
   one-clause task is never asked for one, and `PLAN_GATE=false` turns both gates
   off. See `docs/RELIABILITY.md` §14.
+- `tests/markdown-scope.test.js` — fails when a Markdown file exists without an
+  inventory row, when a row names a missing file, or when the stated count drifts
+  from the tree.
 
 ### Changed
+- **Documentation governance is now enforced.** `docs/MARKDOWN_SCOPE.md` claimed
+  29 Markdown files and listed nine that do not exist on `main` while omitting
+  `docs/RELIABILITY.md`. Re-audited: 21 tracked files, each with a purpose and a
+  boundary, plus a separate table for the five generated artifacts. It no longer
+  records enforcement status — that was the copy that rotted.
+- **One test-count rule.** `CONTRIBUTING.md` asked for 10 tests, 3 tests and 2
+  tests in three places; the PR template asked for 5. There is now one rule,
+  stated once, and the template defers to it.
 - `checkStart` / `checkEnd` / `parseCheckboxItems` moved from
   `scripts/lifecycle.js` into `src/lifecycle.js`, so the CLI and the loop run the
   same check. The script still exports them.
