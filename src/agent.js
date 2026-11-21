@@ -19,6 +19,7 @@ const { showPermissionMenu } = require('./permission-menu');
 const { ConversationManager }      = require('./prompt');
 const { Errors, displayError }     = require('./errors');
 const security                     = require('./security');
+const shellPolicy                  = require('./shell-policy');
 const { Budget, BudgetExceeded }    = require('./budget');
 const { Throttle }                  = require('./throttle');
 const { verifyProject, describeVerification } = require('./verify');
@@ -264,6 +265,29 @@ class DeepSeekAgent {
 
     await this.browser.sendMessage(message);
     logger.dim('  Contract re-sent: system prompt + plan + progress');
+  }
+
+  /**
+   * Does this tool call need the user's permission?
+   *
+   * Read-only tools never do. A `run_command` the shell policy allows (npm test,
+   * git status, ls) does not either — prompting for every build command trained
+   * users to hit "allow all", which defeats the prompt entirely. Anything the
+   * policy flags as `confirm`, and every other mutating tool, still asks.
+   *
+   * @param {string} name
+   * @param {object} args
+   * @returns {boolean}
+   */
+  _needsPermission(name, args) {
+    if (isReadOnly(name)) return false;
+
+    if (name === 'run_command' && args && typeof args.command === 'string') {
+      const verdict = shellPolicy.evaluate(args.command, { policy: config.SHELL_POLICY });
+      if (verdict.verdict === 'allow') return false;
+    }
+
+    return true;
   }
 
   /**
@@ -702,7 +726,7 @@ class DeepSeekAgent {
             }
           }
 
-          if (!isReadOnly(parsed.name)) {
+          if (this._needsPermission(parsed.name, parsed.args)) {
             const category = getCategory(parsed.name);
             if (!this.permissionStore.isPreApproved(category)) {
               const detail = parsed.args?.path
@@ -1126,7 +1150,7 @@ class DeepSeekAgent {
     }
 
     for (const c of calls) {
-      if (!c || !c.name || isReadOnly(c.name)) continue;
+      if (!c || !c.name || !this._needsPermission(c.name, c.args)) continue;
       const category = getCategory(c.name);
       if (this.permissionStore.isPreApproved(category)) continue;
       const detail = c.args?.path

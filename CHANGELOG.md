@@ -76,6 +76,21 @@ repository. See `docs/RELIABILITY.md` for the invariants and how to verify them.
   `getModelUrl()` fails with an actionable message naming `--model-url`.
 
 ### Added
+- **Shell policy with three verdicts** — the guard was six literal substrings
+  matched with `String.includes()`, which `rm -rf $HOME`, `git reset --hard`,
+  `find . -delete` and `curl … | sh` all walked past. `src/shell-policy.js`
+  classifies a command as **allow** (an allowlisted development binary: no
+  prompt), **confirm** (unrecognised, or known-destructive such as
+  `git push` / `git reset --hard` / `rm -rf`: the user is asked) or **deny**
+  (irreversible: root deletes, `mkfs`, `dd` to a device, fork bombs, piping a
+  download into a shell, force-push to `main`). Deny is binding; allow skips the
+  permission prompt so it is not worn down by `npm test`; `SHELL_POLICY` accepts
+  `standard`, `strict` (unknown binaries denied) or `off`.
+- **Scrubbed child environment** — `run_command` no longer inherits
+  `process.env`. The child gets `PATH` and the OS basics, and anything whose name
+  looks like a credential (`TOKEN`, `SECRET`, `PASSWORD`, `API_KEY`, `AUTH`, …)
+  is dropped even when explicitly requested, so a model cannot read a token back
+  out through `echo $VAR`. `SHELL_ENV_SCRUB=false` restores the old behaviour.
 - **Verification gate before `TASK_COMPLETE`** — the agent used to decide it was
   finished. `src/verify.js` now detects the project's own cheapest check
   (`package.json` script, `Makefile` target, `pytest`, `cargo test`, `go test`)
