@@ -1,19 +1,31 @@
 # .github/workflows/release.yml
-# Triggered when you push a version tag (e.g. v1.2.0).
-# Runs tests, then publishes to npm automatically.
+# Triggered when you push a version tag (e.g. v2.2.0).
+#
+# What it does:
+#   1. refuses to release when the tag and package.json disagree;
+#   2. runs the full suite and the type-check;
+#   3. publishes to npm — only if NPM_TOKEN is configured;
+#   4. creates a GitHub Release whose notes are the CHANGELOG section for that
+#      version, not a generated list of merge commits.
 #
 # Setup (one time):
-#   1. Go to your npm account → Access Tokens → Generate Granular Token
-#   2. Set Packages permission to "Read and write"
-#   3. Go to GitHub repo → Settings → Secrets → Actions
-#   4. Add secret: NPM_TOKEN = your npm token
+#   1. npm → Access Tokens → Generate Granular Token, Packages: Read and write
+#   2. GitHub → Settings → Secrets and variables → Actions → NPM_TOKEN
+#
+# Releasing:
+#   npm version patch|minor|major   # bumps package.json and creates the tag
+#   git push --follow-tags
 
 name: Release
 
 on:
   push:
     tags:
-      - 'v*.*.*'         # matches v1.0.0, v1.2.3-beta, etc.
+      - 'v*.*.*'
+
+permissions:
+  contents: write      # create the GitHub Release
+  id-token: write      # npm provenance
 
 jobs:
   release:
@@ -23,6 +35,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Node.js 20
         uses: actions/setup-node@v4
@@ -36,25 +50,52 @@ jobs:
         env:
           SKIP_PLAYWRIGHT_INSTALL: '1'
 
-      - name: Run tests before publishing
+      # A tag that does not match package.json publishes the wrong version.
+      - name: Verify tag matches package.json
+        run: |
+          PKG=$(node -p "require('./package.json').version")
+          TAG="${GITHUB_REF_NAME#v}"
+          echo "tag=$TAG package=$PKG"
+          if [ "$PKG" != "$TAG" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $PKG"
+            exit 1
+          fi
+
+      - name: Run the suite
         run: npm test
         env:
           CI: 'true'
 
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Extract release notes from CHANGELOG
+        id: notes
+        run: |
+          node scripts/changelog-section.js "${GITHUB_REF_NAME}" > release-notes.md
+          echo "--- notes ---"
+          head -20 release-notes.md
+
       - name: Publish to npm
-        run: npm publish --access public
+        if: ${{ env.NPM_TOKEN != '' }}
+        run: npm publish --access public --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
-          body: |
-            ## Installation
+          body_path: release-notes.md
+          append_body: true
+          generate_release_notes: false
+          files: |
+            release-notes.md
+          footer: |
+            ---
+
+            **Install**
 
             ```bash
             npm install -g @puneet-swarup/forge-agent@${{ github.ref_name }}
             ```
-
-            See [CHANGELOG.md](./CHANGELOG.md) for what changed in this release.

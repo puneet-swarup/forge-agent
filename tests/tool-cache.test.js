@@ -43,7 +43,10 @@ describe('ToolCache', () => {
   });
 
   test('get returns result before TTL expires', (done) => {
-    cache.set('read_file', { path: 'test.txt' }, 'content', 100);
+    // A 100 ms TTL raced the timer: under load the 10 ms callback fired well
+    // after 100 ms and the entry had legitimately expired. A long TTL expresses
+    // "not yet expired" without depending on scheduler latency.
+    cache.set('read_file', { path: 'test.txt' }, 'content', 60_000);
     setTimeout(() => {
       expect(cache.get('read_file', { path: 'test.txt' })).toBe('content');
       done();
