@@ -25,6 +25,24 @@ npx jest tests/markdown-scope.test.js     # T6 (14)
 
 ---
 
+## Coordination rule — one writer at a time
+
+Two workers share this repo: the **lead agent** (interactive, merges) and the
+**scheduled runner** (a cron job every 2 hours, opens PRs, never merges). They
+share no memory; this file and git are the only state.
+
+The rule that keeps them apart:
+
+1. **At most one PR in flight.** A worker runs `gh pr list --state open` before
+   starting. If anything is open, it stops and reports. This is what failed on
+   2026-11-21: two runs both saw an empty queue and opened duplicate governance
+   PRs (#11 and #12), and three PRs then conflicted over this file and
+   `CHANGELOG.md`.
+2. **Claim before working.** The runner writes `IN PROGRESS: <item> — <branch>`
+   under `## Claim` here, in its first commit.
+3. **Only the lead agent merges.** The runner never merges or force-pushes.
+4. **Merged branches are deleted**, so a stale branch never looks like live work.
+
 ## Running autonomously
 
 A cron job (`forge-agent roadmap runner`, every 2 hours) reads this file, takes
