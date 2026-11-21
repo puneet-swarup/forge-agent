@@ -76,6 +76,14 @@ repository. See `docs/RELIABILITY.md` for the invariants and how to verify them.
   `getModelUrl()` fails with an actionable message naming `--model-url`.
 
 ### Added
+- **Verification gate before `TASK_COMPLETE`** — the agent used to decide it was
+  finished. `src/verify.js` now detects the project's own cheapest check
+  (`package.json` script, `Makefile` target, `pytest`, `cargo test`, `go test`)
+  and runs it before completion is accepted; a failure is fed back and the loop
+  continues, bounded by `MAX_VERIFICATION_ATTEMPTS`. Nothing is invented — only
+  commands the project declares. With no declared check the run is reported as
+  **unverified** in the summary rather than claiming success. Config:
+  `VERIFY_BEFORE_COMPLETE`, `VERIFY_TIMEOUT_MS`, `MAX_VERIFICATION_ATTEMPTS`.
 - **Integrity-checked argument transport** — `src/transport.js` gains
   `encodeTransportArg` / `decodeTransportArg` with base64 **or** hex encoding
   and an MD5 check over the decoded bytes. `write_file`, `append_to_file`,

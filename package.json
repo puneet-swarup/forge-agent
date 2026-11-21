@@ -38,7 +38,10 @@
       "lcov"
     ],
     "testTimeout": 15000,
-    "forceExit": true
+    "forceExit": true,
+    "setupFiles": [
+      "<rootDir>/tests/setup.js"
+    ]
   },
   "files": [
     "src/",

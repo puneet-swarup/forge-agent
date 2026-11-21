@@ -21,6 +21,7 @@ const { Errors, displayError }     = require('./errors');
 const security                     = require('./security');
 const { Budget, BudgetExceeded }    = require('./budget');
 const { Throttle }                  = require('./throttle');
+const { verifyProject, describeVerification } = require('./verify');
 const { sleep }                    = require('./retry');
 const { ProgressTracker }          = require('./progress');
 const { MemoryStore }              = require('./memory');
@@ -330,6 +331,8 @@ class DeepSeekAgent {
     this._emptyStreak = 0;
     this._recoveries = 0;
     this._lastToolCallCountAtFailure = 0;
+    this._verifyAttempts = 0;
+    this._lastVerification = null;
     // Resource envelope for this run: steps, wall clock, tool calls.
     const budget = new Budget(config);
     this._budget = budget;
@@ -852,6 +855,45 @@ class DeepSeekAgent {
         if (parsed.type === 'final' || parsed.type === 'task_complete') {
           _consecutiveUnrecognised = 0;
 
+          // ── Verification gate ────────────────────────────────────────────
+          // "Done" must mean done. Run the project's own cheapest check before
+          // accepting TASK_COMPLETE. Only commands the project already declares
+          // are run (package.json script, Makefile target, cargo/go), never a
+          // command assembled from model output. Bounded by
+          // MAX_VERIFICATION_ATTEMPTS so a broken project cannot loop forever.
+          if (config.VERIFY_BEFORE_COMPLETE !== false &&
+              this._verifyAttempts < (config.MAX_VERIFICATION_ATTEMPTS || 2)) {
+            const verification = await verifyProject({
+              cwd: config.WORKING_DIR,
+              timeoutMs: config.VERIFY_TIMEOUT_MS,
+            });
+            this._lastVerification = verification;
+
+            if (verification.ran && !verification.result.ok) {
+              this._verifyAttempts++;
+              logger.warn(`Completion refused — ${describeVerification(verification)}`);
+
+              const feedback = this.conversation.addToolResult(
+                'SYSTEM',
+                [
+                  'You said the task is complete, but the project\'s own check failed:',
+                  '',
+                  '```',
+                  verification.result.output || '(no output)',
+                  '```',
+                  '',
+                  'Fix the failure, then finish again. Do not report TASK_COMPLETE until this passes.',
+                ].join('\n'),
+                true
+              );
+              await this.browser.sendMessage(feedback);
+              step++;
+              continue;
+            }
+
+            logger.dim(`  ${describeVerification(verification)}`);
+          }
+
           const content = parsed.content || rawResponse;
 
           // Safety net: if the response looks like a missed tool call
@@ -949,6 +991,7 @@ class DeepSeekAgent {
               filesWritten: [...progress.filesWritten],
               commandsRun: progress.commandsRun.slice(0, 10),
               errorCount: progress.errorCount,
+              verification: describeVerification(this._lastVerification),
               finalOutput: content, templateName: templateName
             });
             logger.dim('');

@@ -268,14 +268,34 @@ hex, 10 KB of random bytes), tampered payload refused with nothing written,
 malformed hash refused, legacy signature preserved, and per-tool coverage of all
 four call sites.
 
+## 11. Completion is verified
+
+**Invariant.** `TASK_COMPLETE` is refused when the project's own check fails.
+
+**Enforced by.** `src/verify.js` + the gate at the top of the completion branch in
+`agent.js`.
+
+- Detection is declarative: `package.json` scripts (`typecheck` → `lint` → `test`),
+  a `Makefile` `check`/`test` target, `pyproject.toml`/`pytest.ini` → `pytest -q`,
+  `Cargo.toml` → `cargo test`, `go.mod` → `go test ./...`.
+- Only the first declared check runs — cheapest first. The command is never
+  assembled from model output.
+- On failure the output goes back to the model as a tool result and the loop
+  continues, up to `MAX_VERIFICATION_ATTEMPTS` (default 2). After that the gate
+  steps aside rather than looping.
+- No declared check → the run is reported **unverified**, not verified, in the
+  run summary (`Verification:` line).
+- Timeout `VERIFY_TIMEOUT_MS` (default 120 s); output capped at 4 KB.
+
+**Verify.** `tests/verify-gate.test.js` — detection per ecosystem, the npm
+"no test specified" default, timeout handling, honest wording, and three
+end-to-end loop cases (refused, accepted, disabled).
+
 ## What is still missing
 
 Honest list of gaps this release does **not** close. Each one has a test-shaped
 hole; none is hidden behind a passing suite.
 
-1. **No verification gate.** `TASK_COMPLETE` still means "the model said so".
-   The runtime does not run the project's own tests/lint before accepting it.
-   (Next: run the cheapest project check and attach the result to the summary.)
 2. **Local context compression is bookkeeping.** The model's real context lives
    in the remote chat; `ConversationManager.compress()` rewrites a local log
    that is never re-sent. Deliberate rotation every N turns is the fix.

@@ -58,6 +58,7 @@ function buildSummary(info) {
     filesWritten: Array.isArray(info.filesWritten) ? info.filesWritten : [],
     commandsRun: Array.isArray(info.commandsRun) ? info.commandsRun : [],
     errorCount: info.errorCount || 0,
+    verification: info.verification || null,
     templateName: info.templateName || null,
     finalOutput: String(info.finalOutput || '').slice(0, 2000),
     finishedAt: new Date().toISOString(),
@@ -71,6 +72,7 @@ function renderMarkdown(s) {
   lines.push('');
   lines.push('- **Role:** ' + s.role);
   lines.push('- **Status:** ' + s.status);
+  if (s.verification) lines.push('- **Verified:** ' + s.verification);
   lines.push('- **Task:** ' + s.task);
   lines.push('- **Model / profile:** ' + (s.model || '?') + ' / ' + (s.profile || '?'));
   lines.push('- **Working dir:** ' + s.workingDir);
