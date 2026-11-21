@@ -1,5 +1,9 @@
 # NEXT SESSION — Forge Agent workstreams
 
+## Claim
+
+IN PROGRESS: T2 Loom slice 2 (extractors + import resolution) — feat/loom-slice2-extractors
+
 **Verified:** 2026-11-21, against `main` @ `f6cf197` (after PRs #3-#13). The
 runner never merges; a human or the lead agent merges after CI is green.
 **Rule for this file:** implementation and tests are authoritative. A status here
