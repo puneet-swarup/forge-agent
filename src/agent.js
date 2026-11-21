@@ -791,9 +791,42 @@ class ForgeAgent {
         // 'text') means the prompt contract is being tolerated, not followed.
         // Recorded so drift is measurable instead of invisible.
         this._lastParseStrategy = parsed && parsed.strategy ? parsed.strategy : 'none';
-        if (this._lastParseStrategy !== 'xml' && this._lastParseStrategy !== 'complete'
-            && this._lastParseStrategy !== 'text') {
-          logger.debug(`[parser] non-canonical tool-call format: ${this._lastParseStrategy}`);
+
+        // ── Format gate ─────────────────────────────────────────────────────
+        // The parser tolerates a fenced block, bare JSON and function-call
+        // style. Executing them silently means a model that never follows the
+        // contract looks identical to one that always does. Ask for the
+        // canonical form instead, a bounded number of times, then fail naming
+        // the format it kept using. STRICT_TOOL_FORMAT=false restores the old
+        // silent tolerance.
+        try {
+          const verdict = require('./tool-format').verdictFor(parsed, {
+            strict: config.STRICT_TOOL_FORMAT !== false,
+            refusals: this._formatRefusals || 0,
+            maxRefusals: config.MAX_FORMAT_REFUSALS || 2,
+          });
+
+          if (verdict.action === 'correct' || verdict.action === 'fail') {
+            this._formatRefusals = (this._formatRefusals || 0) + 1;
+            this._formatRefusalsTotal = (this._formatRefusalsTotal || 0) + 1;
+
+            if (verdict.action === 'fail') {
+              throw new Error(verdict.message);
+            }
+
+            logger.warn(`Tool call in a non-canonical format (${verdict.strategy}). Asking for <tool_call>.`);
+            const correction = this.conversation.addToolResult('SYSTEM', verdict.message, true);
+            await this.browser.sendMessage(correction);
+            continue;
+          }
+
+          // A compliant turn resets the counter.
+          this._formatRefusals = 0;
+        } catch (err) {
+          // Only the deliberate failure above should reach here.
+          if (/non-canonical format/.test(err.message)) throw err;
+          // A broken tool-format module must not stop a run.
+          logger.debug(`[parser] format gate unavailable: ${err.message}`);
         }
 
         // Step line describes the tool that is ACTUALLY about to run (current

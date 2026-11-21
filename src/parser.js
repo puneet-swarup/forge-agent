@@ -126,7 +126,7 @@ function parseResponse(rawText, opts = {}) {
   // be executed on the second pass.
   const outsideFences = text.replace(/```[\s\S]*?```/g, ' ');
   const bareResult = _extractBareJSON(outsideFences, isKnownTool);
-  if (bareResult) return bareResult;
+  if (bareResult) return { ...bareResult, strategy: 'json' };
 
   // ── Strategy 6: plain text / conversational response ─────────────────────
   return { type: 'text', content: text, strategy: 'text' };

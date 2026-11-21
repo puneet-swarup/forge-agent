@@ -116,6 +116,13 @@ const DEFAULTS = {
   // Planning is optional. A plan response that never arrives must not stall the
   // run at "Generating execution plan..." until the generic response timeout.
   PLAN_TIMEOUT_MS          : 90_000,
+
+  // The parser tolerates a fenced block, bare JSON and function-call style.
+  // Strict mode refuses them and asks for <tool_call>{json}</tool_call> instead,
+  // so a model that ignores the contract is corrected or reported rather than
+  // silently accommodated. Set to false to restore the old behaviour.
+  STRICT_TOOL_FORMAT       : true,
+  MAX_FORMAT_REFUSALS      : 2,
   LOOM_DIGEST_TOKENS       : 1200,
 
   // Routine context rotation: start a fresh chat every N assistant turns and

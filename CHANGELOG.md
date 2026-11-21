@@ -101,6 +101,14 @@ Versioning: [Semantic Versioning](https://semver.org/)
   page during shutdown is no longer reported as "Unexpected error".
 
 ### Added
+- **Strict tool-call format (`STRICT_TOOL_FORMAT`, default on).** The parser
+  tolerates a ```tool_call fence, bare JSON and function-call style because models
+  drift — but executing those silently makes a model that *never* follows the
+  contract indistinguishable from one that always does. A non-canonical tool call
+  is now refused with a correction that shows the exact target, retried a bounded
+  number of times (`MAX_FORMAT_REFUSALS`, default 2), then failed with a message
+  naming the format the model kept using. Set `STRICT_TOOL_FORMAT=false` to
+  restore the old silent tolerance.
 - **The parser reports which shape it matched** — `strategy: 'xml' | 'fence' |
   'function' | 'complete' | 'text'`. The canonical reply is
   `<tool_call>{json}</tool_call>`; the other shapes exist because models drift.
