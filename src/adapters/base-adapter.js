@@ -799,6 +799,10 @@ class BaseAdapter {
       .replace(/^Thinking\.{0,3}\s*[\s\S]*?\n\n/m, '')
       .replace(/^(Assistant|AI|Claude|GPT|Gemini|DeepSeek):\s*/i, '')
       .replace(/^\d+(?:Copy|Run|Insert|Edit)\w*.*$/gm, '')
+      // Action chrome that renders as its own line: Copy / Download /
+      // Regenerate / Share. Previously only "Copy code" was handled, so a
+      // toolbar could survive into the model's next turn (and into the parser).
+      .replace(/^[ \t]*(?:Copy|Copy code|Download|Regenerate|Share|Edit|Retry|Read aloud)[ \t]*$/gmi, '')
       .replace(/Copy code[\s\S]{0,50}$/gm, '')
       .replace(/\d+ \/ \d+[\s\n]*$/g, '')
       .replace(/\n{3,}/g, '\n\n')

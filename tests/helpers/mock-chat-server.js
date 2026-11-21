@@ -56,6 +56,10 @@ const PAGE = `<!doctype html>
 
       const body = document.createElement('span');
       body.className = 'reply-text';
+      // Real chat UIs render markdown with preserved newlines (pre-wrap). Without
+      // this the mock collapsed every newline into a space, so the scraper was
+      // never tested against the shape it actually receives.
+      body.style.whiteSpace = 'pre-wrap';
       body.textContent = text;
       div.appendChild(body);
 

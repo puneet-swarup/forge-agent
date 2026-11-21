@@ -55,7 +55,10 @@ function parseResponse(rawText, opts = {}) {
   // ILLUSTRATION unless it is the entire response. Models routinely show an
   // example call while explaining something; executing that example is how an
   // explanation of a write becomes a write.
-  const codeBlockRe = /```([A-Za-z0-9_+-]*)[ \t]*\r?\n([\s\S]*?)\r?\n?[ \t]*```/g;
+  // A UI may render the block with newlines (```tool_call\n{...}) or collapse
+  // them entirely (```tool_call {...}), so whitespace after the label is
+  // optional and may be spaces, tabs, CR/LF or nothing.
+  const codeBlockRe = /```([A-Za-z0-9_+-]*)[ \t\r\n]*([\s\S]*?)[ \t\r\n]*```/g;
   let cbMatch;
   const _cbCalls = [];
   while ((cbMatch = codeBlockRe.exec(text)) !== null) {
