@@ -204,8 +204,15 @@ _getInputSelectors() {
 
       const element = handle.asElement();
       if (element) {
-        logger.debug('[Sarvam] Response container found structurally (no selector matched)');
-        return element;
+        // The largest block is the transcript, not the reply: it also holds the
+        // user's message, the timestamp and the disclaimer. Descend to the last
+        // message, or the parser sees prose where it expects a tool call.
+        const leaf = await this._lastLeafWithin(element);
+        const text = (await leaf.innerText().catch(() => '')).trim();
+        if (text) {
+          logger.debug('[Sarvam] Response taken from the last leaf of the transcript');
+          return leaf;
+        }
       }
     } catch (_) {
       // Fall through to null.

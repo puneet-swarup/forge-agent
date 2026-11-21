@@ -13,10 +13,16 @@ function selectorsFor(method) {
 }
 
 describe('ChatGPT selectors', () => {
-  test('response detection includes the transcript container from the live dump', () => {
-    const sels = selectorsFor('_getResponseSelectors');
-    expect(sels).toContain('.thread-scroll-container');
-    expect(sels).toContain('[role="region"].thread-scroll-container');
+  test('the transcript container is treated as a container, not as the reply', () => {
+    // Handing the whole container to the parser gives it "You said: … ChatGPT
+    // said: …" plus timestamp and disclaimer — which reads as prose and fails as
+    // a tool call. The container is resolved with _lastLeafWithin instead.
+    const src = require('fs').readFileSync(
+      require('path').join(__dirname, '..', 'src', 'adapters', 'chatgpt-adapter.js'), 'utf8');
+
+    expect(selectorsFor('_getResponseSelectors')).not.toContain('.thread-scroll-container');
+    expect(src).toContain('_lastLeafWithin');
+    expect(src).toContain('.thread-scroll-container');
   });
 
   test('the old prose selectors are kept as fallbacks, not as the primary', () => {

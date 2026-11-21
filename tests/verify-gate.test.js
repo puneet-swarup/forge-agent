@@ -242,3 +242,34 @@ describe('runCheck resilience', () => {
     expect(text).toContain('could not run');
   });
 });
+
+// ─────────────────────────────────────────────
+//  Windows: no shell-arg concatenation
+//
+//  execFile with shell:true warns (DEP0190) that args are concatenated, not
+//  escaped. On Windows the .cmd shim needs a shell, so the args are quoted here
+//  and passed as a single command instead.
+// ─────────────────────────────────────────────
+
+describe('child-process quoting', () => {
+  const src = require('fs').readFileSync(
+    require('path').join(__dirname, '..', 'src', 'verify.js'), 'utf8');
+
+  test('args are quoted for cmd.exe rather than concatenated by Node', () => {
+    expect(src).toContain('quoteForCmd');
+    expect(src).toContain('commandArgs');
+    // shell:true must never receive a non-empty args array.
+    expect(src).toMatch(/const commandArgs = needsShell && check\.args\.length \? \[\] : check\.args;/);
+  });
+
+  test('a check still runs and reports on this platform', async () => {
+    const { runCheck } = require('../src/verify');
+    const result = await runCheck(
+      { name: 'echo', command: process.platform === 'win32' ? 'cmd' : 'echo',
+        args: process.platform === 'win32' ? ['/c', 'echo', 'hi'] : ['hi'] },
+      { cwd: process.cwd() }
+    );
+    expect(result.ok).toBe(true);
+    expect(result.output).toContain('hi');
+  });
+});

@@ -115,6 +115,20 @@ function runCheck(check, opts = {}) {
   // protect. Both are handled here.
   const needsShell = process.platform === 'win32';
 
+  // On Windows a .cmd shim needs a shell, and Node warns (DEP0190) that args are
+  // concatenated rather than escaped when shell:true. Quote them ourselves and
+  // pass an empty args array so nothing is left for Node to concatenate.
+  const quoteForCmd = (value) => {
+    const text = String(value);
+    if (!/[\s"&|<>^]/.test(text)) return text;
+    return '"' + text.replace(/"/g, '""') + '"';
+  };
+
+  const command = needsShell && check.args.length
+    ? [check.command, ...check.args.map(quoteForCmd)].join(' ')
+    : check.command;
+  const commandArgs = needsShell && check.args.length ? [] : check.args;
+
   return new Promise((resolve) => {
     let settled = false;
     const done = (value) => { if (!settled) { settled = true; resolve(value); } };
@@ -140,8 +154,8 @@ function runCheck(check, opts = {}) {
 
     try {
       execFile(
-        check.command,
-        check.args,
+        command,
+        commandArgs,
         { cwd, timeout: timeoutMs, maxBuffer: 8 * 1024 * 1024, env: process.env, shell: needsShell },
         onResult
       );

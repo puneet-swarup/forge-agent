@@ -56,17 +56,12 @@ class ChatGPTAdapter extends BaseAdapter {
   }
 
   _getResponseSelectors() {
-    // ChatGPT no longer wraps replies in a "prose" class, so all three of the
-    // previous selectors matched nothing on a live run — even with a reply on
-    // screen. These come from a --diagnose dump of the real page, which showed
-    // the transcript inside .thread-scroll-container[role="region"].
+    // A live run showed the transcript container is NOT the reply: handing the
+    // whole container to the parser gives it "You said: … ChatGPT said: …" plus
+    // the timestamp and the disclaimer, which reads as prose and fails as a tool
+    // call. Containers are therefore resolved with _lastLeafWithin() in
+    // discoverLatestResponse below, which descends to the last message.
     return [
-      // From a live --diagnose dump: the transcript is
-      // <div class="… thread-scroll-container peer/transcript" role="region">.
-      // There is no data-message-author-role and no article element in the
-      // current build, so both of those matched nothing with a reply on screen.
-      '.thread-scroll-container',
-      '[role="region"].thread-scroll-container',
       '[data-message-author-role="assistant"]',
       '.thread-scroll-container [data-message-author-role="assistant"]',
       '[role="region"].thread-scroll-container article:last-of-type',
@@ -183,6 +178,25 @@ class ChatGPTAdapter extends BaseAdapter {
       }
     } catch (_) {
       // Fall through to null.
+    }
+
+    return null;
+  
+    // Transcript containers: descend to the last message inside them.
+    for (const selector of ['.thread-scroll-container', '[role="region"].thread-scroll-container', 'main']) {
+      try {
+        const container = this.page.locator(selector).last();
+        if (!(await container.count()) || !(await container.isVisible().catch(() => false))) continue;
+
+        const leaf = await this._lastLeafWithin(container);
+        const text = (await leaf.innerText().catch(() => '')).trim();
+        if (text && text.length > 1) {
+          logger.debug('[ChatGPT] Reply taken from the last leaf of ' + selector);
+          return leaf;
+        }
+      } catch (_) {
+        // Try the next container.
+      }
     }
 
     return null;

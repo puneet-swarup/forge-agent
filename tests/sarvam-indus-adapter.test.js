@@ -53,7 +53,7 @@ describe('Sarvam Indus adapter', () => {
   test('response detection has a structural fallback for utility-class markup', () => {
     const src = require('fs').readFileSync(
       require('path').join(__dirname, '..', 'src', 'adapters', 'sarvam-adapter.js'), 'utf8');
-    expect(src).toContain('Response container found structurally');
+    expect(src).toContain('Response taken from the last leaf of the transcript');
   });
 
   test('every selector list is non-empty and duplicate-free', () => {

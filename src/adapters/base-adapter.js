@@ -297,6 +297,43 @@ class BaseAdapter {
     }
   }
 
+  // ── Response extraction helpers ─────────────────────────────────────────
+
+  /**
+   * Descend to the last leaf inside a container.
+   *
+   * A transcript container holds the user's message, the assistant's reply, the
+   * timestamp and the disclaimer. Returning the container hands all of that to
+   * the parser as "the reply", which then looks like prose instead of a tool
+   * call. The reply is the deepest last element that still has text.
+   *
+   * @param {import('playwright').Locator} locator
+   * @returns {Promise<import('playwright').Locator>}
+   */
+  async _lastLeafWithin(locator) {
+    let current = locator;
+
+    for (let depth = 0; depth < 12; depth++) {
+      try {
+        const children = current.locator(':scope > *');
+        const count = await children.count();
+        if (count === 0) break;
+
+        const last = children.nth(count - 1);
+        if (!(await last.isVisible().catch(() => false))) break;
+
+        const text = (await last.innerText().catch(() => '')).trim();
+        if (!text) break;
+
+        current = last;
+      } catch (_) {
+        break;
+      }
+    }
+
+    return current;
+  }
+
   // ── Selector diagnostics ────────────────────────────────────────────────
 
   async testSelectors() {
