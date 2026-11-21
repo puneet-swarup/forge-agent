@@ -1,425 +1,225 @@
-# 🔨 Forge Agent
+# Forge Agent
 
-**Autonomous AI Coding Agent — No API Key Needed**
-
-Forge Agent drives DeepSeek, Gemini, Google, or Qwen through browser
-automation to code, test, and ship software — completely free.
-
-> **This repository is a fork of [Omar-Azam/forge-agent](https://github.com/Omar-Azam/forge-agent)**, substantially extended with session context, TODO automation, a multi-agent supervisor, and a full test/CI suite. Original project is MIT licensed.
-
-[![npm](https://img.shields.io/badge/npm-@puneet--swarup%2Fforge--agent-cb3837?logo=npm&style=flat)](https://www.npmjs.com/package/@puneet-swarup/forge-agent)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-2084%20passing-brightgreen)](#)
-[![Docker](https://img.shields.io/badge/docker-ghcr.io%2Fpuneet--swarup%2Fforge--agent-blue)](https://github.com/puneet-swarup/forge-agent/pkgs/container/forge-agent)
-
----
-
-## 💙 Sponsors
-
-Forge Agent is free and open source. If it saves you time:
-
-[![GitHub Sponsors](https://img.shields.io/badge/Sponsor-GitHub-ea4aaa?logo=github)](https://github.com/sponsors/puneet-swarup)
-[![Ko-fi](https://img.shields.io/badge/Support-Ko--fi-ff5e5b?logo=ko-fi)](https://ko-fi.com/puneetswarup)
-
----
-
-## Why Forge Agent?
-
-- **Free** — No API key. Uses DeepSeek, ChatGPT, or Gemini's free web UI.
-- **Autonomous** — Reads files, writes code, runs tests. Loops until done.
-- **Cross-platform** — Linux, macOS, Windows, and Docker.
-- **Battle-tested** — 40+ tools, 1774 tests across 90 suites, full docs, security audited.
-
----
-
-## Installation
+Forge Agent is an autonomous coding agent that drives web AI chat UIs — DeepSeek,
+Gemini, Qwen, ChatGPT and Google — through Playwright browser automation, with no
+API key and no LLM API: "the model" is a browser tab the agent types into and
+reads replies from. It ships the tools to read, write, run and verify code, and
+loops on a task until the work is finished, the project's own check passes, or a
+budget stops it.
 
 ```bash
-# npm (recommended)
+npm install -g @puneet-swarup/forge-agent
+forge-agent --setup                                   # one-time: config, browser, health check
+forge-agent "add a /health endpoint to the Express app in this repo"
+```
+
+That is the whole loop. The first run opens a browser window — sign in to the
+provider once and the profile persists in `~/.forge-agent`, so later runs start
+already authenticated.
+
+---
+
+## Quick start
+
+```bash
+# Install (Node >= 20)
 npm install -g @puneet-swarup/forge-agent
 
-# Docker (no Node.js required)
-docker pull ghcr.io/puneet-swarup/forge-agent:latest
+# First run: interactive setup wizard, then a health check
+forge-agent --setup
+forge-agent --doctor
+
+# One task, in the current directory
+forge-agent "convert the test suite from Mocha to Jest"
+
+# Multiple tasks with shared context
+forge-agent --interactive
+
+# Short alias, any of the above
+fa "add TypeScript to this project"
 ```
+
+Work in another directory with `--dir <path>`, pick a model with `--model`, and
+resume an interrupted run with `--resume`.
 
 ---
 
-## Quick Start
+## What makes this different
 
-```bash
-# First time setup
-forge-agent --setup
+Most agent failures are not model failures — they are boundary failures: a stale
+reply read as a new one, a file truncated mid-write, a "done" that was never
+tested. Forge Agent treats those as invariants with named enforcement points and
+tests. Each one is specified, with its enforcing module and its test, in
+[docs/RELIABILITY.md](docs/RELIABILITY.md).
 
-# Run a task
-forge-agent "build a REST API with Express and JWT auth"
+- **The turn boundary is measured** — a reply is accepted only after the
+  transcript has changed since the message was sent, so the previous answer can
+  never be returned as this one ([§1](docs/RELIABILITY.md#1-the-turn-boundary-is-measured)).
+- **There is exactly one system prompt**, and it is the one the agent actually
+  sends ([§2](docs/RELIABILITY.md#2-one-contract-and-the-model-is-told-it)).
+- **A stalled chat restarts with its contract** — system prompt, task, plan,
+  progress and recent errors are re-sent rather than the run being abandoned
+  ([§3](docs/RELIABILITY.md#3-a-stalled-chat-restarts-with-its-contract)).
+- **Secrets are redacted before egress** — high-confidence key shapes are masked
+  on both paths that send tool output to the chat UI
+  ([§4](docs/RELIABILITY.md#4-nothing-secret-leaves-the-machine-unredacted)).
+- **Writes are atomic, reversible and guarded** — temp-file plus `rename`, a
+  pre-image snapshot, read-before-write by content hash, and a diff in every
+  result ([§5](docs/RELIABILITY.md#5-writes-are-atomic-reversible-and-guarded)).
+- **Runs are bounded** by step, wall-clock and tool-call budgets that end the run
+  with a partial summary instead of a hang
+  ([§6](docs/RELIABILITY.md#6-runs-are-bounded)).
+- **Prose is not a program** — only a well-formed call to a registered tool
+  executes, never an illustration or a code sample
+  ([§7](docs/RELIABILITY.md#7-prose-is-not-a-program)).
+- **Session context is durable and re-fed** through a gitignored
+  `SESSION_CONTEXT.md` that survives a chat restart
+  ([§8](docs/RELIABILITY.md#8-session-context-is-durable-and-re-fed)).
+- **Throttling is handled when it happens**, backing off only on the provider's
+  own signal instead of paying a fixed pause per prompt
+  ([§9](docs/RELIABILITY.md#9-throttling-is-handled-when-it-happens)).
+- **Tool arguments are integrity-checked** — a payload carrying a hash is
+  verified before use, and a mismatch writes nothing
+  ([§10](docs/RELIABILITY.md#10-arguments-are-integrity-checked)).
+- **Completion is verified** — `TASK_COMPLETE` is refused when the project's own
+  typecheck, lint or test script fails
+  ([§11](docs/RELIABILITY.md#11-completion-is-verified)).
+- **The shell is governed** by an allow/confirm/deny policy evaluated over the
+  whole command line, with a scrubbed child environment
+  ([§12](docs/RELIABILITY.md#12-the-shell-is-governed)).
+- **The remote context is rotated on the agent's own schedule**, re-sending the
+  contract and a state digest before the provider can truncate it
+  ([§13](docs/RELIABILITY.md#13-the-remote-context-is-rotated-on-our-terms)).
+- **The plan is gated at both ends** — `FORGE_PLAN.md` must exist before the
+  first mutating tool and be fully ticked before completion
+  ([§14](docs/RELIABILITY.md#14-the-plan-is-gated-at-both-ends)).
 
-# Interactive mode — multiple tasks, shared context
-forge-agent --interactive
-
-# Short alias
-fa "add TypeScript to this project"
-```
+The same document ends with an honest list of what is *not* closed yet.
 
 ---
 
 ## Features
 
-| Feature | Description |
-|---|---|
-| 🌐 Browser Automation | Drives DeepSeek, Gemini, Google, Qwen — no API key |
-| 🎯 Measured turn boundary | Completion comes from a transcript baseline + the response envelope, not a 1.5 s guess |
-| 🛟 Reversible writes | Atomic writes, per-session snapshots, read-before-write, diff in every result |
-| ⛽ Run budgets | Step, wall-clock and tool-call limits are enforced (`--max-iterations`, `--max-runtime`) |
-| 🔧 37+ Built-in Tools | File I/O, git, shell, search, tests, packages, diff, env, processes |
-| 💾 Persistent Memory | Remembers project tech stack and past tasks |
-| 🎭 Agent Profiles | default, backend, frontend, data-science, devops |
-| 📋 Task Templates | 10 built-in templates — add TypeScript, Jest, Docker in one command |
-| 🔄 Session Resume | Continue tasks that stopped halfway |
-| 👁 Watch Mode | Auto re-run on file changes |
-| 🔌 Custom Plugins | Drop a .js file to add any tool |
-| 🔒 Security Sandbox | Blocks SSH keys, credentials, path traversal |
-| 🐳 Docker Ready | Official image, no local Node.js setup needed |
-| ⚡ Smart Caching | Skips repeated read-only tool calls |
-| ⏸ Anti-Block Pause | Off by default. Rate limiting is handled reactively — back off 5s→60s only when the provider says so (`--prompt-pause` restores the old fixed 10-20s pause) |
-| 🗜 Context Compression | Auto-compresses long conversations |
-| 📝 Session Context | Durable, gitignored SESSION_CONTEXT.md survives compaction |
-| ✅ TODO Auto-Run | --auto works through FORGE_TODO.md unattended |
-| 🤖 Agent Supervisor | Spawn, monitor, and stop child agents |
-| 📊 Benchmarks | Measure and compare performance |
-
----
-
-## Local & Self-Hosted Models
-
-Forge Agent can talk to models you run yourself instead of (or alongside)
-the browser-driven public UIs. Three adapters cover the self-hosted cases:
-
-| Flag | Adapter | Use when | Endpoint |
-|---|---|---|---|
-| `--model=ollama` | ollama-adapter | Ollama installed on this machine | `http://localhost:11434` |
-| `--model=colab` | colab-adapter | Remote Colab/ngrok tunnel | your tunnel URL |
-| `--model=local` | local-chat-adapter | Any OpenAI-compatible endpoint | `OLLAMA_BASE_URL` |
-
-**Using a locally installed model (e.g. Ollama):**
-
-```bash
-ollama serve                 # start the daemon (listens on :11434)
-ollama pull deepseek-r1:8b   # install a model
-forge-agent --model=ollama --local-model deepseek-r1:8b "your task"
-```
-
-No tunnel or API key required — the adapter talks straight to the daemon.
-
-**Using a remote Colab / ngrok tunnel:**
-
-```bash
-forge-agent --model=colab \
-  --model-url https://your-tunnel.ngrok-free.dev \
-  --api-key "$COLAB_API_KEY" "your task"
-```
-
-Or put the values in a gitignored `.env` (see `.env.example`):
-
-```dotenv
-OLLAMA_BASE_URL=https://your-tunnel.ngrok-free.dev
-OLLAMA_API_KEY=your-key
-OLLAMA_MODEL=deepseek-r1-16k:latest
-```
-
-Then simply: `forge-agent --model=colab "your task"`.
-
-Configuration precedence: CLI flags > environment variables > `.env` file >
-`forge-agent.config.json` > built-in defaults. Secrets are never hard-coded.
-
----
-
-## Built-in Tools (37+)
-
-**File:** read_file · write_file · append_to_file · replace_in_file · delete_file · move_file · copy_file · create_directory · list_directory · get_file_info · write_files
-
-**Search:** search_in_files · search_codebase · find_files
-
-**Shell:** run_command · start_process · stop_process · list_processes · read_process_logs
-
-**Git:** git_status · git_log · git_diff · git_branches · git_show · git_blame
-
-**Dev:** run_tests · install_package · diff_files · patch_file
-
-**Env:** read_env · set_env_var · delete_env_var · list_env_files · check_env_vars
-
-**System:** take_screenshot · read_clipboard · write_clipboard
-
-**Audio:** call_user · raise_alarm (cross-platform TTS & alarms — Windows/macOS/Linux, with terminal-bell fallback)
-
----
-
-## Agent Profiles
-
-```bash
-forge-agent --profile=backend      # Node.js, Python, Go, REST APIs
-forge-agent --profile=frontend     # React, Vue, HTML/CSS
-forge-agent --profile=data-science # Python, pandas, ML
-forge-agent --profile=devops       # Docker, CI/CD, shell scripts
-```
-
----
-
-## Task Templates
-
-```bash
-forge-agent --template=add-typescript    # Add TypeScript to any JS project
-forge-agent --template=add-jest          # Set up Jest testing
-forge-agent --template=add-docker        # Dockerfile + docker-compose
-forge-agent --template=add-github-actions # CI/CD pipeline
-forge-agent --template=fix-tests         # Run and fix all failing tests
-forge-agent --template=code-review       # Comprehensive code review
-forge-agent --list-templates             # See all 10 templates
-```
-
----
-
-## Session Resume
-
-```bash
-forge-agent --history         # Browse past tasks
-forge-agent --resume          # Pick and resume a past task
-forge-agent --resume=last     # Resume most recent task immediately
-forge-agent --rerun           # Re-run most recent task fresh
-forge-agent --auto            # run open FORGE_TODO.md items unattended
-forge-agent --resume-work     # force the resume path for pending work
-```
-
----
-
-## Session Context & TODO
-
-Forge keeps a durable, gitignored SESSION_CONTEXT.md at the project root
-recording the goal, decisions, progress and current git state of a run. It
-survives model context compaction, so it can be re-fed after the model forgets
-earlier turns. Created at session start, removed at session end.
-
-FORGE_TODO.md is a persistent, human-authored task list. --auto loops through
-all its open items top-to-bottom in a single run, ticking each [ ] to [x] on
-success, and halts on the first failure. Auto mode applies to FORGE_TODO.md only
-- a SESSION_CONTEXT.md is always advisory and never auto-acted on.
-
-Interactive commands: /context (show|clear|seed) and
-/todo (add <text> | done <n> | clear-done).
-
-Multi-Agent (Supervisor Mode): a supervisor can spawn_agent, list_agents,
-read_agent_task, and kill_agent. Each child runs in its OWN terminal window with
-its own --session (own Chromium profile) and its OWN per-instance SESSION_TASK.md
-(inside its session dir, never shared with siblings). The supervisor tracks each
-child by heartbeat (running / unresponsive / dead), reads its subtask progress
-with read_agent_task, and stops it gracefully (then force) with kill_agent; dead
-children's artifacts are cleaned up automatically. See docs/SPAWN_PROTOCOL.md
-(§10 has a full worked example). Children coordinate via files + registry, never the browser.
-share files, never the browser.
-
----
-
-## Mandatory Artifacts Protocol (enforced)
-
-Every Forge project has a fixed set of markdown artifacts. Each artifact has
-exactly **one owner, one purpose, and one phase** in the task lifecycle. The
-contract lives in `src/lifecycle.js` and is enforced by the agent loop
-(`src/lifecycle-gate.js`): a mutating tool is refused until `FORGE_PLAN.md`
-exists, and `TASK_COMPLETE` is refused while it has unchecked steps. The same
-table is rendered into the agent system prompt so the rules and docs cannot
-drift.
-
-| Artifact | Owner | Purpose | Phase |
-| --- | --- | --- | --- |
-| `FORGE_PLAN.md` | agent | Step-by-step plan for the current task | Created at task start → ticked per step → deleted at sign-off |
-| `FORGE_TODO.md` | human | Durable backlog across sessions | Ongoing; agent may tick items but never adds ideas |
-| `SESSION_CONTEXT.md` | framework | Ephemeral working memory (task, progress, state) | Ongoing; auto-generated, never hand-edited |
-| `PENDING_WORK.md` | human | Narrative backlog of deferred decisions | Ongoing; read-only for the agent |
-| `ARCHITECTURE.md` | agent | As-built map of the system | Updated only when a module boundary or tool protocol changes |
-
-### Lifecycle
-
-1. **Task start** — before the first write/edit/command of a multi-step task the
-   agent must create `FORGE_PLAN.md` with `- [ ]` checkbox steps. Enforced by
-   `node scripts/lifecycle.js check-start` (missing plan = violation).
-2. **Per step** — after a step is verified the agent ticks it (`- [x]`) before
-   moving on. Do not batch ticks at the end.
-3. **Sign-off** — `TASK_COMPLETE` is rejected while `FORGE_PLAN.md` still has
-   unchecked steps. Enforced by `node scripts/lifecycle.js check-end`.
-4. **Cleanup** — delete `FORGE_PLAN.md` only after the user confirms; a finished
-   plan is not left lying around to be mistaken for live work.
-
-### Tooling
-
-```bash
-node scripts/plan.js status            # n/m done + progress bar
-node scripts/plan.js list              # numbered items
-node scripts/plan.js tick 3            # mark item 3 done
-node scripts/plan.js next              # first open item
-node scripts/lifecycle.js list         # print the artifact contract
-node scripts/lifecycle.js check-start  # task-start gate
-node scripts/lifecycle.js check-end    # TASK_COMPLETE gate
-node scripts/verify-prompt.js          # assert the prompt contains the protocol
-```
-## Docker
-
-```bash
-# Single task
-docker run --rm -v "$(pwd):/workspace" --network host \
-  ghcr.io/puneet-swarup/forge-agent "build a REST API"
-
-# Interactive
-docker run --rm -it -v "$(pwd):/workspace" --network host \
-  ghcr.io/puneet-swarup/forge-agent --interactive
-
-# With Make
-make run TASK="build a REST API"
-make interactive
-```
-
----
-
-## Custom Plugins
-
-```js
-// ~/.deepseek-agent/tools/fetch_weather.js
-module.exports = {
-  name: 'fetch_weather',
-  description: 'Get current weather for a city',
-  parameters: { city: { type: 'string', required: true } },
-  async execute({ city }) {
-    const https = require('https');
-    return new Promise((res, rej) => {
-      https.get(`https://wttr.in/${city}?format=3`, r => {
-        let d = ''; r.on('data', c => d += c); r.on('end', () => res(d));
-      }).on('error', rej);
-    });
-  },
-};
-```
-
-```bash
-forge-agent --list-plugins       # see all loaded plugins
-forge-agent --new-plugin my_tool # generate a stub
-```
-
----
-
-## CLI Reference (key flags)
-
-```
-forge-agent [OPTIONS] [TASK]
-
-Core:      --interactive -i  --dir  --model  --profile  --plan  --think
-Sessions:  --resume  --rerun  --history  --no-memory  --session  --session-dir
-TODO:      --auto  --resume-work
-Supervisor: spawn_agent  list_agents  read_agent_task  kill_agent  (tools)
-Templates: --template  --list-templates  --save-template
-Output:    --format  --output  --no-tui  --compact
-Watch:     --watch  --watch-pattern  --watch-debounce
-Budget:    --max-iterations  --max-runtime  --max-tool-calls
-Recovery:  --snapshots  --rollback <path>
-Performance: --timeout  --no-timeout  --no-prompt-pause
-Plugins:   --list-plugins  --new-plugin
-Config:    --setup  --config-path
-Debug:     --debug  --headless  --diagnostics  --security
-Help:      --help  --help=<topic>  --cheatsheet  --man
-```
-
-Full reference: `forge-agent --help` or [docs/cli-reference.html](docs/cli-reference.html)
+| Area | What you get |
+| --- | --- |
+| **Models** | `deepseek` (default), `gemini`, `qwen`, `chatgpt`, `google`, plus `local`, `ollama` and `colab` endpoints — switch with `--model` |
+| **Tools** | 45 registered tools (the 2.0 release documented 37+): file read/write/replace/delete, directory and search, `run_command`, git (status, log, diff, blame, branches, show), tests, packages, env files, processes, child agents, clipboard, screenshots |
+| **Profiles** | `default`, `backend`, `frontend`, `data-science`, `devops` — `--profile`, or `--custom-profile=<file>` for your own JSON |
+| **Sessions** | Named sessions with their own browser profile and login (`--session`, `--session auto`), instance listing (`ps` / `--ps`), resume and history (`--resume`, `--continue`, `--history`), per-run summaries (`--summary`) |
+| **Budget** | Enforced step, wall-clock and tool-call limits — `--max-iterations` (default 100), `--max-runtime` (`90`, `30s`, `90m`, `2h`), `--max-tool-calls` |
+| **Snapshots** | Pre-session snapshots of every file the agent mutates — list with `--snapshots`, restore one file with `--rollback=<path>` |
+| **Templates** | 10 built-in task templates (`add-typescript`, `add-jest`, `add-docker`, `add-github-actions`, `add-eslint`, `add-env-setup`, `write-readme`, `add-auth`, `fix-tests`, `code-review`) |
+| **Examples** | 10 runnable example projects (`--examples`) |
+| **Memory** | Project tech stack and past tasks remembered per working directory (`--clear-memory`, `--no-memory`) |
+| **Unattended runs** | `--auto` works through `FORGE_TODO.md`; `--parallel` runs open items across child agents; `--watch` re-runs on file change |
+| **Output** | `--format` (`text`, `markdown`, `json`, `json-raw`, `minimal`, `silent`), `--output=<file>`, `--json`, `--no-tui`, `--compact` |
+| **Security** | `--security` shows the posture, `--strict-sandbox` confines file access to the working directory, `--audit-log` appends every tool call to a log |
+| **Docker** | `Dockerfile`, `docker-compose.yml`, and a published image for hosts without Node.js |
+| **Loom (in progress)** | Persistent project index. **Slice 1 of 5 is done — storage only** (config, paths, hashing, ignore rules, schema, SQLite/JSON driver). Extractors, indexer, digest and agent-loop integration are not started, and nothing in the loop uses it yet: see [docs/LOOM.md](docs/LOOM.md) |
 
 ---
 
 ## Configuration
 
+Defaults live in `src/config.js`. Override them, in increasing priority, with a
+`forge-agent.config.json` in the working directory, environment variables, or
+CLI flags.
+
 ```json
-// ~/.forge-agent/config.json
 {
-  "MODEL": "deepseek",
+  "HEADLESS": false,
   "MAX_ITERATIONS": 100,
   "RESPONSE_TIMEOUT": 600000,
-  "ACTIVE_PROFILE": "default",
-  "MEMORY_ENABLED": true,
-  "CACHE_ENABLED": true
+  "STABLE_DELAY": 1500,
+  "MAX_OUTPUT_LENGTH": 8000,
+  "DEBUG": false
 }
 ```
 
-Run `forge-agent --setup` for guided configuration.
+Settings worth knowing:
+
+| Key | Default | Effect |
+| --- | --- | --- |
+| `RESPONSE_TIMEOUT` | `600000` | Total wait for one reply, in ms (`--timeout`, `--no-timeout`) |
+| `MAX_ITERATIONS` | `100` | Loop iterations per run (`--max-iterations`) |
+| `MAX_RUNTIME_MS` | `0` (off) | Wall-clock limit (`--max-runtime`) |
+| `MAX_TOOL_CALLS` | `0` (off) | Executed tool calls per run (`--max-tool-calls`) |
+| `CONTEXT_ROTATION_TURNS` | `25` | Assistant turns between planned chat rotations; `0` disables |
+| `PROMPT_PAUSE` | `false` | The old fixed 10–20 s pause before each prompt; `--prompt-pause` turns it on |
+| `PLAN_GATE` | `true` | `FORGE_PLAN.md` gating at start and completion |
+| `SHELL_POLICY` | `standard` | `strict` denies unknown binaries, `off` steps aside |
+| `MAX_VERIFICATION_ATTEMPTS` | `2` | Tries at the project's own check before the gate steps aside |
+| `VERIFY_TIMEOUT_MS` | `120000` | Timeout for that check |
+| `LOOM_ENABLED` | — | `0` is a hard kill switch for the Loom index (no I/O) |
+
+For `--model=ollama` and `--model=colab`, copy `.env.example` to `.env` and set
+the endpoint, token and model name. `--model-url`, `--api-key` and
+`--local-model` do the same per run.
+
+### Most useful flags
+
+```bash
+forge-agent --interactive                  # multiple tasks, shared context
+forge-agent --model=gemini "task"          # switch provider
+forge-agent --profile=backend "task"       # backend conventions
+forge-agent --session auto                 # isolated browser profile + login
+forge-agent --resume=last                  # pick up the last task
+forge-agent --plan "task"                  # show the plan before acting
+forge-agent --max-iterations=200 --max-runtime=90 "task"
+forge-agent --snapshots                    # what can be rolled back
+forge-agent --rollback=src/a.js            # restore one file
+forge-agent --no-interactive               # never prompt (CI)
+forge-agent --format=json --output=run.json "task"
+forge-agent --doctor                       # Node, Chromium, config, login
+```
+
+`forge-agent --help` prints every flag; `forge-agent --help=<topic>` covers
+`getting-started`, `profiles`, `templates`, `plugins`, `watch`, `performance`,
+`security`, `models` and `resume`; `forge-agent --cheatsheet` is the one-page
+version.
 
 ---
 
-## Key Stats — v2.2.0
+## Requirements and supported platforms
 
-- 🔧 **45 tools** built in (incl. adapter-agnostic uploads)
-- 🧪 **2084 tests** across 116 suites — all green
-- 🛟 **Reversible by default** — atomic writes, snapshots, `--rollback`
-- 📁 **13 docs pages** including full CLI reference
-- 📋 **10 task templates** built in
-- 💡 **10 example projects** in gallery
-- ⚙️ **40+ CLI flags**
-- 🐳 **Docker image** published
-- 🔒 **Security audited** with path sandbox
-- 🎯 **Typecheck** clean (`npm run typecheck`)
-- 🧩 **Adapters**: DeepSeek, Gemini, Google, Qwen (ChatGPT gated)
+- **Node.js >= 20** (enforced in `package.json` and checked by `--doctor`).
+- **Playwright with Chromium** — installed with the package; if Chromium is
+  missing, run `npx playwright install chromium`.
+- **A browser you can log in to** — a free account with the chosen provider. No
+  API key is needed for the browser-driven models.
+- **A terminal** and a directory the agent may write to.
+
+Supported platforms: **Linux, macOS and Windows** (POSIX and Windows paths are
+handled throughout, and `install.sh` / `install.bat` are both shipped), plus
+**Docker** via the included `Dockerfile` and `docker-compose.yml`.
 
 ---
-
-## Reliability
-
-What the agent guarantees, where each guarantee is enforced and which test proves
-it: **[docs/RELIABILITY.md](docs/RELIABILITY.md)**. Short version:
-
-| Guarantee | How |
-| --- | --- |
-| The reply you get is the new one | Transcript baselined before sending; a dropped submit fails loudly instead of replaying the last answer |
-| One contract | One system prompt, validated by `node scripts/verify-prompt.js` against the message the agent actually sends |
-| A stall restarts with its contract | Recovery re-sends the prompt, plan, progress and recent errors (bounded to `MAX_CHAT_RECOVERIES`) |
-| Writes are safe | Atomic, snapshotted, read-before-write, diff returned; `forge-agent --rollback <path>` |
-| Runs are bounded | `--max-iterations` (100), `--max-runtime` (`2h`), `--max-tool-calls` |
-| Prose is not a program | A fenced example or an unregistered tool name never executes; typos get a one-line suggestion |
-| Secrets stay put | Tool output is redacted before it is sent to the chat UI |
 
 ## Documentation
 
-Full documentation: [https://puneet-swarup.github.io/forge-agent](https://puneet-swarup.github.io/forge-agent)
+| Document | What it covers |
+| --- | --- |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | How it is actually implemented: the layer map, the agent loop, the protocol seam, the tool registry, adapters, and known pitfalls |
+| [docs/RELIABILITY.md](docs/RELIABILITY.md) | Every runtime invariant with its enforcing module, its test, and the list of guarantees still missing |
+| [NEXT_SESSION.md](NEXT_SESSION.md) | Workstreams, their verified status, and the coordination rules for more than one worker in the repo |
+| [docs/LOOM.md](docs/LOOM.md) | Loom's slice plan and exactly what slice 1 provides today |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Setup for contributors, coding conventions, tests, and the PR process |
+| [docs/](docs/index.html) | The HTML documentation site: getting started, tools, CLI reference, profiles, templates, plugins, configuration, examples |
+| [CHANGELOG.md](CHANGELOG.md) | Release history, including what each reliability pass changed |
 
-- [**Complete User Guide**](USER_GUIDE.md) - every feature with copy-paste examples
-- [**Testing Guide**](TESTING_PHASE1-4.md) - verify each feature by hand
-- [**Reliability invariants**](docs/RELIABILITY.md) - what is guaranteed, and what is not
-- [Getting Started](docs/getting-started.html)
-- [All Tools](docs/tools.html)
-- [CLI Reference](docs/cli-reference.html)
-- [Agent Profiles](docs/profiles.html)
-- [Task Templates](docs/templates.html)
-- [Custom Plugins](docs/plugins.html)
-- [Docker Guide](docs/docker.html)
-- [Configuration](docs/configuration.html)
-- [Security](docs/security.html)
-- [Examples Gallery](docs/examples.html)
-
----
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup,
-code style, and how to add new tools.
-
-All contributions welcome: new tools, bug fixes, docs improvements,
-new templates, plugin examples.
+Run the suite with `npm test`. At the time of writing it is **131 suites /
+2,504 tests — 2,485 passing, 19 skipped**, all green. The 19 skips are the
+browser suites, which skip wherever Chromium cannot launch and run in CI. The
+other gates are `npm run typecheck` (clean) and `node scripts/verify-prompt.js`
+(the prompt the agent actually sends, 19 checks).
 
 ---
 
-## Support This Project
+## Credits
 
-Forge Agent is free and open source. If it saves you time:
-
-- ⭐ **Star the repo** — helps others discover it
-- 💰 **[Sponsor development](https://github.com/sponsors/puneet-swarup)**
-- 📢 **Share it** — post about it, tell your team
-- 🐛 **Report bugs** — good reports make it better
-- 📝 **Improve docs** — any PR helps
-
----
-
-## License
-
-MIT — see [LICENSE](LICENSE)
+MIT licensed — see [LICENSE](LICENSE). Forge Agent was originally created by
+[Omar Azam](https://github.com/Omar-Azam/forge-agent) and this repository began
+as a fork of that project. It has since been substantially extended here: the
+reliability pass described in [docs/RELIABILITY.md](docs/RELIABILITY.md), the
+Loom project index (in progress), session isolation and resume, the agent
+supervisor, and the CI/CD pipeline.
