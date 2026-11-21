@@ -1,110 +1,236 @@
 'use strict';
-// src/loom/extract/py.js — Python symbols and imports.
+// src/loom/extract/py.js — Python structure.
 //
-// Spec: src/loom_specs.md §4.5. Python has no braces, so a block ends at the
-// first following non-blank line indented at or left of the declaration.
+// Spec: src/loom_specs.md §4.5. Produces what a digest needs and nothing more:
+// the module's defs and classes with an approximate body range, its imports,
+// and one line saying what the file is for.
 //
-// Known limitation, recorded rather than hidden: the scan is line-based, so a
-// triple-quoted string that contains a line starting at column 0 ends a block
-// early, and a `#` comment at column 0 inside a function body does the same.
-// The range is then short, never wrong in a way that points at another file's
-// content — the digest only ever uses ranges from the same file.
+// Python has no braces, so a block ends where the indentation drops back to the
+// `def`'s own level. Two wrinkles the naive "next line at indent ≤ n" rule gets
+// wrong, and which this module handles:
+//
+//   * blank lines inside a body do not end it;
+//   * a triple-quoted string may contain lines at column 0, so the scan skips
+//     anything that is still inside a docstring.
+//
+// Ranges stay approximate (spec §8.3 footer: always read before editing), and
+// the module never throws — a file we cannot understand yields no symbols and
+// the indexer keeps going.
 
-const {
-  countLines,
-  indentOf,
-  precedingHashComment,
-} = require('./blocks');
+const EXTENSIONS = Object.freeze({ '.py': 'py' });
+
+const MAX_SIGNATURE = 200;
+const MAX_DOC = 160;
+const MAX_SUMMARY = 240;
+const DOCSTRING_LOOKAHEAD = 3;
 
 const DEF_RE = /^([ \t]*)(?:async[ \t]+)?def[ \t]+(\w+)/;
 const CLASS_RE = /^([ \t]*)class[ \t]+(\w+)/;
 const FROM_RE = /^[ \t]*from[ \t]+([\w.]+)[ \t]+import\b/;
-const IMPORT_RE = /^[ \t]*import[ \t]+([\w.]+(?:[ \t]*,[ \t]*[\w.]+)*)/;
+const IMPORT_RE = /^[ \t]*import[ \t]+([\w.]+)/;
+const TRIPLE_QUOTES = ['"""', "'''"];
+
+/** Collapse whitespace and truncate at a word boundary. */
+function clip(value, max) {
+  const text = String(value == null ? '' : value).replace(/\s+/g, ' ').trim();
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max);
+  const space = cut.lastIndexOf(' ');
+  return `${(space > max * 0.6 ? cut.slice(0, space) : cut).trim()}…`;
+}
+
+/** First sentence of a comment or docstring body, ≤160 chars. */
+function firstSentence(body) {
+  const text = String(body || '').replace(/\s+/g, ' ').trim();
+  if (!text) return '';
+  const match = text.match(/^(.*?[.!?])(\s|$)/);
+  return clip(match ? match[1] : text, MAX_DOC);
+}
+
+/** Visual indent, with tabs counted as four columns. */
+function indentOf(line) {
+  const lead = (line.match(/^[ \t]*/) || [''])[0];
+  return lead.replace(/\t/g, '    ').length;
+}
 
 /**
- * Line number of the last line of the block opened at 0-based index `index`.
- * A declaration with no body (a `def` line alone) still returns its own line.
+ * Track whether a line leaves us inside a triple-quoted string.
+ * @param {string} line
+ * @param {string|null} state open delimiter, or null
+ * @returns {string|null}
  */
-function indentationBlockEnd(lines, index, indent) {
-  let last = index;
-  for (let i = index + 1; i < lines.length; i++) {
-    const line = lines[i];
-    if (!line.trim()) continue;
-    if (indentOf(line) <= indent) return last + 1; // 1-based line of the last content line
-    last = i;
+function stringState(line, state) {
+  if (state) return line.includes(state) ? null : state;
+  for (const delim of TRIPLE_QUOTES) {
+    const at = line.indexOf(delim);
+    if (at < 0) continue;
+    return line.slice(at + 3).includes(delim) ? null : delim;
   }
-  return lines.length;
+  return null;
 }
 
-function extract(text, relPath = '') { // eslint-disable-line no-unused-vars
-  const src = String(text == null ? '' : text);
-  const loc = countLines(src);
-  const lines = src.split(/\r?\n/);
+/**
+ * Last line of the block that starts at `startLine` with `indent`.
+ * Spec §4.5: first subsequent non-blank line whose indent is ≤ the def's.
+ * Trailing blank lines are not part of the block, so the range ends at the last
+ * line that actually had content.
+ */
+function blockEnd(lines, startLine, indent) {
+  let state = null;
+  let last = startLine;
+  for (let n = startLine + 1; n <= lines.length; n += 1) {
+    const raw = lines[n - 1] || '';
+    const wasInside = state !== null;
+    state = stringState(raw, state);
+    if (wasInside) continue;
+    if (raw.trim() === '') continue;
+    if (indentOf(raw) <= indent) return Math.max(startLine, last);
+    last = n;
+  }
+  return Math.max(startLine, last);
+}
+
+/** Docstring from the body, else the `#` comment above the declaration. */
+function docFor(lines, startLine, endLine) {
+  const stop = Math.min(endLine, startLine + DOCSTRING_LOOKAHEAD);
+  for (let n = startLine + 1; n <= stop; n += 1) {
+    const text = (lines[n - 1] || '').trim();
+    if (text === '') continue;
+    const match = text.match(/^("""|''')([\s\S]*)$/);
+    if (!match) break;
+    const delim = match[1];
+    let body = match[2];
+    if (body.includes(delim)) {
+      body = body.slice(0, body.indexOf(delim));
+    } else {
+      for (let k = n + 1; k <= Math.min(endLine, n + 10); k += 1) {
+        const line = lines[k - 1] || '';
+        if (line.includes(delim)) {
+          body += ` ${line.slice(0, line.indexOf(delim))}`;
+          break;
+        }
+        body += ` ${line}`;
+      }
+    }
+    return firstSentence(body);
+  }
+
+  const collected = [];
+  for (let n = startLine - 1; n >= 1 && collected.length < 3; n -= 1) {
+    const text = (lines[n - 1] || '').trim();
+    if (text === '') break;
+    if (text.startsWith('@')) continue; // decorator: the comment is above it
+    if (!text.startsWith('#')) break;
+    collected.unshift(text.replace(/^#+\s?/, ''));
+  }
+  return collected.length > 0 ? firstSentence(collected.join(' ')) : '';
+}
+
+/** Module docstring, for the one-line summary. */
+function moduleDoc(lines) {
+  for (let n = 1; n <= Math.min(lines.length, 12); n += 1) {
+    const text = (lines[n - 1] || '').trim();
+    if (text === '' || text.startsWith('#!') || text.startsWith('#')) continue;
+    const match = text.match(/^("""|''')([\s\S]*)$/);
+    if (!match) return '';
+    const delim = match[1];
+    let body = match[2];
+    if (body.includes(delim)) return firstSentence(body.slice(0, body.indexOf(delim)));
+    for (let k = n + 1; k <= Math.min(lines.length, n + 10); k += 1) {
+      const line = lines[k - 1] || '';
+      if (line.includes(delim)) {
+        body += ` ${line.slice(0, line.indexOf(delim))}`;
+        return firstSentence(body);
+      }
+      body += ` ${line}`;
+    }
+    return firstSentence(body);
+  }
+  return '';
+}
+
+/** One line: the module docstring, else the public surface. */
+function buildSummary(symbols, doc) {
+  if (doc) return clip(doc, MAX_SUMMARY);
+  const names = symbols.filter((s) => s.exported).slice(0, 6).map((s) => s.name);
+  if (names.length > 0) return clip(`Defines: ${names.join(', ')}.`, MAX_SUMMARY);
+  if (symbols.length > 0) return clip(`Defines: ${symbols.slice(0, 6).map((s) => s.name).join(', ')}.`, MAX_SUMMARY);
+  return '';
+}
+
+/**
+ * Extract structure from a Python file. Never throws.
+ *
+ * @param {string} text
+ * @param {string} [relPath]
+ * @returns {{ symbols: object[], imports: object[], summary: string, partial: boolean }}
+ */
+function extract(text, relPath) {
+  const source = typeof text === 'string' ? text : '';
+  const lines = source.split('\n');
   const symbols = [];
   const imports = [];
+  const seenImports = new Set();
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (!line.trim() || /^[ \t]*#/.test(line)) continue;
+  for (let n = 1; n <= lines.length; n += 1) {
+    const line = lines[n - 1] || '';
 
-    let match = CLASS_RE.exec(line);
-    let kind = 'class';
-    if (!match) {
-      match = DEF_RE.exec(line);
-      kind = 'function';
+    const def = line.match(DEF_RE);
+    const cls = def ? null : line.match(CLASS_RE);
+    const match = def || cls;
+    if (match) {
+      const indent = indentOf(match[1] || '');
+      const name = match[2];
+      const end = blockEnd(lines, n, indent);
+      symbols.push({
+        name,
+        kind: def ? 'function' : 'class',
+        line_start: n,
+        line_end: end,
+        signature: clip(line.trim(), MAX_SIGNATURE),
+        // Python has no export keyword: a public name is one without the
+        // conventional leading underscore.
+        exported: name.startsWith('_') ? 0 : 1,
+        parent: '',
+        doc: docFor(lines, n, end),
+        confidence: 0.95,
+      });
     }
-    if (!match) continue;
 
-    const indent = match[1].length;
-    const lineStart = i + 1;
-    const lineEnd = Math.max(lineStart, Math.min(indentationBlockEnd(lines, i, indent), loc || lineStart));
-
-    symbols.push({
-      name: match[2],
-      kind,
-      line_start: lineStart,
-      line_end: lineEnd,
-      signature: line.trim().slice(0, 200),
-      exported: 0,
-      parent: '',
-      doc: precedingHashComment(src, lineStart),
-      confidence: 0.95,
-    });
+    const from = line.match(FROM_RE);
+    if (from && !seenImports.has(`from:${from[1]}`)) {
+      seenImports.add(`from:${from[1]}`);
+      imports.push({ specifier: from[1], kind: 'from' });
+    }
+    const plain = line.match(IMPORT_RE);
+    if (plain && !seenImports.has(`import:${plain[1]}`)) {
+      seenImports.add(`import:${plain[1]}`);
+      imports.push({ specifier: plain[1], kind: 'import' });
+    }
   }
 
-  // A `def` inside a class is a method of it.
+  // Classes own their methods: set the parent from the line ranges we just
+  // measured, innermost class wins.
   const classes = symbols.filter((s) => s.kind === 'class');
   for (const symbol of symbols) {
-    if (symbol.kind !== 'function') continue;
+    if (symbol.kind === 'class') continue;
     let best = null;
-    for (const klass of classes) {
-      if (klass.line_start < symbol.line_start && symbol.line_start <= klass.line_end) {
-        if (!best || klass.line_start > best.line_start) best = klass;
+    for (const candidate of classes) {
+      if (symbol.line_start > candidate.line_start && symbol.line_start <= candidate.line_end) {
+        if (!best || candidate.line_end - candidate.line_start < best.line_end - best.line_start) {
+          best = candidate;
+        }
       }
     }
-    if (best) {
-      symbol.kind = 'method';
-      symbol.parent = best.name;
-    }
+    if (best) symbol.parent = best.name;
   }
 
-  for (const line of lines) {
-    const from = FROM_RE.exec(line);
-    if (from) {
-      imports.push({ specifier: from[1], kind: 'from' });
-      continue;
-    }
-    const plain = IMPORT_RE.exec(line);
-    if (plain) {
-      for (const part of plain[1].split(',')) {
-        const specifier = part.trim();
-        if (specifier) imports.push({ specifier, kind: 'import' });
-      }
-    }
-  }
-
-  symbols.sort((a, b) => a.line_start - b.line_start || a.name.localeCompare(b.name));
-  return { symbols, imports, loc, partial: false };
+  return {
+    symbols,
+    imports,
+    summary: buildSummary(symbols, moduleDoc(lines)),
+    partial: false,
+  };
 }
 
-module.exports = { extract, indentationBlockEnd };
+module.exports = { id: 'py', EXTENSIONS, extract };

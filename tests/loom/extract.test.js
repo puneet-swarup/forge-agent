@@ -1,600 +1,774 @@
-// tests/loom/extract.test.js — spec §4.2–§4.5.
+// tests/loom/extract.test.js — spec §4.2–§4.5: the per-language extractors.
 //
-// The extractors are the layer that decides what the digest can say, so the
-// tests are about the two ways they can be wrong: a *missing* symbol (a regex
-// that did not match) and a *wrong range* (a brace counter that ran into a
-// string). The second is worse — a range that points at the wrong lines would
-// present code that is not there — so several cases below are fixtures copied
-// from the shapes this repository actually contains: selector strings full of
-// braces, templates with `${ … }`, comments with `{`, and Rust lifetimes.
+// The snippets are shaped like the code they will meet in the wild (a model
+// adapter class with selector arrays full of braces and quotes, a Go server with
+// a receiver method, a migration with a commented-out CREATE), because the
+// failure modes of a regex extractor only show up in real shapes. The last two
+// describes are the contract, not the language: unknown extensions degrade, and
+// no input — however malformed — throws.
 
 'use strict';
 
-const fs = require('fs');
-const path = require('path');
+const registry = require('../../src/loom/extract');
+const jsModule = require('../../src/loom/extract/js');
 
-const extract = require('../../src/loom/extract');
-const blocks = require('../../src/loom/extract/blocks');
-const js = require('../../src/loom/extract/js');
+const { detect, extract } = registry;
 
-const FIXTURES = path.join(__dirname, 'fixtures');
-const read = (name) => fs.readFileSync(path.join(FIXTURES, name), 'utf8');
+/** Symbols by name, for terse assertions. */
+const byName = (result) => Object.fromEntries(result.symbols.map((s) => [s.name, s]));
+const names = (result) => result.symbols.map((s) => s.name);
+const specifiers = (result) => result.imports.map((i) => i.specifier);
 
-const SYMBOL_KINDS = new Set(['function', 'class', 'method', 'const', 'type', 'export', 'heading', 'table', 'key']);
-const IMPORT_KINDS = new Set(['require', 'import', 'from', 'use', 'mod']);
+describe('extract — javascript / typescript', () => {
+  const source = `'use strict';
+/**
+ * Shared base class for model adapters. Holds browser plumbing.
+ */
+class BaseAdapter {
+  constructor(page) {
+    this.page = page;
+  }
 
-function byName(symbols, name) {
-  const found = symbols.filter((s) => s.name === name);
-  return found.length === 1 ? found[0] : found;
+  async sendMessage(text) {
+    const template = \`hi \${this.name ? '{x}' : '}'} there\`;
+    return template;
+  }
+
+  _waitForTextStable() {
+    const selector = 'button[type="submit"] { }';
+    /* a comment with } in it */
+    return selector;
+  }
 }
 
-describe('loom/extract — registry', () => {
-  test('extensionOf reads the last dot of the basename only', () => {
-    expect(extract.extensionOf('src/loom/db.js')).toBe('.js');
-    expect(extract.extensionOf('src\\loom\\db.ts')).toBe('.ts');
-    expect(extract.extensionOf('archive.tar.gz')).toBe('.gz');
-    expect(extract.extensionOf('Makefile')).toBe('');
-    expect(extract.extensionOf('.gitignore')).toBe('');
-    expect(extract.extensionOf('trailing.')).toBe('');
-    expect(extract.extensionOf('')).toBe('');
-    expect(extract.extensionOf(null)).toBe('');
+function helper(a) {
+  return a;
+}
+
+const buildPrompt = (task) => {
+  return task;
+};
+
+const ONE_LINER = () => 1;
+
+const SELECTORS = {
+  input: 'textarea',
+  send: 'button',
+};
+
+interface Options {
+  retries: number;
+}
+
+type Mode = 'fast' | 'slow';
+
+module.exports = { BaseAdapter, helper: helper };
+`;
+
+  const result = extract(source, 'src/adapters/base-adapter.js');
+
+  test('finds classes, functions, methods, arrow consts and types', () => {
+    const found = byName(result);
+    expect(found.BaseAdapter.kind).toBe('class');
+    expect(found.helper.kind).toBe('function');
+    expect(found.sendMessage.kind).toBe('method');
+    expect(found.buildPrompt.kind).toBe('const');
+    expect(found.ONE_LINER.kind).toBe('const');
+    expect(found.SELECTORS.kind).toBe('const');
+    expect(found.Options.kind).toBe('type');
+    expect(found.Mode.kind).toBe('type');
   });
 
-  test('langFor names every registered language', () => {
-    expect(extract.langFor('a.js')).toBe('javascript');
-    expect(extract.langFor('a.mjs')).toBe('javascript');
-    expect(extract.langFor('a.cjs')).toBe('javascript');
-    expect(extract.langFor('a.jsx')).toBe('javascript');
-    expect(extract.langFor('a.ts')).toBe('typescript');
-    expect(extract.langFor('a.tsx')).toBe('typescript');
-    expect(extract.langFor('a.py')).toBe('python');
-    expect(extract.langFor('a.go')).toBe('go');
-    expect(extract.langFor('a.rs')).toBe('rust');
-    expect(extract.langFor('a.sql')).toBe('sql');
-    expect(extract.langFor('a.md')).toBe('markdown');
-    expect(extract.langFor('a.json')).toBe('json');
-    expect(extract.langFor('a.yaml')).toBe('yaml');
-    expect(extract.langFor('a.yml')).toBe('yaml');
-    expect(extract.langFor('a.toml')).toBe('toml');
+  test('does not mistake control flow for methods', () => {
+    expect(names(result)).not.toContain('if');
+    expect(names(result)).not.toContain('constructor');
   });
 
-  test('an unregistered extension is skipped, not an error', () => {
-    expect(extract.isSupported('notes.txt')).toBe(false);
-    expect(extract.langFor('notes.txt')).toBeNull();
-    const result = extract.extract('one\ntwo\nthree', 'notes.txt');
-    expect(result.supported).toBe(false);
-    expect(result.lang).toBeNull();
-    expect(result.symbols).toEqual([]);
+  test('marks module.exports destructuring as exported', () => {
+    const found = byName(result);
+    expect(found.BaseAdapter.exported).toBe(1);
+    expect(found.helper.exported).toBe(1);
+    expect(found.buildPrompt.exported).toBe(0);
+  });
+
+  test('measures a class body to its closing brace, not to the first one', () => {
+    const found = byName(result);
+    expect(found.BaseAdapter.line_start).toBe(5);
+    expect(found.BaseAdapter.line_end).toBe(20);
+  });
+
+  test('ignores braces inside strings, template literals and comments', () => {
+    const found = byName(result);
+    expect(found.sendMessage.line_start).toBe(10);
+    expect(found.sendMessage.line_end).toBe(13);
+    expect(found._waitForTextStable.line_start).toBe(15);
+    expect(found._waitForTextStable.line_end).toBe(19);
+    expect(result.partial).toBe(false);
+  });
+
+  test('attributes methods to their enclosing class', () => {
+    const found = byName(result);
+    expect(found.sendMessage.parent).toBe('BaseAdapter');
+    expect(found._waitForTextStable.parent).toBe('BaseAdapter');
+    expect(found.helper.parent).toBe('');
+  });
+
+  test('takes the first sentence of the leading doc comment', () => {
+    expect(byName(result).BaseAdapter.doc).toBe('Shared base class for model adapters.');
+  });
+
+  test('keeps the signature to one trimmed line', () => {
+    expect(byName(result).sendMessage.signature).toBe('async sendMessage(text) {');
+  });
+
+  test('reports the language, the line count and no imports for a file without any', () => {
+    expect(result.lang).toBe('js');
+    expect(result.loc).toBe(source.split('\n').length - 1);
     expect(result.imports).toEqual([]);
-    expect(result.loc).toBe(3);
-    expect(result.partial).toBe(false);
   });
 
-  test('supportedExtensions is sorted and complete', () => {
-    const extensions = extract.supportedExtensions();
-    expect(extensions).toEqual([...extensions].sort());
-    expect(extensions).toContain('.js');
-    expect(extensions).toContain('.toml');
-    expect(extensions).toHaveLength(Object.keys(extract.REGISTRY).length);
+  test('collects require, import and export-from specifiers once each', () => {
+    const js = extract(
+      [
+        "const fs = require('fs');",
+        "const { a } = require('./a');",
+        "const again = require('./a');",
+        "import path from 'node:path';",
+        "import './side-effect.css';",
+        "export { thing } from './thing';",
+        "const lazy = await import('./lazy.js');",
+      ].join('\n'),
+      'src/mixed.js',
+    );
+    expect(specifiers(js)).toEqual(['fs', './a', 'node:path', './side-effect.css', './thing', './lazy.js']);
+    expect(js.imports.find((i) => i.specifier === 'fs').kind).toBe('require');
+    expect(js.imports.find((i) => i.specifier === 'node:path').kind).toBe('import');
   });
 
-  test('extract never throws, even on nonsense input', () => {
-    for (const value of [undefined, null, 42, '', '\u0000\u0000', '}{}{}{', '#'.repeat(1000)]) {
-      const result = extract.extract(value, 'a.js');
-      expect(Array.isArray(result.symbols)).toBe(true);
-      expect(Array.isArray(result.imports)).toBe(true);
-      expect(typeof result.loc).toBe('number');
-    }
+  test('marks an export keyword and an export list as exported', () => {
+    const ts = extract(
+      [
+        'export function alpha() {}',
+        'export const beta = () => 1;',
+        'function gamma() {}',
+        'export { gamma as delta };',
+      ].join('\n'),
+      'src/exports.ts',
+    );
+    const found = byName(ts);
+    expect(found.alpha.exported).toBe(1);
+    expect(found.beta.exported).toBe(1);
+    expect(found.gamma.exported).toBe(1);
+    expect(ts.lang).toBe('ts');
   });
 
-  test('a parser failure is reported as partial, not thrown (I1)', () => {
-    const registry = extract.REGISTRY['.js'];
-    const original = registry.module.extract;
-    registry.module.extract = () => { throw new Error('boom'); };
-    try {
-      const result = extract.extract('const a = 1;', 'a.js');
-      expect(result.supported).toBe(true);
-      expect(result.partial).toBe(true);
-      expect(result.error).toBe('boom');
-      expect(result.symbols).toEqual([]);
-    } finally {
-      registry.module.extract = original;
-    }
+  test('ends a one-line type alias on its own line', () => {
+    const ts = extract(['type A = string;', 'const B = 1;'].join('\n'), 'src/a.ts');
+    const found = byName(ts);
+    expect(found.A.line_start).toBe(1);
+    expect(found.A.line_end).toBe(1);
   });
 
-  test('loc counts lines and ignores a single trailing newline', () => {
-    expect(extract.extract('', 'a.js').loc).toBe(0);
-    expect(extract.extract('a', 'a.js').loc).toBe(1);
-    expect(extract.extract('a\n', 'a.js').loc).toBe(1);
-    expect(extract.extract('a\nb', 'a.js').loc).toBe(2);
-    expect(extract.extract('a\nb\n', 'a.js').loc).toBe(2);
-    expect(extract.extract('\n', 'a.js').loc).toBe(1);
+  test('summarises a file with no doc comment by its exported surface', () => {
+    const ts = extract(['export function alpha() {}', 'export function beta() {}'].join('\n'), 'src/s.ts');
+    expect(ts.summary).toBe('Exports: alpha, beta.');
   });
 });
 
-describe('loom/extract/blocks — findBlockEnd', () => {
-  test('a balanced block ends on the closing brace', () => {
-    const text = 'function f() {\n  if (a) {\n    b();\n  }\n}\n';
-    expect(blocks.findBlockEnd(text, 1)).toEqual({ line_end: 5, confidence: 0.95, partial: false });
-  });
+describe('extract — findBlockEnd', () => {
+  const lines = (...parts) => parts.join('\n');
 
-  test('braces inside single and double quoted strings do not count', () => {
-    const text = [
+  test('balances a body containing braces in strings', () => {
+    const text = lines(
       'function f() {',
-      '  const a = "}}}";',
-      "  const b = '{{{';",
+      "  const a = '{';",
+      '  const b = "}";',
+      '  return a + b;',
       '}',
-    ].join('\n');
-    expect(blocks.findBlockEnd(text, 1).line_end).toBe(4);
+    );
+    expect(jsModule.findBlockEnd(text, 1).line_end).toBe(5);
   });
 
-  test('a brace in a template literal does not count, but ${ … } is code', () => {
-    const text = [
-      'function f() {',
-      '  const t = `a { b ${ { x: 1 } } c`;',
-      '  return t;',
+  test('balances a template literal with a nested ${} expression', () => {
+    const text = lines(
+      'function f(x) {',
+      '  const s = `a ${ x ? { y: 1 } : c } b`;',
+      '  return s;',
       '}',
-    ].join('\n');
-    expect(blocks.findBlockEnd(text, 1).line_end).toBe(4);
+    );
+    expect(jsModule.findBlockEnd(text, 1).line_end).toBe(4);
   });
 
-  test('an escaped quote does not end a string', () => {
-    const text = [
+  test('ignores braces in line and block comments', () => {
+    const text = lines(
       'function f() {',
-      "  const s = 'it\\'s { not a block }';",
-      '}',
-    ].join('\n');
-    expect(blocks.findBlockEnd(text, 1).line_end).toBe(3);
-  });
-
-  test('a line comment ends at the newline', () => {
-    const text = [
-      'function f() {',
-      '  // a comment with { and }',
+      '  // } not the end',
+      '  /* } nor this',
+      '     } nor that */',
       '  return 1;',
       '}',
-    ].join('\n');
-    expect(blocks.findBlockEnd(text, 1).line_end).toBe(4);
+    );
+    expect(jsModule.findBlockEnd(text, 1).line_end).toBe(6);
   });
 
-  test('a block comment is skipped whole', () => {
-    const text = [
-      'function f() {',
-      '  /* {',
-      '     } */',
-      '  return 1;',
+  test('starts at the body brace, not at a default parameter object', () => {
+    const text = lines(
+      'function open(opts = {}) {',
+      '  return opts;',
       '}',
-    ].join('\n');
-    expect(blocks.findBlockEnd(text, 1).line_end).toBe(5);
+    );
+    expect(jsModule.findBlockEnd(text, 1).line_end).toBe(3);
   });
 
-  test('a nested function does not end the outer block', () => {
-    const text = [
-      'class A {',
-      '  m() {',
-      '    function inner() { return 1; }',
-      '  }',
-      '}',
-    ].join('\n');
-    expect(blocks.findBlockEnd(text, 1).line_end).toBe(5);
-    expect(blocks.findBlockEnd(text, 2).line_end).toBe(4);
+  test('starts at an object literal that is itself the declaration body', () => {
+    const text = lines(
+      'const COLUMNS = Object.freeze({',
+      '  a: 1,',
+      '});',
+      'const NEXT = 2;',
+    );
+    expect(jsModule.findBlockEnd(text, 1).line_end).toBe(3);
   });
 
-  test('an unbalanced block falls back to start + 40 with low confidence', () => {
-    const text = ['function f() {', '  return 1;'].join('\n');
-    const result = blocks.findBlockEnd(text, 1);
+  test('gives up at min(line_start + 40, loc) when the braces never balance', () => {
+    const text = lines('function broken() {', '  return 1;');
+    const end = jsModule.findBlockEnd(text, 1);
+    expect(end.closed).toBe(false);
+    expect(end.line_end).toBe(2); // min(1 + 40, loc = 2)
+  });
+
+  test('gives up after 400 scanned lines', () => {
+    const body = Array.from({ length: 500 }, (_, i) => `  const v${i} = ${i};`);
+    const text = ['class Big {', ...body].join('\n');
+    const end = jsModule.findBlockEnd(text, 1);
+    expect(end.closed).toBe(false);
+    expect(end.line_end).toBe(41);
+  });
+
+  test('drops the confidence of an unclosed symbol to 0.4 and flags the file partial', () => {
+    const result = extract(['function broken() {', '  return 1;'].join('\n'), 'src/broken.js');
+    expect(result.symbols[0].confidence).toBe(0.4);
     expect(result.partial).toBe(true);
-    expect(result.confidence).toBe(0.4);
-    expect(result.line_end).toBe(Math.min(41, 2));
-  });
-
-  test('the fallback is capped by the file length', () => {
-    const text = ['function f() {', 'a', 'b'].join('\n');
-    expect(blocks.findBlockEnd(text, 1).line_end).toBe(3);
-  });
-
-  test('a block that stays open past 400 lines gives up', () => {
-    const body = new Array(500).fill('  x();').join('\n');
-    const text = `function f() {\n${body}\n}`;
-    const result = blocks.findBlockEnd(text, 1);
-    expect(result.partial).toBe(true);
-    expect(result.confidence).toBe(0.4);
-    expect(result.line_end).toBe(41);
-  });
-
-  test('a start line past the end of the file is a fallback, not a crash', () => {
-    const result = blocks.findBlockEnd('a\nb', 99);
-    expect(result.partial).toBe(true);
-    expect(blocks.findBlockEnd('', 1).partial).toBe(true);
-  });
-
-  test('a Go raw string is not a template (interpolation off)', () => {
-    const text = [
-      'func f() {',
-      '  s := `a ${ b { c`',
-      '}',
-    ].join('\n');
-    expect(blocks.findBlockEnd(text, 1, 3, { interpolation: false }).line_end).toBe(3);
-  });
-
-  test('a Rust lifetime does not open a character literal', () => {
-    const text = [
-      'fn f<\'a>(p: &\'a str) {',
-      '  if true { 1 } else { 2 }',
-      '}',
-    ].join('\n');
-    expect(blocks.findBlockEnd(text, 1, 3, { lifetimes: true }).line_end).toBe(3);
-  });
-
-  test('line helpers agree with each other', () => {
-    const text = 'one\ntwo\nthree\n';
-    const starts = blocks.buildLineStarts(text);
-    expect(starts).toEqual([0, 4, 8, 14]);
-    expect(blocks.lineOfIndex(starts, 0)).toBe(1);
-    expect(blocks.lineOfIndex(starts, 4)).toBe(2);
-    expect(blocks.lineOfIndex(starts, 13)).toBe(3);
-    expect(blocks.lineText(text, starts, 2)).toBe('two');
-    expect(blocks.lineText(text, starts, 99)).toBe('');
-    expect(blocks.countLines(text)).toBe(3);
-    expect(blocks.indentOf('    x')).toBe(4);
-    expect(blocks.indentOf('\tx')).toBe(1);
   });
 });
 
-describe('loom/extract/js — JavaScript and TypeScript', () => {
-  const result = js.extract(read('selectors.js'), 'tests/loom/fixtures/selectors.js');
+describe('extract — python', () => {
+  const source = `"""Store helpers for the Loom index."""
+import os
+import sqlite3
+from .paths import loom_dir
+from pathlib import Path
 
-  test('finds classes, functions, methods, consts and types', () => {
-    const names = result.symbols.map((s) => `${s.kind}:${s.name}`);
-    expect(names).toContain('class:BaseAdapter');
-    expect(names).toContain('function:topLevel');
-    expect(names).toContain('method:send');
-    expect(names).toContain('method:create');
-    expect(names).toContain('method:ready');
-    expect(names).toContain('const:withDefaults');
-    expect(names).toContain('const:MAX_RETRIES');
-    expect(names).toContain('const:SELECTORS');
-    expect(names).toContain('const:PURE');
+
+class Store:
+    """Wraps one index database."""
+
+    def __init__(self, path):
+        self.path = path
+
+    def close(self):
+        """Flush and close."""
+        return True
+
+
+# Opens a store, rebuilding a corrupt one.
+def open_store(path):
+    return Store(path)
+
+
+async def refresh(store):
+    return await store.refresh()
+
+
+def _private_helper():
+    return 1
+`;
+
+  const result = extract(source, 'src/store.py');
+
+  test('finds module-level defs, async defs and classes', () => {
+    const found = byName(result);
+    expect(found.Store.kind).toBe('class');
+    expect(found.open_store.kind).toBe('function');
+    expect(found.refresh.kind).toBe('function');
+    expect(found.__init__.kind).toBe('function');
   });
 
-  test('braces inside strings, templates and comments do not break a range', () => {
-    const klass = byName(result.symbols, 'BaseAdapter');
-    const send = byName(result.symbols, 'send');
-    const lines = read('selectors.js').split('\n');
-    // The class opens on its `class` line and closes on the last `}`.
-    expect(lines[klass.line_start - 1]).toContain('class BaseAdapter');
-    expect(lines[klass.line_end - 1]).toBe('}');
-    expect(lines[send.line_end - 1]).toBe('  }');
-    expect(result.partial).toBe(false);
-    expect(klass.confidence).toBe(0.95);
+  test('ends a block at the first line that dedents to the def', () => {
+    const found = byName(result);
+    expect(found.Store.line_start).toBe(8);
+    expect(found.Store.line_end).toBe(16);
+    expect(found.open_store.line_start).toBe(20);
+    expect(found.open_store.line_end).toBe(21);
   });
 
-  test('a method knows its enclosing class', () => {
-    expect(byName(result.symbols, 'send').parent).toBe('BaseAdapter');
-    expect(byName(result.symbols, 'create').parent).toBe('BaseAdapter');
-    expect(byName(result.symbols, 'topLevel').parent).toBe('');
+  test('attributes methods to their class', () => {
+    expect(byName(result).close.parent).toBe('Store');
+    expect(byName(result).open_store.parent).toBe('');
   });
 
-  test('control keywords are never methods', () => {
-    const methods = result.symbols.filter((s) => s.kind === 'method').map((s) => s.name);
-    for (const keyword of ['if', 'for', 'while', 'switch', 'catch', 'return', 'constructor']) {
-      expect(methods).not.toContain(keyword);
+  test('treats a leading underscore as private', () => {
+    const found = byName(result);
+    expect(found._private_helper.exported).toBe(0);
+    expect(found.__init__.exported).toBe(0);
+    expect(found.open_store.exported).toBe(1);
+  });
+
+  test('reads a docstring first, then a # comment', () => {
+    const found = byName(result);
+    expect(found.Store.doc).toBe('Wraps one index database.');
+    expect(found.close.doc).toBe('Flush and close.');
+    expect(found.open_store.doc).toBe('Opens a store, rebuilding a corrupt one.');
+  });
+
+  test('distinguishes from-imports from plain imports', () => {
+    expect(specifiers(result)).toEqual(['os', 'sqlite3', '.paths', 'pathlib']);
+    expect(result.imports.filter((i) => i.kind === 'from').map((i) => i.specifier)).toEqual([
+      '.paths',
+      'pathlib',
+    ]);
+  });
+
+  test('summarises from the module docstring', () => {
+    expect(result.summary).toBe('Store helpers for the Loom index.');
+  });
+});
+
+describe('extract — go', () => {
+  const source = `// Package loom builds the project index.
+package loom
+
+import (
+	"encoding/json"
+	"fmt"
+)
+
+import "os"
+
+type Server struct {
+	addr string
+}
+
+type (
+	Heat  float64
+	Entry struct {
+		path string
+	}
+)
+
+func New(addr string) *Server {
+	return &Server{addr: addr}
+}
+
+func (s *Server) Handle(msg string) error {
+	return fmt.Errorf("bad: %s", msg)
+}
+`;
+
+  const result = extract(source, 'internal/server.go');
+
+  test('finds funcs, receiver methods and types', () => {
+    const found = byName(result);
+    expect(found.New.kind).toBe('function');
+    expect(found.Handle.kind).toBe('method');
+    expect(found.Server.kind).toBe('type');
+    expect(found.Heat.kind).toBe('type');
+    expect(found.Entry.kind).toBe('type');
+  });
+
+  test('uses the receiver type as the method parent', () => {
+    expect(byName(result).Handle.parent).toBe('Server');
+    expect(byName(result).New.parent).toBe('');
+  });
+
+  test('follows Go capitalisation for exported names', () => {
+    const found = byName(result);
+    expect(found.Server.exported).toBe(1);
+    expect(found.New.exported).toBe(1);
+  });
+
+  test('reads both import forms', () => {
+    expect(specifiers(result)).toEqual(['encoding/json', 'fmt', 'os']);
+  });
+
+  test('ends a struct at its closing brace and a bare type on its own line', () => {
+    const found = byName(result);
+    expect(found.Server.line_start).toBe(11);
+    expect(found.Server.line_end).toBe(13);
+    expect(found.Heat.line_end).toBe(found.Heat.line_start);
+  });
+
+  test('summarises from the package comment', () => {
+    expect(result.summary).toBe('Package loom builds the project index.');
+  });
+});
+
+describe('extract — rust', () => {
+  const source = `//! Crate docs for the index.
+use std::collections::HashMap;
+use crate::store::{Store, Entry};
+mod digest;
+
+/// A scored file.
+pub struct Scored {
+    pub path: String,
+}
+
+pub struct Marker;
+
+enum Kind {
+    A,
+    B,
+}
+
+trait Sink {
+    fn write(&self) -> usize;
+}
+
+impl Scored {
+    /// Build one.
+    pub fn new(path: String) -> Self {
+        Self { path }
     }
-  });
 
-  test('exported is set by the export keyword, module.exports and exports.x', () => {
-    expect(byName(result.symbols, 'BaseAdapter').exported).toBe(1);
-    expect(byName(result.symbols, 'topLevel').exported).toBe(1);
-    expect(byName(result.symbols, 'withDefaults').exported).toBe(1);
-    expect(byName(result.symbols, 'MAX_RETRIES').exported).toBe(0);
-  });
-
-  test('doc is the preceding block comment or // run, first sentence only', () => {
-    expect(byName(result.symbols, 'BaseAdapter').doc).toBe('Base adapter.');
-    expect(byName(result.symbols, 'send').doc).toBe('Type into the composer.');
-    expect(byName(result.symbols, 'SELECTORS').doc).toBe('Adapter selectors.');
-    expect(byName(result.symbols, 'topLevel').doc).toBe('');
-  });
-
-  test('signature is the declaration line, trimmed and bounded', () => {
-    const send = byName(result.symbols, 'send');
-    expect(send.signature).toBe('async send(text) {');
-    for (const symbol of result.symbols) {
-      expect(symbol.signature.length).toBeLessThanOrEqual(200);
-      expect(symbol.signature).not.toMatch(/^\s/);
+    fn private(&self) -> u8 {
+        1
     }
+}
+
+pub async fn digest(store: &Store) -> String {
+    format!("{}", 1)
+}
+`;
+
+  const result = extract(source, 'src/scored.rs');
+
+  test('finds fns, structs, enums and traits', () => {
+    const found = byName(result);
+    expect(found.digest.kind).toBe('function');
+    expect(found.Scored.kind).toBe('type');
+    expect(found.Kind.kind).toBe('type');
+    expect(found.Sink.kind).toBe('type');
   });
 
-  test('an arrow with a block body spans the block, without one it is one line', () => {
-    const withBlock = byName(result.symbols, 'withDefaults');
-    expect(withBlock.line_end).toBeGreaterThan(withBlock.line_start);
-    const withoutBlock = byName(result.symbols, 'PURE');
-    expect(withoutBlock.line_end).toBe(withoutBlock.line_start);
+  test('treats pub as exported', () => {
+    const found = byName(result);
+    expect(found.digest.exported).toBe(1);
+    expect(found.private.exported).toBe(0);
+    expect(found.Kind.exported).toBe(0);
   });
 
-  test('imports are collected with their kind, once each', () => {
-    const text = [
-      "const a = require('./a');",
-      "const b = require('./a');",
-      "import c from './c';",
-      "import './side-effect';",
-      "export * from './d';",
-    ].join('\n');
-    const imports = js.extract(text, 'x.js').imports;
-    expect(imports).toEqual([
-      { specifier: './a', kind: 'require' },
-      { specifier: './c', kind: 'import' },
-      { specifier: './side-effect', kind: 'import' },
-      { specifier: './d', kind: 'import' },
-    ]);
+  test('gives impl methods their type as parent', () => {
+    expect(byName(result).new.parent).toBe('Scored');
+    expect(byName(result).private.parent).toBe('Scored');
+    expect(byName(result).digest.parent).toBe('');
   });
 
-  test('TypeScript interfaces and types are found', () => {
-    const ts = extract.extract(read('config.ts'), 'config.ts');
-    expect(ts.lang).toBe('typescript');
-    expect(ts.symbols.map((s) => s.name)).toEqual(expect.arrayContaining(['Config', 'Mode', 'Store']));
-    expect(ts.symbols.find((s) => s.name === 'Config').kind).toBe('type');
-    expect(ts.symbols.find((s) => s.name === 'Store').exported).toBe(1);
+  test('records use and mod edges, without the trailing ::', () => {
+    expect(specifiers(result)).toEqual(['std::collections::HashMap', 'crate::store', 'digest']);
+    expect(result.imports.find((i) => i.specifier === 'digest').kind).toBe('mod');
   });
 
-  test('symbols are sorted by line', () => {
-    const starts = result.symbols.map((s) => s.line_start);
-    expect(starts).toEqual([...starts].sort((a, b) => a - b));
-  });
-});
-
-describe('loom/extract/py — Python', () => {
-  const result = extract.extract(read('module.py'), 'module.py');
-
-  test('finds classes and functions with indentation block ends', () => {
-    const names = result.symbols.map((s) => `${s.kind}:${s.name}`);
-    expect(names).toContain('class:Runner');
-    expect(names).toContain('method:run');
-    expect(names).toContain('method:__init__');
-    expect(names).toContain('function:main');
-    expect(names).toContain('function:tail');
+  test('ends a unit struct on its own line', () => {
+    const found = byName(result);
+    expect(found.Marker.line_start).toBe(found.Marker.line_end);
   });
 
-  test('a method ends before the next method at the same indent', () => {
-    const run = byName(result.symbols, 'run');
-    const stop = byName(result.symbols, 'stop');
-    expect(run.parent).toBe('Runner');
-    expect(run.line_end).toBeLessThan(stop.line_start);
-    expect(run.line_end).toBe(12); // the last content line, not the blank after it
-    expect(stop.line_end).toBeLessThanOrEqual(result.loc);
-  });
-
-  test('a top-level function ends before the next one', () => {
-    const main = byName(result.symbols, 'main');
-    expect(main.line_end).toBe(18);
-    expect(main.line_end).toBeLessThan(byName(result.symbols, 'tail').line_start);
-  });
-
-  test('from and import both resolve to their own kind, comma lists split', () => {
-    expect(result.imports).toEqual([
-      { specifier: 'os', kind: 'import' },
-      { specifier: 'sys', kind: 'import' },
-      { specifier: 'pathlib', kind: 'from' },
-    ]);
-  });
-
-  test('a # comment above a definition becomes its doc', () => {
-    expect(byName(result.symbols, 'Runner').doc).toBe('The runner.');
-  });
-
-  test('decorators and async def are both recognised', () => {
-    const text = '@app.route("/")\nasync def handler():\n    pass\n';
-    const found = extract.extract(text, 'x.py').symbols;
-    expect(found).toHaveLength(1);
-    expect(found[0].name).toBe('handler');
+  test('summarises from the crate doc comment', () => {
+    expect(result.summary).toBe('Crate docs for the index.');
   });
 });
 
-describe('loom/extract/go — Go', () => {
-  const result = extract.extract(read('server.go'), 'server.go');
+describe('extract — sql', () => {
+  const source = `-- 001: the initial Loom schema.
+CREATE TABLE meta (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
 
-  test('finds functions (with receivers) and types', () => {
-    const names = result.symbols.map((s) => `${s.kind}:${s.name}`);
-    expect(names).toContain('function:Serve');
-    expect(names).toContain('function:main');
-    expect(names).toContain('type:Handler');
+CREATE TABLE IF NOT EXISTS files (id INTEGER PRIMARY KEY);
+
+CREATE VIEW hot_files AS SELECT * FROM files;
+
+CREATE MATERIALIZED VIEW "public"."top_files" AS SELECT 1;
+
+-- CREATE TABLE commented_out (id int);
+`;
+
+  const result = extract(source, 'migrations/001_init.sql');
+
+  test('finds tables, views and materialized views', () => {
+    expect(names(result)).toEqual(['meta', 'files', 'hot_files', 'public.top_files']);
+    expect(result.symbols.every((s) => s.kind === 'table')).toBe(true);
   });
 
-  test('a brace in a string does not end the function early', () => {
-    const serve = byName(result.symbols, 'Serve');
-    expect(serve.line_end).toBe(serve.line_start + 2);
-    expect(result.partial).toBe(false);
+  test('measures the whole statement, up to its semicolon', () => {
+    const found = byName(result);
+    expect(found.meta.line_start).toBe(2);
+    expect(found.meta.line_end).toBe(5);
+    expect(found.files.line_end).toBe(found.files.line_start);
   });
 
-  test('single and block imports are both collected', () => {
-    expect(result.imports).toEqual([
-      { specifier: 'fmt', kind: 'import' },
-      { specifier: 'strings', kind: 'import' },
-      { specifier: 'os', kind: 'import' },
-    ]);
-  });
-});
-
-describe('loom/extract/rs — Rust', () => {
-  const result = extract.extract(read('lib.rs'), 'lib.rs');
-
-  test('finds functions and types', () => {
-    const names = result.symbols.map((s) => `${s.kind}:${s.name}`);
-    expect(names).toContain('function:compute');
-    expect(names).toContain('type:Point');
+  test('ignores a commented-out CREATE', () => {
+    expect(names(result)).not.toContain('commented_out');
   });
 
-  test('a lifetime does not swallow the block', () => {
-    const compute = byName(result.symbols, 'compute');
-    expect(compute.line_end).toBe(result.loc);
-    expect(compute.confidence).toBe(0.95);
-    expect(result.partial).toBe(false);
+  test('declares no imports', () => {
+    expect(result.imports).toEqual([]);
   });
 
-  test('use and mod are both collected', () => {
-    expect(result.imports).toEqual([
-      { specifier: 'std::fmt', kind: 'use' },
-      { specifier: 'util', kind: 'mod' },
-    ]);
+  test('takes the leading comment as the summary', () => {
+    expect(result.summary).toBe('001: the initial Loom schema.');
   });
 });
 
-describe('loom/extract/sql — SQL', () => {
-  const result = extract.extract(read('schema.sql'), 'schema.sql');
+describe('extract — markdown', () => {
+  const source = `# Loom
 
-  test('finds tables and views, case-insensitively', () => {
-    expect(result.symbols.map((s) => `${s.kind}:${s.name}`)).toEqual([
-      'table:users',
-      'table:v_users',
-      'table:open_ended',
-    ]);
-  });
+The index and its digest.
 
-  test('a terminated statement ends on its semicolon', () => {
-    expect(byName(result.symbols, 'users').line_end).toBe(4);
-    expect(byName(result.symbols, 'v_users').line_end).toBe(6);
-  });
+## Storage
 
-  test('an unterminated statement is flagged partial with low confidence', () => {
-    const open = byName(result.symbols, 'open_ended');
-    expect(open.confidence).toBe(0.4);
-    expect(result.partial).toBe(true);
-  });
-});
+See [the spec](../src/loom_specs.md) and [GitHub](https://github.com/x/y).
 
-describe('loom/extract/md — Markdown', () => {
-  const text = '# Title\n\n## Section\n\n### Deep\n\n#### Not indexed\n';
+\`\`\`bash
+# not a heading
+[not a link](./nope.md)
+\`\`\`
 
-  test('levels 1-3 are headings, level 4 is not', () => {
-    const result = extract.extract(text, 'notes.md');
-    expect(result.symbols.map((s) => s.name)).toEqual(['Title', 'Section', 'Deep']);
+### Tables
+
+Back to [storage](#storage) and [the readme](./README.md).
+`;
+
+  const result = extract(source, 'docs/LOOM.md');
+
+  test('finds headings one to three levels deep', () => {
+    expect(names(result)).toEqual(['Loom', 'Storage', 'Tables']);
     expect(result.symbols.every((s) => s.kind === 'heading')).toBe(true);
   });
 
-  test('a heading has no body range and a trailing hash is stripped', () => {
-    const result = extract.extract('## Closed ##\nbody\n', 'notes.md');
-    expect(result.symbols[0].name).toBe('Closed');
-    expect(result.symbols[0].line_start).toBe(1);
-    expect(result.symbols[0].line_end).toBe(1);
+  test('nests a heading under the nearest shallower one', () => {
+    const found = byName(result);
+    expect(found.Storage.parent).toBe('Loom');
+    expect(found.Tables.parent).toBe('Storage');
   });
 
-  test('a hash without a space is not a heading', () => {
-    expect(extract.extract('#nope\n', 'notes.md').symbols).toEqual([]);
+  test('records local links and skips external ones and anchors', () => {
+    expect(specifiers(result)).toEqual(['../src/loom_specs.md', './README.md']);
+    expect(result.imports.every((i) => i.kind === 'import')).toBe(true);
+  });
+
+  test('ignores headings and links inside fenced code blocks', () => {
+    expect(names(result)).not.toContain('not a heading');
+    expect(specifiers(result)).not.toContain('./nope.md');
+  });
+
+  test('uses the first h1 as the summary', () => {
+    expect(result.summary).toBe('Loom');
+  });
+
+  test('treats a level-four heading as body text', () => {
+    const deep = extract('# A\n#### Deep\n', 'docs/a.md');
+    expect(names(deep)).toEqual(['A']);
   });
 });
 
-describe('loom/extract/data — JSON, YAML, TOML', () => {
-  test('JSON reports top-level keys only', () => {
-    const result = extract.extract(read('package.json'), 'package.json');
-    expect(result.symbols.map((s) => s.name)).toEqual(['name', 'version', 'scripts', 'nested']);
+describe('extract — data files', () => {
+  test('reads top-level JSON keys and no deeper', () => {
+    const source = [
+      '{',
+      '  "name": "forge-agent",',
+      '  "scripts": {',
+      '    "test": "jest",',
+      '    "build": "tsc"',
+      '  },',
+      '  "keywords": ["a", "b"],',
+      '  "note": "a { brace in a string"',
+      '}',
+    ].join('\n');
+    const result = extract(source, 'package.json');
+    expect(names(result)).toEqual(['name', 'scripts', 'keywords', 'note']);
     expect(result.symbols.every((s) => s.kind === 'key')).toBe(true);
-    expect(result.symbols[0].line_start).toBe(2);
+    expect(result.lang).toBe('json');
   });
 
-  test('YAML reports keys at column 0 only', () => {
-    const result = extract.extract(read('config.yaml'), 'config.yaml');
-    expect(result.symbols.map((s) => s.name)).toEqual(['name', 'version', 'nested', 'list']);
+  test('reads top-level YAML keys', () => {
+    const source = ['# CI pipeline.', 'name: ci', 'on:', '  push:', '    branches: [main]', 'jobs:', '  test:', '    runs-on: ubuntu-latest'].join('\n');
+    const result = extract(source, '.github/workflows/ci.yml');
+    expect(names(result)).toEqual(['name', 'on', 'jobs']);
+    expect(result.lang).toBe('yaml');
+    expect(result.summary).toBe('CI pipeline.');
   });
 
-  test('TOML reports top-level keys and section headers', () => {
-    const result = extract.extract(read('pyproject.toml'), 'pyproject.toml');
-    expect(result.symbols.map((s) => s.name)).toEqual(['title', 'build-system', 'tool.black']);
+  test('reads TOML sections and keys', () => {
+    const source = ['# Rust manifest.', '[package]', 'name = "loom"', '', '[dependencies]', 'serde = { version = "1" }'].join('\n');
+    const result = extract(source, 'Cargo.toml');
+    expect(names(result)).toEqual(['package', 'name', 'dependencies', 'serde']);
+    expect(result.lang).toBe('toml');
   });
 
-  test('malformed JSON is still scanned, not thrown on', () => {
-    const result = extract.extract('{\n  "a": 1,\n  "b": {\n', 'broken.json');
-    expect(result.symbols.map((s) => s.name)).toEqual(['a', 'b']);
-    expect(result.partial).toBe(false);
+  test('summarises a JSON file by its keys', () => {
+    expect(extract('{\n  "a": 1\n}', 'x.json').summary).toBe('Keys: a.');
   });
 });
 
-describe('loom/extract — shape contract over every fixture', () => {
-  const fixtures = fs.readdirSync(FIXTURES).filter((name) => fs.statSync(path.join(FIXTURES, name)).isFile());
+describe('extract — registry', () => {
+  test('detects a language from every registered extension', () => {
+    const cases = {
+      'a.js': 'js',
+      'a.mjs': 'js',
+      'a.cjs': 'js',
+      'a.jsx': 'js',
+      'a.ts': 'ts',
+      'a.tsx': 'ts',
+      'a.py': 'py',
+      'a.go': 'go',
+      'a.rs': 'rs',
+      'a.sql': 'sql',
+      'a.md': 'md',
+      'a.json': 'json',
+      'a.yaml': 'yaml',
+      'a.yml': 'yaml',
+      'a.toml': 'toml',
+    };
+    for (const [file, lang] of Object.entries(cases)) {
+      expect(detect('', file)).toBe(lang);
+    }
+  });
 
-  test.each(fixtures)('%s produces valid rows', (name) => {
-    const result = extract.extract(read(name), name);
-    expect(result.supported).toBe(true);
-    expect(typeof result.partial).toBe('boolean');
+  test('is case-insensitive about the extension', () => {
+    expect(detect('', 'SRC/Main.PY')).toBe('py');
+  });
+
+  test('sniffs a shebang when there is no extension at all', () => {
+    expect(detect('#!/usr/bin/env node\nconst a = 1;', 'bin/forge')).toBe('js');
+    expect(detect('#!/usr/bin/env python3\nx = 1\n', 'bin/forge')).toBe('py');
+  });
+
+  test('returns null for an unknown extension', () => {
+    expect(detect('hello', 'notes.txt')).toBeNull();
+    expect(detect('hello', 'Makefile')).toBeNull();
+    expect(detect('hello', '.gitignore')).toBeNull();
+  });
+
+  test('returns an empty result for an unknown extension, but still counts lines', () => {
+    const result = extract('line one\nline two\n', 'notes.txt');
+    expect(result).toEqual({
+      lang: null,
+      symbols: [],
+      imports: [],
+      summary: '',
+      loc: 2,
+      partial: false,
+    });
+  });
+
+  test('dispatches to the module that owns the extension', () => {
+    expect(extract('class A {}', 'a.ts').lang).toBe('ts');
+    expect(names(extract('class A {}', 'a.ts'))).toEqual(['A']);
+    expect(extract('def f():\n    pass\n', 'a.py').symbols[0].kind).toBe('function');
+    expect(extract('CREATE TABLE t (id int);', 'a.sql').symbols[0].kind).toBe('table');
+  });
+
+  test('every symbol carries the §4.2 fields, in range', () => {
+    const result = extract('export class A {\n  go() {}\n}\n', 'a.ts');
     for (const symbol of result.symbols) {
-      expect(SYMBOL_KINDS.has(symbol.kind)).toBe(true);
-      expect(symbol.name).toBeTruthy();
-      expect(Number.isInteger(symbol.line_start)).toBe(true);
-      expect(Number.isInteger(symbol.line_end)).toBe(true);
+      expect(typeof symbol.name).toBe('string');
+      expect(registry.KINDS).toContain(symbol.kind);
       expect(symbol.line_start).toBeGreaterThanOrEqual(1);
       expect(symbol.line_end).toBeGreaterThanOrEqual(symbol.line_start);
       expect(symbol.line_end).toBeLessThanOrEqual(result.loc);
-      expect(typeof symbol.signature).toBe('string');
       expect([0, 1]).toContain(symbol.exported);
       expect(typeof symbol.parent).toBe('string');
       expect(typeof symbol.doc).toBe('string');
-      expect(symbol.doc.length).toBeLessThanOrEqual(160);
       expect(symbol.confidence).toBeGreaterThan(0);
       expect(symbol.confidence).toBeLessThanOrEqual(1);
     }
     for (const imported of result.imports) {
-      expect(IMPORT_KINDS.has(imported.kind)).toBe(true);
-      expect(typeof imported.specifier).toBe('string');
-      expect(imported.specifier.length).toBeGreaterThan(0);
+      expect(registry.IMPORT_KINDS).toContain(imported.kind);
     }
+  });
+
+  test('handles an empty file', () => {
+    expect(extract('', 'a.js')).toEqual({
+      lang: 'js',
+      symbols: [],
+      imports: [],
+      summary: '',
+      loc: 0,
+      partial: false,
+    });
   });
 });
 
-describe('loom/extract — over this repository’s own source', () => {
-  const ROOT = path.join(__dirname, '..', '..', 'src');
+describe('extract — malformed input degrades, never explodes', () => {
+  const hostile = [
+    '',
+    '\n',
+    'class {',
+    'function',
+    '{{{',
+    '}}}',
+    '`${',
+    '"unterminated',
+    "'''",
+    '/*',
+    '//',
+    '```',
+    'CREATE TABLE',
+    '{"a":',
+    '[]',
+    'a:\n  - b',
+    'def',
+    'func',
+    'use ::',
+    'module.exports = {',
+    'import',
+    '\u0000\u0001\u0002',
+    `${'x'.repeat(5000)}`,
+    `${'('.repeat(500)}{`,
+  ];
 
-  function walk(dir, out = []) {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      const abs = path.join(dir, entry.name);
-      if (entry.isDirectory()) walk(abs, out);
-      else out.push(abs);
-    }
-    return out;
-  }
+  const paths = [
+    'a.js', 'a.ts', 'a.py', 'a.go', 'a.rs', 'a.sql', 'a.md', 'a.json', 'a.yaml', 'a.toml', 'a.unknownext',
+  ];
 
-  const files = walk(ROOT).filter((file) => file.endsWith('.js'));
-
-  test('every source file is scanned without throwing, and every range is in bounds', () => {
-    let symbols = 0;
-    for (const file of files) {
-      const rel = path.relative(ROOT, file).split(path.sep).join('/');
-      const result = extract.extract(fs.readFileSync(file, 'utf8'), rel);
-      symbols += result.symbols.length;
-      for (const symbol of result.symbols) {
-        expect(symbol.line_start).toBeGreaterThanOrEqual(1);
-        expect(symbol.line_end).toBeGreaterThanOrEqual(symbol.line_start);
-        expect(symbol.line_end).toBeLessThanOrEqual(result.loc);
+  test('never throws, for any snippet and any extension', () => {
+    for (const text of hostile) {
+      for (const path of paths) {
+        expect(() => extract(text, path)).not.toThrow();
+        const result = extract(text, path);
+        expect(Array.isArray(result.symbols)).toBe(true);
+        expect(Array.isArray(result.imports)).toBe(true);
+        expect(typeof result.summary).toBe('string');
+        expect(typeof result.loc).toBe('number');
       }
     }
-    expect(files.length).toBeGreaterThan(50);
-    expect(symbols).toBeGreaterThan(500);
   });
 
-  test('real symbols are found where they live', () => {
-    const transport = extract.extract(fs.readFileSync(path.join(ROOT, 'transport.js'), 'utf8'), 'transport.js');
-    expect(transport.symbols.map((s) => s.name)).toEqual(
-      expect.arrayContaining(['encodeTransportArg', 'decodeTransportArg']),
-    );
-
-    const base = extract.extract(fs.readFileSync(path.join(ROOT, 'adapters', 'base-adapter.js'), 'utf8'), 'adapters/base-adapter.js');
-    const klass = byName(base.symbols, 'BaseAdapter');
-    expect(klass.kind).toBe('class');
-    // The class range is the 40-line placeholder (see the next test), so only
-    // methods inside that window get a parent — a real, documented consequence.
-    expect(byName(base.symbols, '_getInputSelectors').parent).toBe('BaseAdapter');
-    expect(base.symbols.filter((s) => s.parent === 'BaseAdapter').length).toBeGreaterThan(5);
+  test('treats non-string input as empty rather than throwing', () => {
+    for (const value of [undefined, null, 0, {}, [], () => {}]) {
+      expect(() => extract(value, 'a.js')).not.toThrow();
+      expect(extract(value, 'a.js').symbols).toEqual([]);
+      expect(() => detect(value, 'a.js')).not.toThrow();
+    }
   });
 
-  test('the spec’s 400-line cap is what marks a long block partial', () => {
-    // base-adapter.js is ~813 lines: the class is longer than the spec's scan
-    // budget, so the range is the 40-line placeholder and the file is partial.
-    // That is the designed failure — a range that cannot be measured is never
-    // served at digest confidence.
-    const text = fs.readFileSync(path.join(ROOT, 'adapters', 'base-adapter.js'), 'utf8');
-    const result = extract.extract(text, 'adapters/base-adapter.js');
-    const klass = byName(result.symbols, 'BaseAdapter');
-    expect(result.partial).toBe(true);
-    expect(klass.confidence).toBe(0.4);
-    expect(klass.line_end).toBe(klass.line_start + 40);
-    expect(blocks.findBlockEnd(text, klass.line_start, result.loc, { maxScanLines: 100000 }).line_end).toBeGreaterThan(700);
+  test('treats a missing path as an unknown language', () => {
+    expect(() => extract('const a = 1;', undefined)).not.toThrow();
+    expect(detect('const a = 1;', undefined)).toBeNull();
+  });
+
+  test('keeps every range inside the file for malformed snippets', () => {
+    for (const text of hostile) {
+      for (const path of paths) {
+        const result = extract(text, path);
+        for (const symbol of result.symbols) {
+          expect(symbol.line_start).toBeGreaterThanOrEqual(1);
+          expect(symbol.line_end).toBeLessThanOrEqual(Math.max(result.loc, 1));
+        }
+      }
+    }
   });
 });

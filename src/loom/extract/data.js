@@ -1,111 +1,178 @@
 'use strict';
-// src/loom/extract/data.js — top-level keys of JSON, YAML and TOML.
+// src/loom/extract/data.js — JSON, YAML and TOML structure.
 //
-// Spec: src/loom_specs.md §4.5 ("top-level keys only → key"). The point is a
-// file's shape at a glance — `package.json` is `name, version, scripts, …` — not
-// a full parse. So this is a line scan, not a parser: no dependency, no
-// recovery problem on malformed input, and the same answer for a file that
-// parses and one that does not.
+// Spec: src/loom_specs.md §4.5, last row: *top-level keys only, no deep walk*.
+// That restriction is the whole design. A `package.json` or a CI config is
+// navigated by its top-level keys (`scripts`, `dependencies`, `jobs`), and a deep
+// walk would turn a 40-line config into two hundred symbols that crowd the
+// digest's 24-entry budget while telling the model nothing it could not infer
+// from one read.
 //
-// JSON: the keys at the smallest indentation that has any `"key":` lines.
-// YAML: `key:` at column 0. TOML: `key =` at column 0, plus `[section]`
-// headers, which are what a TOML file's top level usually is.
+// The JSON scanner tracks brace depth outside of strings rather than indenting,
+// because real config files are re-indented by every formatter that touches them.
 
-const { countLines, buildLineStarts, precedingHashComment } = require('./blocks');
+const EXTENSIONS = Object.freeze({
+  '.json': 'json',
+  '.yaml': 'yaml',
+  '.yml': 'yaml',
+  '.toml': 'toml',
+});
 
-const JSON_KEY = /^([ \t]*)"((?:[^"\\]|\\.)*)"[ \t]*:/;
-const YAML_KEY = /^([A-Za-z0-9_$.-]+)[ \t]*:(?:[ \t]|$)/;
-const TOML_KEY = /^([A-Za-z0-9_.-]+)[ \t]*=/;
-const TOML_SECTION = /^[ \t]*\[([^\]]+)\][ \t]*$/;
+const MAX_SIGNATURE = 200;
+const MAX_DOC = 160;
+const MAX_SUMMARY = 240;
 
-function unquote(raw) {
-  try {
-    return JSON.parse(`"${raw}"`);
-  } catch (_) {
-    return raw;
-  }
+const YAML_KEY_RE = /^([A-Za-z_][\w.-]*)[ \t]*:(?:[ \t]|$)/;
+const TOML_SECTION_RE = /^\[\[?([^\]\n]+)\]\]?[ \t]*$/;
+const TOML_KEY_RE = /^([A-Za-z0-9_-]+)[ \t]*=/;
+
+/** Collapse whitespace and truncate at a word boundary. */
+function clip(value, max) {
+  const text = String(value == null ? '' : value).replace(/\s+/g, ' ').trim();
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max);
+  const space = cut.lastIndexOf(' ');
+  return `${(space > max * 0.6 ? cut.slice(0, space) : cut).trim()}…`;
 }
 
-function pushKey(symbols, seen, name, line, src) {
-  const key = `key:${name}:${line}`;
-  if (!name || seen.has(key)) return;
-  seen.add(key);
-  symbols.push({
-    name: String(name).slice(0, 200),
+/** First sentence of a comment body, ≤160 chars. */
+function firstSentence(body) {
+  const text = String(body || '').replace(/\s+/g, ' ').trim();
+  if (!text) return '';
+  const match = text.match(/^(.*?[.!?])(\s|$)/);
+  return clip(match ? match[1] : text, MAX_DOC);
+}
+
+function makeSymbol(name, lineStart, signature) {
+  return {
+    name,
     kind: 'key',
-    line_start: line,
-    line_end: line,
-    signature: name.slice(0, 200),
-    exported: 0,
+    line_start: lineStart,
+    line_end: lineStart,
+    signature: clip(signature, MAX_SIGNATURE),
+    // A config file's top-level keys are its interface; nothing else in the
+    // file is addressable without a deep walk, which §4.5 forbids.
+    exported: 1,
     parent: '',
-    doc: precedingHashComment(src, line),
+    doc: '',
     confidence: 0.9,
-  });
-}
-
-function extractJson(lines, src, symbols, seen) {
-  const candidates = [];
-  for (let i = 0; i < lines.length; i++) {
-    const match = JSON_KEY.exec(lines[i]);
-    if (!match) continue;
-    candidates.push({ indent: match[1].length, name: unquote(match[2]), line: i + 1 });
-  }
-  if (!candidates.length) return;
-  const minIndent = candidates.reduce((min, c) => Math.min(min, c.indent), Infinity);
-  for (const candidate of candidates) {
-    if (candidate.indent === minIndent) pushKey(symbols, seen, candidate.name, candidate.line, src);
-  }
-}
-
-function extractYaml(lines, src, symbols, seen) {
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (!line.trim() || line.startsWith('#') || line.startsWith('-')) continue;
-    const match = YAML_KEY.exec(line);
-    if (!match) continue;
-    pushKey(symbols, seen, match[1], i + 1, src);
-  }
-}
-
-function extractToml(lines, src, symbols, seen) {
-  let inSection = false;
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (!line.trim() || /^[ \t]*#/.test(line)) continue;
-    const section = TOML_SECTION.exec(line);
-    if (section) {
-      inSection = true;
-      pushKey(symbols, seen, section[1].trim(), i + 1, src);
-      continue;
-    }
-    // After the first `[section]`, a `key = value` belongs to that section and
-    // is not top-level — TOML indentation does not nest, so this flag is the
-    // only thing that separates the two.
-    if (inSection) continue;
-    const key = TOML_KEY.exec(line);
-    if (key) pushKey(symbols, seen, key[1], i + 1, src);
-  }
+  };
 }
 
 /**
- * @param {string} text
- * @param {string} relPath used only to pick the dialect
- * @returns {{ symbols: object[], imports: object[], loc: number, partial: boolean }}
+ * Top-level keys of a JSON document: strings at depth 1 followed by a colon.
+ * Braces and brackets inside strings are ignored.
  */
-function extract(text, relPath = '') {
-  const src = String(text == null ? '' : text);
-  const loc = countLines(src);
-  const lines = src.split(/\r?\n/);
+function jsonKeys(lines) {
   const symbols = [];
-  const seen = new Set();
-  const ext = String(relPath).toLowerCase().slice(String(relPath).lastIndexOf('.'));
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  let capture = null;
 
-  if (ext === '.json') extractJson(lines, src, symbols, seen);
-  else if (ext === '.yaml' || ext === '.yml') extractYaml(lines, src, symbols, seen);
-  else if (ext === '.toml') extractToml(lines, src, symbols, seen);
-
-  symbols.sort((a, b) => a.line_start - b.line_start || a.name.localeCompare(b.name));
-  return { symbols, imports: [], loc, partial: false };
+  for (let n = 1; n <= lines.length; n += 1) {
+    const line = lines[n - 1] || '';
+    for (let i = 0; i < line.length; i += 1) {
+      const ch = line[i];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (ch === '\\') escaped = true;
+        else if (ch === '"') inString = false;
+        else if (capture) capture.text += ch;
+        continue;
+      }
+      if (ch === '"') {
+        inString = true;
+        capture = { text: '', depth, line: n };
+        continue;
+      }
+      if (capture) {
+        if (ch === ':' && capture.depth === 1) symbols.push(makeSymbol(capture.text, capture.line, line));
+        capture = null;
+      }
+      if (ch === '{' || ch === '[') depth += 1;
+      else if (ch === '}' || ch === ']') depth -= 1;
+    }
+  }
+  return symbols;
 }
 
-module.exports = { extract };
+/** Top-level keys of a YAML document: a name at column 0 followed by `:`. */
+function yamlKeys(lines) {
+  const symbols = [];
+  for (let n = 1; n <= lines.length; n += 1) {
+    const line = lines[n - 1] || '';
+    if (line.trim() === '' || line.trim().startsWith('#') || line.trim() === '---') continue;
+    const match = line.match(YAML_KEY_RE);
+    if (match) symbols.push(makeSymbol(match[1], n, line));
+  }
+  return symbols;
+}
+
+/** Top-level keys and `[section]` headers of a TOML document. */
+function tomlKeys(lines) {
+  const symbols = [];
+  for (let n = 1; n <= lines.length; n += 1) {
+    const line = lines[n - 1] || '';
+    const trimmed = line.trim();
+    if (trimmed === '' || trimmed.startsWith('#')) continue;
+    const section = trimmed.match(TOML_SECTION_RE);
+    if (section) {
+      symbols.push(makeSymbol(clip(section[1].trim(), MAX_SIGNATURE), n, trimmed));
+      continue;
+    }
+    const key = line.match(TOML_KEY_RE);
+    if (key) symbols.push(makeSymbol(key[1], n, line));
+  }
+  return symbols;
+}
+
+/** Leading `#` comment, for YAML and TOML files that document themselves. */
+function leadingDoc(lines) {
+  const collected = [];
+  for (let n = 1; n <= Math.min(lines.length, 12); n += 1) {
+    const text = (lines[n - 1] || '').trim();
+    if (text === '') {
+      if (collected.length > 0) break;
+      continue;
+    }
+    if (!text.startsWith('#')) break;
+    collected.push(text.replace(/^#+\s?/, ''));
+  }
+  return collected.length > 0 ? firstSentence(collected.join(' ')) : '';
+}
+
+function buildSummary(symbols, doc) {
+  if (doc) return clip(doc, MAX_SUMMARY);
+  const names = symbols.slice(0, 6).map((s) => s.name);
+  if (names.length > 0) return clip(`Keys: ${names.join(', ')}.`, MAX_SUMMARY);
+  return '';
+}
+
+/**
+ * Extract top-level keys from a JSON, YAML or TOML file. Never throws.
+ *
+ * @param {string} text
+ * @param {string} [relPath] decides the dialect by extension; defaults to JSON
+ * @returns {{ symbols: object[], imports: object[], summary: string, partial: boolean }}
+ */
+function extract(text, relPath) {
+  const source = typeof text === 'string' ? text : '';
+  const lines = source.split('\n');
+  const ext = String(relPath || '').toLowerCase().match(/\.[a-z0-9]+$/);
+  const language = (ext && EXTENSIONS[ext[0]]) || 'json';
+
+  let symbols;
+  if (language === 'yaml') symbols = yamlKeys(lines);
+  else if (language === 'toml') symbols = tomlKeys(lines);
+  else symbols = jsonKeys(lines);
+
+  return {
+    symbols,
+    imports: [],
+    summary: buildSummary(symbols, language === 'json' ? '' : leadingDoc(lines)),
+    partial: false,
+  };
+}
+
+module.exports = { id: 'data', EXTENSIONS, extract };

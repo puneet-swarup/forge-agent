@@ -1,8 +1,7 @@
 # NEXT SESSION — Forge Agent workstreams
 
-**Verified:** 2026-11-21, against `main` @ `f6cf197` (after PRs #3-#13), plus
-branch `feat/loom-slice2-extractors` (Loom slice 2, PR open). The runner never
-merges; a human or the lead agent merges after CI is green.
+**Verified:** 2026-11-21, against `main` @ `f6cf197` (after PRs #3-#13). The
+runner never merges; a human or the lead agent merges after CI is green.
 **Rule for this file:** implementation and tests are authoritative. A status here
 is only "done" if the evidence column can be re-run and passes. Anything carried
 over from an earlier handoff is marked *(unverified)* until someone checks it.
@@ -10,7 +9,7 @@ over from an earlier handoff is marked *(unverified)* until someone checks it.
 Re-verify everything in one pass:
 
 ```bash
-npm test                                  # suite must be green (2,510 passing / 19 skipped)
+npm test                                  # suite must be green (2,359 passing / 19 skipped)
 npm run typecheck
 node scripts/verify-prompt.js             # the prompt the agent actually sends
 grep -rn "encodeTransportArg" src/transport.js   # T1
@@ -18,9 +17,8 @@ ls src/loom 2>/dev/null                   # T2
 npx jest tests/adapter-contract.test.js   # T3
 npx jest tests/lifecycle-gate.test.js     # T4 (27)
 ls scripts/lifecycle.js scripts/plan.js   # T4
-npx jest tests/loom                       # T2 slices 1-2 (254 passing / 2 skipped)
+npx jest tests/loom                       # T2 slice 1 (162 passing / 2 skipped)
 ls src/loom/schema/001_init.sql           # T2 schema
-ls src/loom/extract/index.js src/loom/resolve.js   # T2 slice 2
 grep -rn "['\"\`]/(var/)?tmp/" src/       # T5 (must be empty)
 npx jest tests/markdown-scope.test.js     # T6 (14)
 ```
@@ -62,7 +60,7 @@ rotation are all on `main`.
 | Task | Workstream | Status | Evidence | Next action |
 | --- | --- | --- | --- | --- |
 | **T1** | Transport | **DONE** | `src/transport.js` exports `encodeTransportArg` / `decodeTransportArg` / `md5hex`; `content_md5`, `is_hex`, `find_md5`, `replace_md5` are in `src/tools.js`; `tests/transport-integrity.test.js` (19) green | none — see limitation below |
-| **T2** | Loom | **IN PROGRESS — slices 1-2 of 5** | `src/loom/` has config, paths, hash, ignore, db (SQLite + JSON), migrate, schema, `open`/`close`/`status`/`stats`, `extract/` (7 languages + `findBlockEnd`) and `resolve.js`; `tests/loom/` (254) green; see `docs/LOOM.md` | slice 3: the indexer (`refresh.js`) |
+| **T2** | Loom | **IN PROGRESS — slice 1 of 5 merged** | `src/loom/` has config, paths, hash, ignore, db (SQLite + JSON), migrate, schema, `open`/`close`/`status`/`stats`; `tests/loom/` (162) green; see `docs/LOOM.md` | slice 2: extractors + import resolution |
 | **T3** | Adapters | **OPEN — live-DOM accuracy only** | all 8 adapters implement the 6 contract methods; `tests/adapter-contract.test.js` (50) green | per-adapter live smoke test with a real login |
 | **T4** | Plan lifecycle | **DONE** (PR #9 merged) | `src/lifecycle-gate.js` gates the first mutating tool and `TASK_COMPLETE`, bounded by `MAX_PLAN_GATE_ATTEMPTS`; `PLAN_GATE=false` disables it | nothing |
 | **T5** | Cross-platform paths | **DONE (targeted)** | no literal `/tmp` in `src/`; `icacls` hints on win32; `tests/path-portability.test.js` green | extend only if a new path bug appears |
@@ -96,7 +94,7 @@ include a hash only when certain, because a wrong hash blocks a legitimate write
 
 ---
 
-## T2 — ClickHouse Loom · IN PROGRESS (slices 1-2 of 5)
+## T2 — ClickHouse Loom · IN PROGRESS (slice 1 of 5)
 
 The normative specification is **`src/loom_specs.md`** (v1, 839 lines, "ready for
 implementation"). It is self-contained: where a design choice existed, it is
@@ -149,38 +147,10 @@ Three invariants are already enforced, not just intended:
 - **I6** — path normalisation rejects absolute and escaping paths rather than
   rewriting them; storage is always project-relative, forward slashes.
 
-**Progress — slice 2, extractors and import resolution (done).** `src/loom/extract/`
-now holds `index.js` (the registry), `blocks.js` (`findBlockEnd` and the line
-helpers), and one extractor per language: `js.js` (`.js .mjs .cjs .jsx .ts .tsx`),
-`py.js`, `go.js`, `rs.js`, `sql.js`, `md.js`, `data.js`. `src/loom/resolve.js`
-turns a specifier into a project-relative path. Nothing is wired into the agent
-loop yet — that is still slice 5.
-
-What the tests hold, in `tests/loom/extract.test.js` (66) and
-`tests/loom/resolve.test.js` (26):
-
-- **the scanner, not a brace counter.** Braces inside strings, template
-  literals with `${ … }`, escaped quotes, line and block comments, Go raw
-  strings, Rust lifetimes — and **regex literals**, which the spec's state list
-  omits. Without a regex state, `.replace(/"/g, '')` opens a string that never
-  closes; on this repository that was 16 files marked `partial` instead of 5.
-- **the 400-line cap is real and deliberate.** Five files in `src/` contain a
-  block longer than 400 lines (`adapters/base-adapter.js`,
-  `adapters/local-chat-adapter.js`, `agent.js`, `index.js`, `tui.js`); each gets
-  the spec's 40-line placeholder at confidence 0.4 and `partial: true`, which is
-  below the digest's 0.70 symbol threshold. One consequence to remember for
-  slice 4: a method's `parent` comes from the enclosing class's *line range*, so
-  methods outside a placeholder range have no parent.
-- **resolution never guesses.** `./`, `../`, `/`, `@/`, `~/` are local, the rest
-  is external, candidates are tried in the spec's order, and anything escaping
-  the project resolves to `null`. Existence is injectable, so slice 3 can rebuild
-  the graph from a file list without touching the disk.
-- **two tests run over `src/` itself**: every source file scans without throwing
-  and every range is inside its file.
-
 **Remaining slices** (one PR each, in order):
 
-2. ~~extractors (`extract/*.js`), `findBlockEnd`, `resolve.js`~~ — done;
+2. extractors (`extract/*.js`), `findBlockEnd`, `resolve.js` — fixture-tested
+   against real files, no database needed;
 3. indexer — `refresh.js` sweep, git short-circuit, dirty flag, worker,
    tombstones, access rows, caps and warm-up order;
 4. digest, `query.js`, `heat.js`, `summarize.js`, `portable.js`;
@@ -322,13 +292,6 @@ three places (`CONTRIBUTING.md` asked for 10, 3 and 2; the PR template asked for
 5). One rule now, stated once in `CONTRIBUTING.md`; the template defers to it,
 and the test enforces that.
 
-**One gap found later and fixed:** `docs/LOOM.md`, added by slice 1, was never
-given an inventory row, so `tests/markdown-scope.test.js` was failing on `main`
-(22 Markdown files on disk, 21 in the table) — every PR built on `main` started
-red for a reason unrelated to its own change. The row is in, the count is 22, and
-the suite is green again. That is exactly the drift the test exists to catch; the
-lesson is that adding a `.md` file and its row belong in the same commit.
-
 **Open findings recorded in the inventory (not fixed — different workstreams):**
 
 1. `ROADMAP.md` still says "Current Version: 2.0.0" while `package.json` says
@@ -342,9 +305,8 @@ lesson is that adding a `.md` file and its row belong in the same commit.
 
 ## What is next, in order
 
-1. **Loom slice 3** — the indexer: `refresh.js` sweep, the git short-circuit,
-   the dirty flag, the worker, tombstones, access rows, caps and warm-up order.
-   Slices 1-2 are storage and parsing only; nothing is wired into the loop yet.
+1. **Loom slice 2** — extractors (js/ts/py/go/rs/sql/md/data) and import
+   resolution. Slice 1 is storage only; nothing is wired into the loop yet.
 2. **T3 live adapter repair** — blocked on a human with a login. The offline
    contract suite is green; the selectors are unverified against the real UIs.
 3. **README rewrite** — still reads as a fork. Attribution stays (MIT); the
