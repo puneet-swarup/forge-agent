@@ -120,6 +120,13 @@ const DEFAULTS = {
   VERIFY_TIMEOUT_MS        : 120_000,
   MAX_VERIFICATION_ATTEMPTS: 2,
 
+  // Plan gate: a multi-step task must write FORGE_PLAN.md before its first
+  // mutating tool, and TASK_COMPLETE is refused while the plan still has open
+  // steps. PLAN_GATE_MULTISTEP_ONLY=false gates even one-line tasks.
+  PLAN_GATE                : true,
+  PLAN_GATE_MULTISTEP_ONLY : true,
+  MAX_PLAN_GATE_ATTEMPTS   : 2,
+
   // Reactive rate-limit backoff (default ON).
   RATE_LIMIT_BACKOFF     : true,
   RATE_LIMIT_BASE_MS     : 5_000,
