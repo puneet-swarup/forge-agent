@@ -220,7 +220,11 @@ class ForgeAgent {
     }
     try {
       if (!this.sessionContext.exists()) {
-        logger.warn(`Session context MISSING at ${this.sessionContext.file} — state was not written`);
+        // run() and shutdown() both verify, so this warned twice per run.
+        if (!this._sessionCtxWarned) {
+          this._sessionCtxWarned = true;
+          logger.warn(`Session context MISSING at ${this.sessionContext.file} — state was not written`);
+        }
         return false;
       }
       return true;

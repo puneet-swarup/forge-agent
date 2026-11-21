@@ -1865,7 +1865,12 @@ async function main() {
   const agent = new ForgeAgent({ saveLog: args.saveLog });
 
   // ── Graceful shutdown handler ──────────────────────────────────────────────
+  // Idempotent: Ctrl+C twice used to print "Shutting down..." twice, run
+  // agent.shutdown() twice, and surface a browser-closed error on the way out.
+  let shuttingDown = false;
   const shutdown = async (code = 0) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     logger.info('\nShutting down...');
     try { if (heartbeatHandle) heartbeatHandle.stop(); } catch (_) {}
     try { require('./heartbeat').stop(); } catch (_) {}
@@ -1881,13 +1886,32 @@ async function main() {
 
   process.on('SIGINT',  () => shutdown(0));
   process.on('SIGTERM', () => shutdown(0));
+  // A closed page during shutdown is not a failure — it is the shutdown
+  // working. Reporting it as "Unexpected error" made a clean Ctrl+C look like a
+  // crash.
+  const isShutdownNoise = (err) => {
+    const msg = (err && err.message) || String(err || '');
+    return /Target page, context or browser has been closed|browser has been closed|Protocol error/i.test(msg);
+  };
+
   process.on('uncaughtException', async err => {
+    if (shuttingDown || isShutdownNoise(err)) {
+      if (config.DEBUG) logger.dim('  (ignored during shutdown: ' + ((err && err.message) || err) + ')');
+      await shutdown(0);
+      return;
+    }
     displayError(err);
     if (config.DEBUG) console.error(err.stack);
     await shutdown(1);
   });
   process.on('unhandledRejection', async reason => {
-    displayError(reason instanceof Error ? reason : new Error(String(reason)));
+    const err = reason instanceof Error ? reason : new Error(String(reason));
+    if (shuttingDown || isShutdownNoise(err)) {
+      if (config.DEBUG) logger.dim('  (ignored during shutdown: ' + err.message + ')');
+      await shutdown(0);
+      return;
+    }
+    displayError(err);
     if (config.DEBUG) console.error(reason);
     await shutdown(1);
   });

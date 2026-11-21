@@ -8,6 +8,24 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ## [Unreleased]
 
+### Fixed
+- **Gemini's send and new-chat buttons were not being found** on a live run —
+  reported by the first real selector test against the web UI. Both lists are
+  broader (aria-label, data-test-id, class, material icon), and
+  `discoverSendButton()` gained a structural fallback: if every named selector
+  has drifted, it takes the button sitting beside the composer rather than
+  falling through to pressing Enter, which cannot distinguish "send" from
+  "newline" in a composer that accepts both.
+- **`Thinking... NaNmNaNs`** — `logger.thinking('Launching browser...')` passes a
+  message where a duration was expected, so the string was parsed as
+  milliseconds. `renderThinking` now accepts either, and `formatMs` refuses to
+  render a non-finite number.
+- **A warning that dropped its own reason** — `logger.warn(msg)` took one
+  argument, so `warn('[Gemini] Navigation fallback:', err.message)` printed a
+  colon and nothing else. Log methods now join extra arguments.
+- **A clean Ctrl+C looked like a crash** — shutdown is idempotent, and a closed
+  page during shutdown is no longer reported as "Unexpected error".
+
 ### Added
 - **Background processes are visible outside the process that started them.**
   `src/process-manager.js` keeps its registry in memory, so the dashboard — a
