@@ -17,6 +17,7 @@
  *
  * @param {string} rawText
  * @param {object} [opts]
+ * @param {string[]} [opts.toolNames]   registered tool names (enables suggestions)
  * @param {(name: string) => boolean} [opts.isKnownTool]
  *        When supplied, a candidate whose tool name is not in the registry is
  *        reported as `invalid_tool` (with a nearest-name suggestion) instead of
@@ -387,6 +388,18 @@ function _extractBareJSON(text, isKnownTool) {
 // ─────────────────────────────────────────────
 
 /**
+ * @typedef {object} ParsedResult
+ * @property {string} type
+ * @property {string} [name]
+ * @property {object} [args]
+ * @property {Array<{name: string, args: object}>} [calls]
+ * @property {string|null} [suggestion]
+ * @property {string} [rawText]
+ * @property {string} [content]
+ * @property {string} [message]
+ */
+
+/**
  * Reject calls whose tool name is not in the registry, and suggest the nearest
  * real tool. Without this a typo ("read_fle") reached the executor, which
  * replied with the entire 45-tool registry (~2k characters) every time.
@@ -396,7 +409,12 @@ function _extractBareJSON(text, isKnownTool) {
  * @param {string[]|null} toolNames
  * @param {string} rawText
  */
-function _finalise(parsed, isKnownTool, toolNames, rawText) {
+function _finalise(
+  /** @type {ParsedResult|null} */ parsed,
+  /** @type {((name: string) => boolean)|null} */ isKnownTool,
+  /** @type {string[]|null} */ toolNames,
+  /** @type {string} */ rawText
+) {
   if (!parsed || !isKnownTool) return parsed;
 
   const bad = (c) => !c || typeof c.name !== 'string' || !isKnownTool(c.name);
