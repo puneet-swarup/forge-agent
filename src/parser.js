@@ -36,18 +36,23 @@ function parseResponse(rawText, opts = {}) {
     ? (n) => toolNames.includes(n)
     : (typeof opts.isKnownTool === 'function' ? opts.isKnownTool : null);
 
+  // Every branch records which shape it matched. Tolerance is deliberate —
+  // models drift — but tolerance without measurement hides non-compliance: a
+  // model that emits fenced JSON forever still works, so nobody notices it is
+  // ignoring the contract. `strategy` makes that visible.
+
   // ── Strategy 1: <tool_call> XML tags ─────────────────────────────────────
   const _xmlAll = [...text.matchAll(/<tool_call>\s*([\s\S]*?)\s*<\/tool_call>/gi)];
   if (_xmlAll.length > 0) {
     const _xc = [];
     for (const _m of _xmlAll) { const _p = _parseToolJSON(_m[1], text); if (_p) _xc.push({ name: _p.name, args: _p.args }); }
     const _xb = _buildBatch(_xc, text);
-    if (_xb) return _finalise(_xb, isKnownTool, toolNames, text);
+    if (_xb) return { ..._finalise(_xb, isKnownTool, toolNames, text), strategy: 'xml' };
   }
   const xmlMatch = text.match(/<tool_call>\s*([\s\S]*?)\s*<\/tool_call>/i);
   if (xmlMatch) {
     const result = _parseToolJSON(xmlMatch[1], text);
-    if (result) return _finalise(result, isKnownTool, toolNames, text);
+    if (result) return { ..._finalise(result, isKnownTool, toolNames, text), strategy: 'xml' };
   }
 
   // ── Strategy 2: backtick code block tagged tool_call ─────────────────────
@@ -91,7 +96,7 @@ function parseResponse(rawText, opts = {}) {
   }
   if (_cbCalls.length > 0) {
     const _cbBatch = _buildBatch(_cbCalls, text);
-    if (_cbBatch) return _finalise(_cbBatch, isKnownTool, toolNames, text);
+    if (_cbBatch) return { ..._finalise(_cbBatch, isKnownTool, toolNames, text), strategy: 'fence' };
   }
 
   // ── Strategy 3: function‑call style: tool_name("arg") or tool_name(key="value", ...)
@@ -103,13 +108,16 @@ function parseResponse(rawText, opts = {}) {
     const argsStr = funcMatch[2].trim();
     const args = _parseFunctionArgs(argsStr);
     if (args !== null) {
-      return _finalise({ type: 'tool_call', name: toolName, args, rawText: text }, isKnownTool, toolNames, text);
+      return {
+        ..._finalise({ type: 'tool_call', name: toolName, args, rawText: text }, isKnownTool, toolNames, text),
+        strategy: 'function',
+      };
     }
   }
 
   // ── Strategy 4: TASK_COMPLETE ─────────────────────────────────────────────
   if (_containsTaskComplete(text)) {
-    return { type: 'task_complete' };
+    return { type: 'task_complete', strategy: 'complete' };
   }
 
   // ── Strategy 5: bare JSON object outside any code fence ───────────────────
@@ -121,7 +129,7 @@ function parseResponse(rawText, opts = {}) {
   if (bareResult) return bareResult;
 
   // ── Strategy 6: plain text / conversational response ─────────────────────
-  return { type: 'text', content: text };
+  return { type: 'text', content: text, strategy: 'text' };
 }
 
 function _buildBatch(calls, rawText) {

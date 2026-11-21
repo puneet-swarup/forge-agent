@@ -786,6 +786,16 @@ class ForgeAgent {
         // misspelled tool names, cannot execute. See parser._finalise().
         const parsed = parseResponse(rawResponse, { toolNames: Object.keys(TOOLS) });
 
+        // Which shape did the model actually use? The canonical reply is
+        // <tool_call>{json}</tool_call>; anything else ('fence', 'function',
+        // 'text') means the prompt contract is being tolerated, not followed.
+        // Recorded so drift is measurable instead of invisible.
+        this._lastParseStrategy = parsed && parsed.strategy ? parsed.strategy : 'none';
+        if (this._lastParseStrategy !== 'xml' && this._lastParseStrategy !== 'complete'
+            && this._lastParseStrategy !== 'text') {
+          logger.debug(`[parser] non-canonical tool-call format: ${this._lastParseStrategy}`);
+        }
+
         // Step line describes the tool that is ACTUALLY about to run (current
         // intent), not the previous one. Emitted after parsing so the label and
         // the tool-call line below always agree.

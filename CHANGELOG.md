@@ -101,6 +101,12 @@ Versioning: [Semantic Versioning](https://semver.org/)
   page during shutdown is no longer reported as "Unexpected error".
 
 ### Added
+- **The parser reports which shape it matched** — `strategy: 'xml' | 'fence' |
+  'function' | 'complete' | 'text'`. The canonical reply is
+  `<tool_call>{json}</tool_call>`; the other shapes exist because models drift.
+  Tolerance is deliberate, but tolerance without measurement hides
+  non-compliance: a model that never follows the contract looks identical to one
+  that always does. `--debug` now names a non-canonical tool-call format.
 - **`--diagnose=<model>`** — answers "why did this model stop working", not just
   "is it working". It prints every candidate selector with its match count and
   visibility, then the real buttons and editables on the page with the attributes
