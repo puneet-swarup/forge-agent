@@ -81,19 +81,34 @@ async function runHealthCheck(page, adapter, config, options = {}) {
 
   // ── Check 3: Input box is visible ───────────────────────────────────
   try {
-    const inputSelectors = adapter._getInputSelectors
-      ? adapter._getInputSelectors()
-      : ['textarea', 'div[contenteditable="true"]'];
-
+    // Ask the adapter, the same way the send path does. This used to check only
+    // the first three selectors with page.$ — so on ChatGPT, where the composer
+    // is the fourth candidate, the health check warned "input not visible" on a
+    // page whose composer the adapter could find and type into perfectly well.
     let inputFound = false;
-    for (const sel of inputSelectors.slice(0, 3)) {
+
+    if (typeof adapter.discoverComposer === 'function') {
       try {
-        const el = await page.$(sel);
-        if (el && await el.isVisible()) {
-          inputFound = true;
-          break;
-        }
-      } catch (_) { /* try next */ }
+        inputFound = Boolean(await adapter.discoverComposer({ timeout: 5000 }));
+      } catch (_) {
+        inputFound = false;
+      }
+    }
+
+    if (!inputFound) {
+      const inputSelectors = adapter._getInputSelectors
+        ? adapter._getInputSelectors()
+        : ['textarea', 'div[contenteditable="true"]'];
+
+      for (const sel of inputSelectors) {
+        try {
+          const el = await page.$(sel);
+          if (el && await el.isVisible()) {
+            inputFound = true;
+            break;
+          }
+        } catch (_) { /* try next */ }
+      }
     }
 
     results.push(result(

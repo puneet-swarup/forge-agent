@@ -9,6 +9,14 @@ Versioning: [Semantic Versioning](https://semver.org/)
 ## [Unreleased]
 
 ### Fixed
+- **ChatGPT's response container is `.thread-scroll-container`.** The current
+  build has no `prose` class, no `data-message-author-role` and no `article`, so
+  all eight response selectors matched nothing even with a reply on screen. Taken
+  from a live `--diagnose` dump, with a structural fallback behind it.
+- **The health check warned "input not visible" on a working page.** It checked
+  only the first three composer selectors with `page.$`; on ChatGPT the composer
+  is the fourth. It now asks the adapter (`discoverComposer`), the same path the
+  send button uses — so the check and the run agree.
 - **Sarvam's response selectors could never match.** Indus is built with Tailwind
   utility classes — a live dump of a real reply showed the transcript inside
   `<section class="flex h-full">` with no markdown, prose or assistant class

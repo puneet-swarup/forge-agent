@@ -61,6 +61,12 @@ class ChatGPTAdapter extends BaseAdapter {
     // screen. These come from a --diagnose dump of the real page, which showed
     // the transcript inside .thread-scroll-container[role="region"].
     return [
+      // From a live --diagnose dump: the transcript is
+      // <div class="… thread-scroll-container peer/transcript" role="region">.
+      // There is no data-message-author-role and no article element in the
+      // current build, so both of those matched nothing with a reply on screen.
+      '.thread-scroll-container',
+      '[role="region"].thread-scroll-container',
       '[data-message-author-role="assistant"]',
       '.thread-scroll-container [data-message-author-role="assistant"]',
       '[role="region"].thread-scroll-container article:last-of-type',
@@ -140,7 +146,47 @@ class ChatGPTAdapter extends BaseAdapter {
   }
 
   return null;
-}
+
+    // Structural fallback: the transcript is the largest visible text block that
+    // is not the composer and not the sidebar. ChatGPT's class names are hashed
+    // and change; shape does not.
+    try {
+      const handle = await this.page.evaluateHandle(() => {
+        const visible = (el) => {
+          const style = window.getComputedStyle(el);
+          return style.display !== 'none' && style.visibility !== 'hidden' &&
+            style.opacity !== '0' && el.getClientRects().length > 0;
+        };
+
+        let best = null;
+        let bestLen = 0;
+
+        for (const el of document.querySelectorAll('main, section, article, div')) {
+          if (!visible(el)) continue;
+          if (el.closest('[contenteditable="true"]')) continue;
+          if (el.closest('nav')) continue;
+
+          const text = (el.innerText || '').trim();
+          if (text.length < 20) continue;
+          if (/^(ChatGPT|New chat|Images|Scheduled|Library|Plugins|Explore)\b/.test(text) && text.length < 200) continue;
+
+          if (text.length > bestLen) { bestLen = text.length; best = el; }
+        }
+
+        return best;
+      });
+
+      const element = handle.asElement();
+      if (element) {
+        logger.debug('[ChatGPT] Response container found structurally (no selector matched)');
+        return element;
+      }
+    } catch (_) {
+      // Fall through to null.
+    }
+
+    return null;
+  }
 
 async getGenerationState() {
   return await this.page.evaluate(() => {
