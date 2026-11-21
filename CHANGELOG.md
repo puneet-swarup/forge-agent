@@ -8,6 +8,19 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ## [Unreleased]
 
+### Added
+- **The plan gate** — `FORGE_PLAN.md` is now enforced by the agent loop instead
+  of only declared in the prompt. Before the first mutating tool of a multi-step
+  task the plan must exist with at least one `- [ ]` step; at `TASK_COMPLETE`
+  every step must be ticked. A refusal is fed back to the model with the file
+  name and the open steps, bounded by `MAX_PLAN_GATE_ATTEMPTS` (default 2), so a
+  stubborn plan cannot loop. Writing the plan itself is always allowed, a
+  one-clause task is never asked for one, and `PLAN_GATE=false` turns both gates
+  off. See `docs/RELIABILITY.md` §14.
+- `tests/markdown-scope.test.js` — fails when a Markdown file exists without an
+  inventory row, when a row names a missing file, or when the stated count drifts
+  from the tree.
+
 ### Changed
 - **Documentation governance is now enforced.** `docs/MARKDOWN_SCOPE.md` claimed
   29 Markdown files and listed nine that do not exist on `main` while omitting
@@ -17,11 +30,9 @@ Versioning: [Semantic Versioning](https://semver.org/)
 - **One test-count rule.** `CONTRIBUTING.md` asked for 10 tests, 3 tests and 2
   tests in three places; the PR template asked for 5. There is now one rule,
   stated once, and the template defers to it.
-
-### Added
-- `tests/markdown-scope.test.js` — fails when a Markdown file exists without an
-  inventory row, when a row names a missing file, or when the stated count drifts
-  from the tree.
+- `checkStart` / `checkEnd` / `parseCheckboxItems` moved from
+  `scripts/lifecycle.js` into `src/lifecycle.js`, so the CLI and the loop run the
+  same check. The script still exports them.
 
 ---
 

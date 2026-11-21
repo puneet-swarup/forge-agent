@@ -4,88 +4,22 @@
 // Usage:
 //   node scripts/lifecycle.js check-start   [--dir D]  task start: plan must exist
 //   node scripts/lifecycle.js check-end     [--dir D]  TASK_COMPLETE gate
-//   node scripts/lifecycle.js list                    show the artifact contract
+//   node scripts/lifecycle.js list                     show the artifact contract
 //
 // Exit codes: 0 = ok, 1 = protocol violation, 2 = usage error.
+//
+// The checks themselves live in src/lifecycle.js: the agent loop calls the same
+// functions before the first mutating tool and at TASK_COMPLETE, so the CLI and
+// the loop can never disagree about what "done" means.
 'use strict';
 
-const fs = require('fs');
-const path = require('path');
 const {
   ARTIFACTS,
-  requiredAtStart,
-  requiredCompleteAtEnd,
+  checkStart,
+  checkEnd,
+  parseCheckboxItems,
+  PLAN_FILE,
 } = require('../src/lifecycle');
-
-const PLAN_FILE = 'FORGE_PLAN.md';
-
-function parseCheckboxItems(raw) {
-  const out = [];
-  const lines = String(raw || '').split('\n');
-  for (let i = 0; i < lines.length; i++) {
-    const m = lines[i].match(/^\s*[-*]\s+\[([ xX])\]\s+(.*)$/);
-    if (!m) continue;
-    out.push({ text: m[2].trim(), done: m[1].toLowerCase() === 'x', line: i + 1 });
-  }
-  return out;
-}
-
-function readIfPresent(dir, file) {
-  const p = path.join(path.resolve(dir), file);
-  if (!fs.existsSync(p)) return null;
-  return fs.readFileSync(p, 'utf8');
-}
-
-/** Task start: FORGE_PLAN.md must exist with at least one checkbox item. */
-function checkStart(dir) {
-  const errors = [];
-
-  for (const file of requiredAtStart()) {
-    const raw = readIfPresent(dir, file);
-    if (raw === null) {
-      // SESSION_CONTEXT.md is written by the framework; only FORGE_PLAN.md is
-      // the agent's responsibility at this point. Flag only agent-owned files.
-      const meta = ARTIFACTS.find(a => a.file === file);
-      if (meta && meta.owner === 'agent') errors.push('missing ' + file + ' (agent-owned, required at task start)');
-      continue;
-    }
-    if (file === PLAN_FILE) {
-      const items = parseCheckboxItems(raw);
-      if (items.length === 0) {
-        errors.push(PLAN_FILE + ' has no "- [ ]" steps');
-      }
-    }
-  }
-
-  return errors;
-}
-
-/** Sign-off gate: every step in FORGE_PLAN.md must be ticked. */
-function checkEnd(dir) {
-  const errors = [];
-
-  for (const file of requiredCompleteAtEnd()) {
-    const raw = readIfPresent(dir, file);
-    if (raw === null) {
-      errors.push('missing ' + file + ' (required at TASK_COMPLETE)');
-      continue;
-    }
-    const items = parseCheckboxItems(raw);
-    if (items.length === 0) {
-      errors.push(file + ' has no "- [ ]" steps');
-      continue;
-    }
-    const open = items.filter(i => !i.done);
-    if (open.length > 0) {
-      errors.push(
-        PLAN_FILE + ' still has ' + open.length + ' unchecked step(s): ' +
-        open.map(i => '#' + i.line + ' ' + i.text).join('; ')
-      );
-    }
-  }
-
-  return errors;
-}
 
 function listContract() {
   return ARTIFACTS.map(function (a) {

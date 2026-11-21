@@ -52,10 +52,14 @@ describe('agent loop — parallel batch integration', () => {
     config.PLANNING_MODE = false;
     config.PARALLEL_TOOL_CALLS = true;
     config.MAX_PARALLEL_TOOL_CALLS = 4;
+    // This file tests batch ordering, not the plan gate: a "then" in the task
+    // text would otherwise be refused for having no FORGE_PLAN.md.
+    config.PLAN_GATE = false;
   });
 
   afterEach(() => {
     config.WORKING_DIR = origWorkingDir;
+    config.PLAN_GATE = true;
     try { fs.rmSync(workdir, { recursive: true, force: true }); } catch (_) {}
   });
 

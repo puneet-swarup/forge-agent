@@ -1,6 +1,6 @@
 # NEXT SESSION — Forge Agent workstreams
 
-**Verified:** 2026-11-21, against `main` @ `f534883` (after PRs #3-#8).
+**Verified:** 2026-11-21, against `main` @ `b10bab4` (after PRs #3-#8).
 **Rule for this file:** implementation and tests are authoritative. A status here
 is only "done" if the evidence column can be re-run and passes. Anything carried
 over from an earlier handoff is marked *(unverified)* until someone checks it.
@@ -8,12 +8,13 @@ over from an earlier handoff is marked *(unverified)* until someone checks it.
 Re-verify everything in one pass:
 
 ```bash
-npm test                                  # suite must be green (2,197 passing / 17 skipped)
+npm test                                  # suite must be green (2,224 passing / 17 skipped)
 npm run typecheck
 node scripts/verify-prompt.js             # the prompt the agent actually sends
 grep -rn "encodeTransportArg" src/transport.js   # T1
 ls src/loom 2>/dev/null                   # T2
 npx jest tests/adapter-contract.test.js   # T3
+npx jest tests/lifecycle-gate.test.js     # T4 (27)
 ls scripts/lifecycle.js scripts/plan.js   # T4
 grep -rn "['\"\`]/(var/)?tmp/" src/       # T5 (must be empty)
 npx jest tests/markdown-scope.test.js     # T6 (14)
@@ -40,7 +41,7 @@ rotation are all on `main`.
 | **T1** | Transport | **DONE** | `src/transport.js` exports `encodeTransportArg` / `decodeTransportArg` / `md5hex`; `content_md5`, `is_hex`, `find_md5`, `replace_md5` are in `src/tools.js`; `tests/transport-integrity.test.js` (19) green | none — see limitation below |
 | **T2** | Loom | **NOT STARTED on `main`** | `src/loom/` absent; spec at `src/loom_specs.md` (839 lines, v1) | implement from the spec; own PR |
 | **T3** | Adapters | **OPEN — live-DOM accuracy only** | all 8 adapters implement the 6 contract methods; `tests/adapter-contract.test.js` (50) green | per-adapter live smoke test with a real login |
-| **T4** | Plan lifecycle | **PARTIAL** | artifact protocol is in the live prompt; `src/lifecycle.js`, `scripts/lifecycle.js`, `scripts/plan.js` exist; context rotation now re-sends the plan on every rotation | enforce start/end gates in the agent loop |
+| **T4** | Plan lifecycle | **DONE** | gates wired into the loop via `src/lifecycle-gate.js` (single call, batch, and completion); `tests/lifecycle-gate.test.js` (27) green | none — see limitation below |
 | **T5** | Cross-platform paths | **DONE (targeted)** | no literal `/tmp` in `src/`; `icacls` hints on win32; `tests/path-portability.test.js` green | extend only if a new path bug appears |
 | **T6** | Markdown governance | **DONE** | `docs/MARKDOWN_SCOPE.md` re-audited (21 tracked files, verified against the tree); `tests/markdown-scope.test.js` (14) green and fails on any undocumented `.md` | follow the three open findings below |
 
@@ -158,20 +159,33 @@ drift. Recorded-DOM fixtures are the fix (see `docs/RELIABILITY.md`).
 
 ---
 
-## T4 — Plan lifecycle · PARTIAL
+## T4 — Plan lifecycle · DONE
 
 - The artifact protocol (FORGE_PLAN.md created, ticked, deleted only on sign-off)
   is stated in the **live** prompt — it was previously only in the unused one.
-- `src/lifecycle.js` defines the artifact contract; `scripts/lifecycle.js`
-  implements `check-start` / `check-end`; `scripts/plan.js` provides
-  `status / list / tick / next`.
-- **Missing:** the agent loop does not call those gates. `TASK_COMPLETE` is not
-  refused when `FORGE_PLAN.md` still has unchecked items, and the plan file is not
-  created automatically at task start.
+- `src/lifecycle.js` defines the artifact contract **and** the checks
+  (`checkStart`, `checkEnd`, `parseCheckboxItems`); `scripts/lifecycle.js` is now
+  a thin CLI over them; `scripts/plan.js` provides `status / list / tick / next`.
+- **The loop calls the gates.** `src/lifecycle-gate.js` decides, `agent.js` acts,
+  in three places: before a single tool call, before a tool batch, and at the top
+  of the completion branch.
+  - start: the first *mutating* tool of a multi-step task is refused until
+    `FORGE_PLAN.md` exists with at least one `- [ ]` step. Writing the plan is
+    always allowed (otherwise the gate deadlocks), a read-only tool is never
+    gated, and a one-clause task (`create hello.js`) is never asked for a plan.
+  - end: `TASK_COMPLETE` is refused while a step is open; the refusal lists the
+    open steps by line number. It runs after the verification gate.
+  - bounded by `MAX_PLAN_GATE_ATTEMPTS` (default 2) in both directions; a missing
+    plan at completion is reported, not refused. `PLAN_GATE=false` kills both.
+- **Evidence:** `tests/lifecycle-gate.test.js` — 27 tests: every decision branch,
+  the plan-write exemption (POSIX and Windows paths), and six end-to-end loop
+  cases with a scripted browser.
 
-Next: call `check-start` before the first mutating tool of a multi-step task and
-`check-end` at completion, reusing the verification-gate pattern (refuse, feed
-back, bounded attempts).
+**Known limitation:** the plan is still *written by the model*. The gate proves a
+plan exists and is ticked, not that the steps describe the work actually done —
+a model can write a one-item plan and tick it. Making the plan derived from the
+request (the planner already produces one in planning mode) is the next step, and
+it is a separate change.
 
 ---
 
