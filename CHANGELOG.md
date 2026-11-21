@@ -6,7 +6,19 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ---
 
-## [Unreleased]
+## [2.3.0] - 2026-11-21
+
+**Robustness, and the first real index.** 2.2.0 closed the loop between what the
+code declared and what it did. This release adds the guarantees an unattended
+agent needs — a verification gate that refuses a false "done", a shell policy
+that separates allowed from destructive, and a context rotation that stops the
+provider silently truncating the model's memory — plus the first two slices of
+Loom, the project index, and a CI/CD pipeline that can actually gate a release.
+
+The through-line: every claim in this repository is now backed by a command you
+can re-run. `docs/RELIABILITY.md` lists each guarantee with the test that proves
+it and, just as importantly, what is still missing.
+
 
 ### Added
 - **Loom slice 2b — import resolution** (`src/loom/resolve.js`). Turns a
