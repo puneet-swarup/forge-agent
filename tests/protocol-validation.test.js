@@ -122,14 +122,14 @@ describe('the agent loop handles an unknown tool with one targeted repair', () =
   });
 
   test('sends a short suggestion instead of executing or dumping the registry', async () => {
-    const DeepSeekAgent = require('../src/agent');
+    const ForgeAgent = require('../src/agent');
     const sent = [];
     const queue = [
       '<tool_call>{"tool":"read_fle","args":{"path":"a.txt"}}</tool_call>',
       'ok\nTASK_COMPLETE',
     ];
 
-    const agent = new DeepSeekAgent({});
+    const agent = new ForgeAgent({});
     agent.browser = {
       async launch() {}, async close() {}, async newChat() {},
       async sendMessage(t) { sent.push(t); },

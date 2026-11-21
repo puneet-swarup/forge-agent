@@ -40,7 +40,7 @@ Tools never import the agent. `config.js` is a Proxy imported everywhere (sectio
 
 ## 3. The agent loop (`agent.js`)
 
-`DeepSeekAgent.run(task, templateName)`:
+`ForgeAgent.run(task, templateName)`:
 
     1. commandRouter.isCommand(task)? -> execute, return (no browser)
     2. logger.initTUI, new ProgressTracker, _sessionCtxStart(task)

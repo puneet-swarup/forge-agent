@@ -10,7 +10,7 @@ jest.mock('../src/permission-menu', () => ({
   showPermissionMenu: jest.fn(async () => 'session'),
 }));
 
-const DeepSeekAgent = require('../src/agent');
+const ForgeAgent = require('../src/agent');
 const config = require('../src/config');
 const { executeBatch, conflictKeys } = require('../src/parallel-executor');
 
@@ -72,7 +72,7 @@ describe('agent loop — parallel batch integration', () => {
                   '<tool_call>{"tool":"read_file","args":{"path":"b.txt"}}</tool_call>';
 
     const browser = makeFakeBrowser([batch, 'Done.\nTASK_COMPLETE']);
-    const agent = new DeepSeekAgent({});
+    const agent = new ForgeAgent({});
     agent.browser = browser;
 
     const result = await agent.run('do a batch');
@@ -95,7 +95,7 @@ describe('agent loop — parallel batch integration', () => {
     fs.writeFileSync(path.join(workdir, 'c.txt'), 'CCC', 'utf8');
 
     const browser = makeFakeBrowser([batch, 'TASK_COMPLETE']);
-    const agent = new DeepSeekAgent({});
+    const agent = new ForgeAgent({});
     agent.browser = browser;
     await agent.run('two reads');
 
@@ -108,7 +108,7 @@ describe('agent loop — parallel batch integration', () => {
                   '<tool_call>{"tool":"read_file","args":{"path":"same.txt"}}</tool_call>';
 
     const browser = makeFakeBrowser([batch, 'TASK_COMPLETE']);
-    const agent = new DeepSeekAgent({});
+    const agent = new ForgeAgent({});
     agent.browser = browser;
     await agent.run('write then read same file');
 
@@ -125,7 +125,7 @@ describe('agent loop — parallel batch integration', () => {
                   '<tool_call>{"tool":"write_file","args":{"path":"ok.txt","content":"OK"}}</tool_call>';
 
     const browser = makeFakeBrowser([batch, 'TASK_COMPLETE']);
-    const agent = new DeepSeekAgent({});
+    const agent = new ForgeAgent({});
     agent.browser = browser;
     await agent.run('one bad one good');
 

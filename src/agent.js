@@ -6,7 +6,7 @@ const path                         = require('path');
 const { execSync }                 = require('child_process');
 const config                       = require('./config');
 const logger                       = require('./logger');
-const DeepSeekBrowser              = require('./browser');
+const ForgeBrowser              = require('./browser');
 const { executeTool, cache, setAdapterProvider, TOOLS } = require('./tools');
 const {
   parseResponse,
@@ -47,9 +47,9 @@ const { describeStep }             = require('./step-summary');
 //  Agent class
 // ─────────────────────────────────────────────
 
-class DeepSeekAgent {
+class ForgeAgent {
   constructor(options = {}) {
-    this.browser      = new DeepSeekBrowser();
+    this.browser      = new ForgeBrowser();
     this.conversation = new ConversationManager();
     this.memory       = new MemoryStore();
     this.history      = new HistoryStore();
@@ -85,7 +85,7 @@ class DeepSeekAgent {
 
   // ── Public API ──────────────────────────────────────────────────────────────
 
-  /** Boot the browser and load DeepSeek */
+  /** Boot the browser and load whichever model the adapter drives */
   async init() {
     // Load project context FIRST
     const context = await this.projectContext.getOrCreate();
@@ -1536,4 +1536,4 @@ class DeepSeekAgent {
   }
 }
 
-module.exports = DeepSeekAgent;
+module.exports = ForgeAgent;

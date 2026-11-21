@@ -2,7 +2,7 @@
 'use strict';
 
 const config = require('../src/config');
-const DeepSeekBrowser = require('../src/browser');
+const ForgeBrowser = require('../src/browser');
 
 describe('prompt pause (anti-block)', () => {
   let saved;
@@ -31,7 +31,7 @@ describe('prompt pause (anti-block)', () => {
   });
 
   test('enabling it restores the pause', async () => {
-    const b = new DeepSeekBrowser();
+    const b = new ForgeBrowser();
     config.PROMPT_PAUSE = true;
     await b._promptPause();                 // first prompt: never pauses
     expect(jest.getTimerCount()).toBe(0);
@@ -41,7 +41,7 @@ describe('prompt pause (anti-block)', () => {
   });
 
   test('first prompt does NOT pause', async () => {
-    const b = new DeepSeekBrowser();
+    const b = new ForgeBrowser();
     config.PROMPT_PAUSE = true;
     const p = b._promptPause();
     // Resolves immediately (no timer scheduled).
@@ -50,7 +50,7 @@ describe('prompt pause (anti-block)', () => {
   });
 
   test('second prompt pauses within [MIN,MAX]', async () => {
-    const b = new DeepSeekBrowser();
+    const b = new ForgeBrowser();
     config.PROMPT_PAUSE = true;
     config.PROMPT_PAUSE_MIN_MS = 10000;
     config.PROMPT_PAUSE_MAX_MS = 20000;
@@ -69,7 +69,7 @@ describe('prompt pause (anti-block)', () => {
   });
 
   test('disabled: PROMPT_PAUSE=false means no timer on any prompt', async () => {
-    const b = new DeepSeekBrowser();
+    const b = new ForgeBrowser();
     config.PROMPT_PAUSE = false;
     await b._promptPause(); // 1
     await b._promptPause(); // 2
@@ -78,7 +78,7 @@ describe('prompt pause (anti-block)', () => {
   });
 
   test('bad bounds fall back to 10s-20s (never negative/zero)', async () => {
-    const b = new DeepSeekBrowser();
+    const b = new ForgeBrowser();
     config.PROMPT_PAUSE = true;
     config.PROMPT_PAUSE_MIN_MS = -5;
     config.PROMPT_PAUSE_MAX_MS = 'oops';

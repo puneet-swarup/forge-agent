@@ -70,14 +70,14 @@ jest.mock('../src/health', () => ({
   }),
 }));
 
-const DeepSeekBrowser = require('../src/browser');
+const ForgeBrowser = require('../src/browser');
 
 // ─────────────────────────────────────────────────────────
 //  Helpers
 // ─────────────────────────────────────────────────────────
 
 function makeBrowser() {
-  const b = new DeepSeekBrowser();
+  const b = new ForgeBrowser();
   b.context = mockContext;
   b.page    = mockPage;
   b.adapter = mockAdapter;
@@ -127,7 +127,7 @@ beforeEach(() => {
 describe('launch()', () => {
   test('calls launchPersistentContext with correct args', async () => {
     const { chromium } = require('playwright');
-    const browser = new DeepSeekBrowser();
+    const browser = new ForgeBrowser();
 
     await browser.launch();
 
@@ -141,7 +141,7 @@ describe('launch()', () => {
   });
 
   test('navigates to model URL after launch', async () => {
-    const browser = new DeepSeekBrowser();
+    const browser = new ForgeBrowser();
     await browser.launch();
     expect(mockPage.goto).toHaveBeenCalledWith(
       'https://chat.deepseek.com',
@@ -151,21 +151,21 @@ describe('launch()', () => {
 
   test('initializes adapter via factory', async () => {
     const { getAdapter } = require('../src/adapter-factory');
-    const browser = new DeepSeekBrowser();
+    const browser = new ForgeBrowser();
     await browser.launch();
     expect(getAdapter).toHaveBeenCalledWith('deepseek', mockPage, expect.any(Object));
     expect(browser.adapter).toBe(mockAdapter);
   });
 
   test('reuses existing page if one is already open', async () => {
-    const browser = new DeepSeekBrowser();
+    const browser = new ForgeBrowser();
     mockContext.pages.mockReturnValueOnce([mockPage, mockPage]);
     await browser.launch();
     expect(mockContext.newPage).not.toHaveBeenCalled();
   });
 
   test('opens a new page if context has none', async () => {
-    const browser = new DeepSeekBrowser();
+    const browser = new ForgeBrowser();
     mockContext.pages.mockReturnValueOnce([]);
     await browser.launch();
     expect(mockContext.newPage).toHaveBeenCalled();
@@ -204,7 +204,7 @@ describe('close()', () => {
 describe('Health check wiring', () => {
   test('launch() calls runHealthCheckWithReAuth', async () => {
     const { runHealthCheckWithReAuth } = require('../src/health');
-    const browser = new DeepSeekBrowser();
+    const browser = new ForgeBrowser();
     await browser.launch();
     expect(runHealthCheckWithReAuth).toHaveBeenCalledWith(
       mockPage,
@@ -227,7 +227,7 @@ describe('sendMessage()', () => {
   });
 
   test('throws if not initialized', async () => {
-    const browser = new DeepSeekBrowser();
+    const browser = new ForgeBrowser();
     await expect(browser.sendMessage('test')).rejects.toThrow(/not initialized/);
   });
 });
@@ -245,7 +245,7 @@ describe('waitForResponse()', () => {
   });
 
   test('throws if not initialized', async () => {
-    const browser = new DeepSeekBrowser();
+    const browser = new ForgeBrowser();
     await expect(browser.waitForResponse()).rejects.toThrow(/not initialized/);
   });
 });

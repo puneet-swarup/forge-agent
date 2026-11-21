@@ -117,8 +117,8 @@ describe('the agent attaches the digest, and survives it being empty', () => {
     config.CONTEXT_ROTATION_TURNS = 0;
 
     try {
-      const DeepSeekAgent = require('../../src/agent');
-      const agent = new DeepSeekAgent({});
+      const ForgeAgent = require('../../src/agent');
+      const agent = new ForgeAgent({});
       let attached = null;
 
       agent.browser = {

@@ -118,8 +118,8 @@ describe('agent egress', () => {
       'utf8'
     );
 
-    const DeepSeekAgent = require('../src/agent');
-    const agent = new DeepSeekAgent({});
+    const ForgeAgent = require('../src/agent');
+    const agent = new ForgeAgent({});
 
     const sent = [];
     agent.browser = {
@@ -141,8 +141,8 @@ describe('agent egress', () => {
   }, 30000);
 
   test('_forEgress reports what it redacted and preserves clean text', () => {
-    const DeepSeekAgent = require('../src/agent');
-    const agent = new DeepSeekAgent({});
+    const ForgeAgent = require('../src/agent');
+    const agent = new ForgeAgent({});
 
     expect(agent._forEgress('read_file', 'plain text')).toBe('plain text');
     expect(agent._forEgress('read_file', 'x = "AKIAIOSFODNN7EXAMPLE"')).toContain('[REDACTED:aws-access-key]');

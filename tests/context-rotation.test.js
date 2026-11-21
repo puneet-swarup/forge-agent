@@ -52,8 +52,8 @@ describe('rotation in the loop', () => {
 
   function makeAgent(responses) {
     const queue = [...responses];
-    const DeepSeekAgent = require('../src/agent');
-    const agent = new DeepSeekAgent({});
+    const ForgeAgent = require('../src/agent');
+    const agent = new ForgeAgent({});
     const sent = [];
     const chats = { count: 0 };
 
@@ -120,8 +120,8 @@ describe('rotation in the loop', () => {
   }, 60000);
 
   test('stall recovery and rotation share one code path', async () => {
-    const DeepSeekAgent = require('../src/agent');
-    const agent = new DeepSeekAgent({});
+    const ForgeAgent = require('../src/agent');
+    const agent = new ForgeAgent({});
     expect(agent._recoverWithNewChat.constructor.name).toBe('AsyncFunction');
     // _recoverWithNewChat delegates to _rotateChat rather than duplicating it.
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'agent.js'), 'utf8');

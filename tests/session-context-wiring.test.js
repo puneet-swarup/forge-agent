@@ -14,7 +14,7 @@ jest.mock('../src/permission-menu', () => ({
   showPermissionMenu: jest.fn(async () => 'session'),
 }));
 
-const DeepSeekAgent = require('../src/agent');
+const ForgeAgent = require('../src/agent');
 const config = require('../src/config');
 
 describe('session context wiring', () => {
@@ -34,14 +34,14 @@ describe('session context wiring', () => {
   });
 
   test('the helper that was called but never defined now exists', () => {
-    const agent = new DeepSeekAgent({});
+    const agent = new ForgeAgent({});
     expect(typeof agent._sessionCtxStart).toBe('function');
     expect(typeof agent._sessionCtxUpdate).toBe('function');
     expect(typeof agent._sessionCtxSnapshot).toBe('function');
   });
 
   test('_sessionCtxStart creates SESSION_CONTEXT.md on disk', () => {
-    const agent = new DeepSeekAgent({});
+    const agent = new ForgeAgent({});
     expect(agent.sessionContext).toBeTruthy();
 
     agent._sessionCtxStart('add a health endpoint');
@@ -52,7 +52,7 @@ describe('session context wiring', () => {
   });
 
   test('the file is added to .gitignore, never committed', () => {
-    const agent = new DeepSeekAgent({});
+    const agent = new ForgeAgent({});
     agent._sessionCtxStart('anything');
 
     const gi = path.join(workdir, '.gitignore');
@@ -61,7 +61,7 @@ describe('session context wiring', () => {
   });
 
   test('_sessionCtxSnapshot returns bounded text for a restart', () => {
-    const agent = new DeepSeekAgent({});
+    const agent = new ForgeAgent({});
     agent._sessionCtxStart('task');
     const snap = agent._sessionCtxSnapshot();
 
@@ -71,14 +71,14 @@ describe('session context wiring', () => {
   });
 
   test('_sessionCtxSnapshot is empty (not throwing) when the feature is off', () => {
-    const agent = new DeepSeekAgent({});
+    const agent = new ForgeAgent({});
     agent.sessionContext = null;
     expect(agent._sessionCtxSnapshot()).toBe('');
     expect(() => agent._sessionCtxStart('x')).not.toThrow();
   });
 
   test('recovery carries the session notes into the new chat', async () => {
-    const agent = new DeepSeekAgent({});
+    const agent = new ForgeAgent({});
     agent._sessionCtxStart('RESUME-TASK');
 
     const sent = [];
@@ -95,7 +95,7 @@ describe('session context wiring', () => {
   }, 30000);
 
   test('the run path creates the context file (no missing-method crash)', async () => {
-    const agent = new DeepSeekAgent({});
+    const agent = new ForgeAgent({});
     const sent = [];
     agent.browser = {
       async launch() {}, async close() {}, async newChat() {},

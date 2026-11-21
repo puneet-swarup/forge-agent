@@ -62,10 +62,10 @@ function buildLaunchOptions() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  DeepSeekBrowser class
+//  ForgeBrowser class
 // ─────────────────────────────────────────────────────────────────────────────
 
-class DeepSeekBrowser {
+class ForgeBrowser {
   constructor() {
     this.context  = null;
     this.page     = null;
@@ -321,6 +321,6 @@ class DeepSeekBrowser {
 }
 
 // Expose the builder for unit tests without changing the default export shape.
-DeepSeekBrowser.buildLaunchOptions = buildLaunchOptions;
+ForgeBrowser.buildLaunchOptions = buildLaunchOptions;
 
-module.exports = DeepSeekBrowser;
+module.exports = ForgeBrowser;

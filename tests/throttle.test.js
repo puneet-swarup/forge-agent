@@ -109,8 +109,8 @@ describe('the loop', () => {
 
   function makeAgent(responses) {
     const queue = [...responses];
-    const DeepSeekAgent = require('../src/agent');
-    const agent = new DeepSeekAgent({});
+    const ForgeAgent = require('../src/agent');
+    const agent = new ForgeAgent({});
     const sent = [];
     agent.browser = {
       async launch() {}, async close() {}, async newChat() {},

@@ -73,8 +73,8 @@ describe('browser optimisations (P3.2)', () => {
   });
 
   async function runLaunch() {
-    const DeepSeekBrowser = require('../src/browser');
-    const b = new DeepSeekBrowser();
+    const ForgeBrowser = require('../src/browser');
+    const b = new ForgeBrowser();
     await b.launch();
     return b;
   }
