@@ -210,7 +210,13 @@ function parseArgs(argv) {
       case '--no-cache':    opts.noCache     = true;    break;
       case '--no-timeout':  opts.noTimeout   = true;    break;
       case '--no-prompt-pause': opts.noPromptPause = true; break;
+      case '--prompt-pause':    opts.promptPause   = true; break;
       case '--clear-memory': opts.clearMemory = true;   break;
+      case '--max-iterations': opts.maxIterations = args[++i]; break;
+      case '--max-runtime':    opts.maxRuntime    = args[++i]; break;
+      case '--max-tool-calls': opts.maxToolCalls  = args[++i]; break;
+      case '--rollback':    opts.rollback    = args[++i]; break;
+      case '--snapshots':   opts.snapshots   = true;    break;
       case '--list-plugins': opts.listPlugins = true;   break;
       case '--list-profiles': opts.listProfiles = true; break;
       case '--history':     opts.history     = 20;     break;
@@ -472,7 +478,26 @@ ${c('1;36', 'BENCHMARKING')}
 ${c('1;36', 'PERFORMANCE')} (for slow machines / slow internet)
       --timeout=<secs>        Response timeout in seconds (default: 600)
       --no-timeout            Wait forever for AI responses
+      --task=<task>, -t <task>  Provide the task as a flag instead of positionally
+      --continue              Continue pending work from the last session
+      --no-cache              Disable the in-session tool result cache
+      --no-interactive        Never prompt; auto-continue (CI / scripts)
+      --verbose               Extra diagnostic output
       --tool-timeout=<secs>   Shell command timeout (default: 300)
+
+${c('1;36', 'RUN BUDGET')} (enforced by src/budget.js)
+      --max-iterations=<n>    Loop iterations for this run (default: 100)
+      --max-runtime=<dur>     Wall clock: 90, 30s, 90m, 2h (default: off)
+      --max-tool-calls=<n>    Executed tool calls for this run (default: off)
+
+${c('1;36', 'RECOVERY')} (snapshots of files this agent changed)
+      --snapshots             List files that can be restored
+      --rollback=<path>       Restore a file to its pre-session state
+
+${c('1;36', 'HISTORY & HOUSEKEEPING')}
+      --history-clear         Delete saved task history
+      --clear-memory          Forget project memory for this working directory
+      --remove-template <n>   Delete a saved task template
 
 ${c('1;36', 'PLUGINS & PROFILES')}
       --list-plugins     List all loaded custom plugins
@@ -485,10 +510,16 @@ ${c('1;36', 'CONFIGURATION')}
       --config           Alias for --setup
       --config-path      Show path to active config file
 
+${c('1;36', 'SECURITY')}
+      --security              Show the current security posture
+      --strict-sandbox        Restrict all file access to the working directory
+      --audit-log             Append every tool call to ~/.forge-agent/audit.log
+
 ${c('1;36', 'DEBUGGING')}
       --debug            Verbose output with raw AI responses
       --headless         Run browser invisibly (no window)
-      --no-prompt-pause  Disable the 10-20s random pause between prompts
+      --prompt-pause     Restore the fixed 10-20s pause before each prompt
+      --no-prompt-pause  Force the fixed pause off (it is already the default)
       --audio-sync       Speak/alarm synchronously (blocking; default: off)
       --audio-async      Speak/alarm asynchronously via queue (default)
       --parallel-tools   Run independent tool calls concurrently (default: on)
@@ -601,6 +632,25 @@ function applyFlagsToConfig(args, config) {
     } catch (e) {}
   }
 
+  // Resource budget (src/budget.js)
+  if (args.maxIterations != null && args.maxIterations !== '') {
+    const n = Number(args.maxIterations);
+    if (Number.isFinite(n) && n > 0) config.MAX_ITERATIONS = Math.floor(n);
+  }
+  if (args.maxRuntime != null && args.maxRuntime !== '') {
+    // Accept "90" (minutes), "90m", "30s" or "2h".
+    const m = String(args.maxRuntime).trim().match(/^(\d+(?:\.\d+)?)\s*([smh]?)$/i);
+    if (m) {
+      const mult = { s: 1000, m: 60_000, h: 3_600_000, '': 60_000 }[m[2].toLowerCase()];
+      const ms = Number(m[1]) * mult;
+      if (Number.isFinite(ms) && ms > 0) config.MAX_RUNTIME_MS = ms;
+    }
+  }
+  if (args.maxToolCalls != null && args.maxToolCalls !== '') {
+    const n = Number(args.maxToolCalls);
+    if (Number.isFinite(n) && n > 0) config.MAX_TOOL_CALLS = Math.floor(n);
+  }
+
   // Timeout
   if (args.noTimeout) {
     config.RESPONSE_TIMEOUT = 0;
@@ -619,6 +669,7 @@ function applyFlagsToConfig(args, config) {
   if (args.compact !== undefined && args.compact !== false) config.COMPACT_OUTPUT = true;
   if (args.debug !== undefined && args.debug !== false) config.DEBUG = true;
   if (args.noPromptPause !== undefined && args.noPromptPause !== false) config.PROMPT_PAUSE = false;
+  if (args.promptPause === true) config.PROMPT_PAUSE = true;
 
   // Memory / Cache
   if (args.noMemory !== undefined && args.noMemory !== false) config.MEMORY_ENABLED = false;
@@ -920,9 +971,15 @@ async function main() {
     forge-agent --format=markdown "task"  Markdown output
     forge-agent --output=file.md "task"   Save to file
 
-  ${process.stdout.isTTY ? '\x1b[1;37mPERFORMANCE\x1b[0m' : 'PERFORMANCE'}
+  ${process.stdout.isTTY ? '\x1b[1;37mPERFORMANCE & BUDGET\x1b[0m' : 'PERFORMANCE & BUDGET'}
     forge-agent --no-timeout "task"       No response timeout
-    forge-agent --max-iterations=200      More steps allowed
+    forge-agent --max-iterations=200      Step limit for this run (default 100)
+    forge-agent --max-runtime=90          Wall-clock limit (90 = 90m, 30s, 2h)
+    forge-agent --max-tool-calls=500      Tool-call limit for this run
+
+  ${process.stdout.isTTY ? '\x1b[1;37mRECOVERY\x1b[0m' : 'RECOVERY'}
+    forge-agent --snapshots               List files this project can roll back
+    forge-agent --rollback=src/a.js       Restore a file from its snapshot
 
   ${process.stdout.isTTY ? '\x1b[1;37mWATCH\x1b[0m' : 'WATCH'}
     forge-agent --watch "fix tests"       Re-run on file changes
@@ -983,6 +1040,54 @@ async function main() {
       logger.error('Memory clear error: ' + e.message);
     }
     process.exit(0);
+  }
+
+  // ── Workspace snapshots ────────────────────────────────────────────────────
+  if (args.rollback) {
+    try {
+      const { Workspace } = require('./workspace');
+      const path = require('path');
+      const ws = new Workspace({
+        root: config.WORKING_DIR,
+        snapshotDir: path.join(
+          require('./paths').forgePath('snapshots'),
+          path.basename(path.resolve(config.WORKING_DIR))
+        ),
+      });
+      const res = ws.rollback(path.resolve(config.WORKING_DIR, args.rollback));
+      logger.success(`Restored ${args.rollback} from snapshot`);
+      logger.dim(`  ${res.from}`);
+    } catch (e) {
+      logger.error('Rollback failed: ' + e.message);
+      process.exitCode = 1;
+    }
+    process.exit();
+  }
+
+  if (args.snapshots) {
+    const fsx = require('fs');
+    const pathx = require('path');
+    const dir = pathx.join(
+      require('./paths').forgePath('snapshots'),
+      pathx.basename(pathx.resolve(config.WORKING_DIR))
+    );
+    if (!fsx.existsSync(dir)) {
+      logger.info(`No snapshots for ${config.WORKING_DIR}`);
+      logger.dim(`  Snapshots are taken on the first write to a file in a session.`);
+    } else {
+      const walk = (d, base) => {
+        for (const e of fsx.readdirSync(d, { withFileTypes: true })) {
+          const full = pathx.join(d, e.name);
+          if (e.isDirectory()) { walk(full, base); continue; }
+          const rel = pathx.relative(base, full).replace(/\.bak$/, '');
+          logger.info(`  ${rel}`);
+        }
+      };
+      logger.info(`Snapshots for ${config.WORKING_DIR}:`);
+      walk(dir, dir);
+      logger.dim(`  Restore one with: forge-agent --rollback <path>`);
+    }
+    process.exit();
   }
 
   // ── Profiles ───────────────────────────────────────────────────────────────

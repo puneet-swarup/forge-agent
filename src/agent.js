@@ -7,7 +7,7 @@ const { execSync }                 = require('child_process');
 const config                       = require('./config');
 const logger                       = require('./logger');
 const DeepSeekBrowser              = require('./browser');
-const { executeTool, cache, setAdapterProvider } = require('./tools');
+const { executeTool, cache, setAdapterProvider, TOOLS } = require('./tools');
 const {
   parseResponse,
   formatToolResult,
@@ -18,6 +18,9 @@ const { PermissionStore, isReadOnly, getCategory, CATEGORY_LABELS } = require('.
 const { showPermissionMenu } = require('./permission-menu');
 const { ConversationManager }      = require('./prompt');
 const { Errors, displayError }     = require('./errors');
+const security                     = require('./security');
+const { Budget, BudgetExceeded }    = require('./budget');
+const { Throttle }                  = require('./throttle');
 const { sleep }                    = require('./retry');
 const { ProgressTracker }          = require('./progress');
 const { MemoryStore }              = require('./memory');
@@ -132,15 +135,39 @@ class DeepSeekAgent {
     await this.browser.close();
   }
 
-  // -- Phase 1: session context helpers --
+  // -- Session context helpers --
+  //
+  // SESSION_CONTEXT.md is the durable working memory of a run: goal, decisions,
+  // progress, git state. It survives a chat restart, which is exactly what
+  // _recoverWithNewChat() needs.
+  //
+  // This block used to be half-wired: _sessionCtxStart() was called twice and
+  // defined nowhere (the guarded call was silently skipped, the unguarded one
+  // would throw), and _sessionCtxUpdate() was declared twice. The file was
+  // written by accident and never read back.
 
-  /** Create (or resume) the durable SESSION_CONTEXT.md for this task. */
-  _sessionCtxUpdate() {
-    if (!this.sessionContext) return;
+  /** Create (or resume) SESSION_CONTEXT.md at task start. */
+  _sessionCtxStart(task) {
+    if (!this.sessionContext) return null;
     try {
-      this.sessionContext.update();
+      // The agent is constructed before the task is known, so the task is
+      // attached here, at task start, before the file is rendered.
+      if (task) {
+        const clean = String(task).replace(/\s+/g, ' ').trim().slice(0, 300);
+        this.sessionContext.task = clean;
+        if (this.sessionContext.data) {
+          this.sessionContext.data.task = clean;
+          if (!this.sessionContext.data.goal) this.sessionContext.data.goal = clean;
+        }
+      }
+
+      if (typeof this.sessionContext.create === 'function') {
+        return this.sessionContext.create();
+      }
+      return this.sessionContext.update();
     } catch (err) {
-      logger.warn(`Session context update FAILED: ${err.message}`);
+      logger.warn(`Session context create FAILED: ${err.message}`);
+      return null;
     }
   }
 
@@ -152,6 +179,18 @@ class DeepSeekAgent {
     } catch (err) {
       logger.warn(`Session context update FAILED: ${err.message}`);
     }
+  }
+
+  /** Current session notes, for re-feeding after a chat restart. */
+  _sessionCtxSnapshot() {
+    if (!this.sessionContext) return '';
+    try {
+      if (typeof this.sessionContext.asContextString === 'function') {
+        const text = this.sessionContext.asContextString() || '';
+        return text.length > 2000 ? text.slice(0, 2000) + '\n… (truncated)' : text;
+      }
+    } catch (_) { /* best effort */ }
+    return '';
   }
 
   /** Delete the ephemeral context file at session end. */
@@ -188,6 +227,92 @@ class DeepSeekAgent {
   }
 
   /**
+   * Restart the chat WITHOUT losing the contract.
+   *
+   * A fresh chat has no system prompt, no tool list and no call format. The
+   * old recovery path sent only "you are a coding agent, continue the task",
+   * so the model's next reply was prose, which tripped the correction counter
+   * and aborted the run a few steps later. Recovery turned a stall into a
+   * guaranteed failure.
+   *
+   * This re-sends the full system prompt plus the plan and progress, so the
+   * model resumes with the same rules it started with.
+   *
+   * @param {string} task
+   * @param {ProgressTracker} progress
+   * @returns {Promise<void>}
+   */
+  async _recoverWithNewChat(task, progress) {
+    logger.warn('Chat stalled — restarting with the full contract and state');
+
+    await this.browser.newChat();
+    await sleep(2_000);
+
+    const message = this.conversation.buildResumeMessage({
+      task,
+      progress: progress.getStatusLine(),
+      plan: this._readPlanState(),
+      sessionContext: this._sessionCtxSnapshot(),
+      recentErrors: typeof progress.recentErrors === 'function'
+        ? progress.recentErrors(3)
+        : [],
+      reason: 'the previous chat stopped responding',
+      profile: config.ACTIVE_PROFILE,
+      workingDir: config.WORKING_DIR,
+    });
+
+    await this.browser.sendMessage(message);
+    logger.dim('  Contract re-sent: system prompt + plan + progress');
+  }
+
+  /**
+   * Redact secrets from a tool result before it is sent to the chat UI.
+   *
+   * Everything the agent reads leaves the machine: the chat UI is a third-party
+   * service and keeps its own history. `.env` files are masked by read_file,
+   * but a key in a config module, a k8s manifest or a PEM was forwarded
+   * verbatim. The redactor is deliberately narrow (see security.SECRET_PATTERNS)
+   * so ordinary source code is never mangled.
+   *
+   * @param {string} toolName
+   * @param {*} result
+   * @returns {string}
+   */
+  _forEgress(toolName, result) {
+    const text = typeof result === 'string' ? result : String(result);
+    try {
+      const { text: safe, redactions } = security.redactSecrets(text);
+      if (redactions.length) {
+        const summary = redactions.map((r) => `${r.kind}×${r.count}`).join(', ');
+        logger.warn(`  ⚠ redacted ${summary} from ${toolName} output before sending`);
+      }
+      return safe;
+    } catch (err) {
+      // Never let redaction break a run; fail closed on the side of sending.
+      logger.warn(`Secret redaction failed for ${toolName}: ${err.message}`);
+      return text;
+    }
+  }
+
+  /**
+   * Current plan state, if the agent has written one. Bounded so a large plan
+   * cannot blow the context on a restart.
+   *
+   * @returns {string|null}
+   */
+  _readPlanState() {
+    try {
+      const file = path.join(config.WORKING_DIR || process.cwd(), 'FORGE_PLAN.md');
+      if (!fs.existsSync(file)) return null;
+      const body = fs.readFileSync(file, 'utf8').trim();
+      if (!body) return null;
+      return body.length > 2000 ? body.slice(0, 2000) + '\n… (truncated)' : body;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /**
    * Run a task to completion.
    * Returns the final response string, or a partial summary on timeout.
    */
@@ -200,6 +325,22 @@ class DeepSeekAgent {
 
     logger.initTUI(config);
     this._running   = true;
+    // Per-run counters. They are instance state, so a second run() on the same
+    // agent must not inherit the previous run's streak or recovery count.
+    this._emptyStreak = 0;
+    this._recoveries = 0;
+    this._lastToolCallCountAtFailure = 0;
+    // Resource envelope for this run: steps, wall clock, tool calls.
+    const budget = new Budget(config);
+    this._budget = budget;
+
+    // Reactive rate-limit handling: no fixed pause between prompts, back off
+    // only when the provider actually says it is throttling.
+    this._throttle = new Throttle({
+      baseMs: config.RATE_LIMIT_BASE_MS,
+      maxMs: config.RATE_LIMIT_MAX_MS,
+      maxAttempts: config.RATE_LIMIT_MAX_ATTEMPTS,
+    });
     const startTime = Date.now();
     const progress  = new ProgressTracker(task);
 
@@ -217,16 +358,22 @@ class DeepSeekAgent {
     const MAX_CORRECTION_ATTEMPTS = 3;
 
     try {
-      // ── 0. Inject Memory ──────────────────────────────────────────────────
+      // ── 0. Gather memory + project context ────────────────────────────────
+      // Both are passed INTO buildFirstMessage. Previously the memory text was
+      // prepended to conversation.messages[0], which did not exist yet, so the
+      // injection was a no-op.
+      let memoryContext = '';
       if (config.MEMORY_ENABLED) {
         try {
           this.memory.extractTechStackFromFiles(config.WORKING_DIR);
-          const memContext = this.memory.buildMemoryContext(config.WORKING_DIR);
-          if (memContext) this.conversation.prependMemoryContext(memContext);
+          memoryContext = this.memory.buildMemoryContext(config.WORKING_DIR) || '';
         } catch (err) {
           logger.warn(`Failed to inject memory: ${err.message}`);
         }
       }
+      const projectContext = [memoryContext, this._buildProjectContextString()]
+        .filter(Boolean)
+        .join('\n\n');
 
       // ── 1. Snapshot working directory ──────────────────────────────────────
       const dirListing = this._getWorkingDirListing();
@@ -242,7 +389,10 @@ class DeepSeekAgent {
       if (config.PLANNING_MODE) {
         logger.info('Generating execution plan...');
         const planPrompt = buildPlanPrompt(task, dirListing);
-        const firstMsg   = this.conversation.buildFirstMessage(planPrompt, null, config.ACTIVE_PROFILE, profileAddition);
+        const firstMsg   = this.conversation.buildFirstMessage(
+          planPrompt, null, config.ACTIVE_PROFILE, profileAddition,
+          { projectContext, workingDir: config.WORKING_DIR }
+        );
 
         try {
           await this.browser.sendMessage(firstMsg);
@@ -269,7 +419,10 @@ class DeepSeekAgent {
           await this.browser.sendMessage(recovery);
         }
       } else {
-        const firstMsg = this.conversation.buildFirstMessage(task, dirListing, config.ACTIVE_PROFILE, profileAddition);
+        const firstMsg = this.conversation.buildFirstMessage(
+          task, dirListing, config.ACTIVE_PROFILE, profileAddition,
+          { projectContext, workingDir: config.WORKING_DIR }
+        );
 
         if (config.DEBUG) {
           logger.dim('--- First message (truncated) ---');
@@ -293,10 +446,24 @@ class DeepSeekAgent {
         // Protocol default: every step line carries a short one-liner saying
         // what the step is doing, derived from the previous tool call.
 
-        // Safety circuit breaker
-        if (step > 10000) {
-          logger.warn('Step count exceeded 10000 — stopping to prevent runaway process');
-          break;
+        // Safety circuit breaker — honours MAX_ITERATIONS, MAX_RUNTIME_MS and
+        // MAX_TOOL_CALLS. Exceeding it is a normal end state: report what was
+        // done rather than throwing out of run().
+        try {
+          budget.tick();
+        } catch (budgetErr) {
+          if (!(budgetErr instanceof BudgetExceeded)) throw budgetErr;
+          logger.warn(budgetErr.message);
+          const summary = progress.buildPartialSummary(budgetErr.message);
+          const formatted = format(summary, config.OUTPUT_FORMAT, {
+            task, model: config.MODEL, profile: config.ACTIVE_PROFILE, timestamp: config.OUTPUT_TIMESTAMP
+          });
+          if (config.OUTPUT_FILE) this._saveToFile(config.OUTPUT_FILE, formatted);
+          else logger.finalOutput(formatted);
+          this._recordHistory(task, 'timeout', startTime, progress, summary, templateName);
+          if (this.options.saveLog) await this._saveConversationLog(task, summary);
+          this._running = false;
+          return summary;
         }
 
         if (config.DEBUG) {
@@ -315,26 +482,21 @@ class DeepSeekAgent {
           if (this._emptyStreak === undefined) this._emptyStreak = 0;
           this._emptyStreak++;
 
-          const noRecentProgress = progress.toolCallCount <= (this._lastToolCallCountAtFailure || 0);
-          if (this._emptyStreak >= (config.EMPTY_RESPONSE_THRESHOLD || 4) && noRecentProgress) {
-            // Capture diagnostics before aborting (s.13.2). Best-effort.
-            try {
-              const { captureFailure } = require('./failure-capture');
-              const page = this.browser && this.browser.page;
-              const adapterName = this.browser && this.browser.adapter && this.browser.adapter.constructor
-                ? this.browser.adapter.constructor.name : 'unknown';
-              await captureFailure(page, 'empty-streak-abort', { adapterName });
-            } catch (_) { /* never mask the abort */ }
-            logger.error('Stuck in empty response loop without progress — aborting.');
-            const summary = progress.buildPartialSummary('stuck in empty response loop');
-            this._recordHistory(task, 'failed', startTime, progress, summary, templateName);
-            if (this.options.saveLog) await this._saveConversationLog(task, summary);
-            this._running = false;
-            return summary;
-          }
-          this._lastToolCallCountAtFailure = progress.toolCallCount;
+          // ── Stall escalation ─────────────────────────────────────────────
+          // Three levels, in order, each reachable and bounded:
+          //   1. nudge   — ask the model to continue
+          //   2. recover — restart the chat WITH the contract (bounded)
+          //   3. give up — capture diagnostics and return a partial result
+          //
+          // Before this change level 2 was unreachable: a successful response
+          // (the only thing that raises toolCallCount) also resets
+          // _emptyStreak, so the "no progress" guard was always true at the
+          // threshold and the loop aborted before it could ever recover.
+          const recoverAt     = config.EMPTY_RESPONSE_THRESHOLD || 4;
+          const giveUpAt      = config.PARTIAL_RESULT_THRESHOLD || 6;
+          const maxRecoveries = config.MAX_CHAT_RECOVERIES || 2;
 
-          if (this._emptyStreak >= (config.PARTIAL_RESULT_THRESHOLD || 6)) {
+          if (this._emptyStreak >= giveUpAt) {
             logger.warn('Too many consecutive failures — returning partial result.');
 
             if (config.MEMORY_ENABLED) {
@@ -354,19 +516,27 @@ class DeepSeekAgent {
             return summary;
           }
 
-          if (this._emptyStreak >= (config.EMPTY_RESPONSE_THRESHOLD || 4)) {
-            logger.warn('Starting a new chat to recover...');
-            await this.browser.newChat();
-            await sleep(2_000);
-            const doneSoFar = progress.getStatusLine();
-            const recovery = this.conversation.addToolResult(
-              'SYSTEM',
-              `You are a coding agent. The previous chat session was reset due to connection issues.
-               Please continue with this task: "${task}"
-               Current Progress: ${doneSoFar}`,
-              true
-            );
-            await this.browser.sendMessage(recovery);
+          if (this._emptyStreak >= recoverAt) {
+            if ((this._recoveries || 0) >= maxRecoveries) {
+              // Capture diagnostics before aborting (s.13.2). Best-effort.
+              try {
+                const { captureFailure } = require('./failure-capture');
+                const page = this.browser && this.browser.page;
+                const adapterName = this.browser && this.browser.adapter && this.browser.adapter.constructor
+                  ? this.browser.adapter.constructor.name : 'unknown';
+                await captureFailure(page, 'empty-streak-abort', { adapterName });
+              } catch (_) { /* never mask the abort */ }
+              logger.error(`Still stalled after ${maxRecoveries} chat restart(s) — aborting.`);
+              const summary = progress.buildPartialSummary('stuck in empty response loop');
+              this._recordHistory(task, 'failed', startTime, progress, summary, templateName);
+              if (this.options.saveLog) await this._saveConversationLog(task, summary);
+              this._running = false;
+              return summary;
+            }
+
+            this._recoveries = (this._recoveries || 0) + 1;
+            logger.warn(`Stall ${this._emptyStreak}: restarting chat (recovery ${this._recoveries}/${maxRecoveries})`);
+            await this._recoverWithNewChat(task, progress);
           } else {
             await sleep(2_000);
             const nudge = this.conversation.addToolResult(
@@ -382,6 +552,39 @@ class DeepSeekAgent {
 
         // Clear streak on successful response
         this._emptyStreak = 0;
+
+        // ── Rate limiting ───────────────────────────────────────────────────
+        // A throttled reply is transport, not an answer: do not parse it, do
+        // not count it as a protocol violation. Back off briefly and re-ask.
+        if (config.RATE_LIMIT_BACKOFF !== false && this._throttle.detect(rawResponse)) {
+          const waitMs = this._throttle.nextDelayMs();
+
+          if (waitMs < 0) {
+            logger.error('Rate limited repeatedly — giving up on this run.');
+            const summary = progress.buildPartialSummary('rate limited by the model provider');
+            this._recordHistory(task, 'failed', startTime, progress, summary, templateName);
+            if (this.options.saveLog) await this._saveConversationLog(task, summary);
+            this._running = false;
+            return summary;
+          }
+
+          logger.warn(`Rate limited (${this._throttle.describe()}) — waiting ${(waitMs / 1000).toFixed(1)}s`);
+          progress.recordError('rate limited');
+          await sleep(waitMs);
+
+          const retry = this.conversation.addToolResult(
+            'SYSTEM',
+            'The provider rate-limited that request. Continue with the next step.',
+            true
+          );
+          await this.browser.sendMessage(retry);
+          step++;
+          continue;
+        }
+
+        // A normal reply means the provider is no longer throttling us.
+        if (this._throttle) this._throttle.noteSuccess();
+
         progress.recordAiResponse(rawResponse);
 
         if (config.DEBUG) {
@@ -396,7 +599,9 @@ class DeepSeekAgent {
         this.conversation.addAssistantMessage(rawResponse);
 
         // Parse the response
-        const parsed = parseResponse(rawResponse);
+        // Parse WITH the tool registry so prose that merely contains JSON, and
+        // misspelled tool names, cannot execute. See parser._finalise().
+        const parsed = parseResponse(rawResponse, { toolNames: Object.keys(TOOLS) });
 
         // Step line describes the tool that is ACTUALLY about to run (current
         // intent), not the previous one. Emitted after parsing so the label and
@@ -532,6 +737,7 @@ class DeepSeekAgent {
 
           logger.toolCall(parsed.name, parsed.args);
           progress.recordToolCall(parsed.name, parsed.args);
+          if (this._budget) this._budget.recordToolCalls(1);
 
           let result;
           let isError = false;
@@ -564,7 +770,9 @@ class DeepSeekAgent {
 
           progress.recordToolResult(parsed.name, result, isError);
 
-          const feedbackMsg = this.conversation.addToolResult(parsed.name, result, isError);
+          const feedbackMsg = this.conversation.addToolResult(
+            parsed.name, this._forEgress(parsed.name, result), isError
+          );
 
           // Phase 1: refresh durable session context after each tool result.
           if (typeof this._sessionCtxUpdate === 'function') {
@@ -591,6 +799,35 @@ class DeepSeekAgent {
           }
 
           await this.browser.sendMessage(feedbackMsg);
+          step++;
+          continue;
+        }
+
+        // ── Case 1b: Unknown tool name ─────────────────────────────────────
+        // One targeted repair ("did you mean read_file?") instead of the
+        // executor's full registry dump, and no execution of a partial batch.
+        if (parsed.type === 'invalid_tool') {
+          _consecutiveUnrecognised++;
+          logger.warn(`Unknown tool: ${parsed.name}${parsed.suggestion ? ` (did you mean ${parsed.suggestion}?)` : ''}`);
+          progress.recordError(`unknown tool: ${parsed.name}`);
+
+          if (_consecutiveUnrecognised >= MAX_CORRECTION_ATTEMPTS) {
+            throw new Error(
+              `The AI kept calling tools that do not exist (last: "${parsed.name}"). ` +
+              'Check the model response and try again.'
+            );
+          }
+
+          const hint = parsed.suggestion
+            ? `Did you mean "${parsed.suggestion}"?`
+            : 'Use one of the names listed under AVAILABLE TOOLS.';
+          const repair = this.conversation.addToolResult(
+            'SYSTEM',
+            `There is no tool called "${parsed.name}". ${hint}\n` +
+            'Reply with a single <tool_call> block using an exact tool name.',
+            true
+          );
+          await this.browser.sendMessage(repair);
           step++;
           continue;
         }
@@ -879,6 +1116,7 @@ class DeepSeekAgent {
       logger.toolCall(c.name, c.args);
       progress.recordToolCall(c.name, c.args);
     }
+    if (this._budget) this._budget.recordToolCalls(calls.length);
 
     let results;
     try {
@@ -901,7 +1139,7 @@ class DeepSeekAgent {
       progress.recordToolResult(r.name, r.result, r.isError);
       if (r.isError) anyError = true;
       const status = r.isError ? 'ERROR' : 'SUCCESS';
-      parts.push('[TOOL RESULT: ' + r.name + ' | ' + status + ']\n' + String(r.result) + '\n[END TOOL RESULT]');
+      parts.push('[TOOL RESULT: ' + r.name + ' | ' + status + ']\n' + this._forEgress(r.name, r.result) + '\n[END TOOL RESULT]');
     }
 
     const combined =

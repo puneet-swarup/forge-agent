@@ -20,6 +20,37 @@ const registry = require('../src/session-registry');
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
+/**
+ * Poll until `predicate()` is true, or fail.
+ *
+ * Replaces fixed sleeps: a 300 ms sleep raced the child's startup, so on a
+ * loaded machine the SIGTERM handler was not installed yet, the child died
+ * gracefully and `escalated` came back false. That was the flake.
+ */
+async function waitFor(predicate, { timeoutMs = 5000, intervalMs = 25, label = 'condition' } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return true;
+    await sleep(intervalMs);
+  }
+  throw new Error(`timed out waiting for ${label}`);
+}
+
+/**
+ * Spawn a node child that ignores SIGTERM and report readiness through a file,
+ * so the test never races the handler installation.
+ */
+function spawnStubborn(name) {
+  const ready = path.join(TMP, name + '.ready');
+  const child = spawn(process.execPath, ['-e',
+    'process.on("SIGTERM",()=>{});' +
+    `require("fs").writeFileSync(${JSON.stringify(ready)},"1");` +
+    'setInterval(()=>{},1000);'],
+    { stdio: 'ignore', detached: true });
+  child.unref();
+  return { child, pid: child.pid, ready };
+}
+
 function register(name, pid) {
   const file = registry.heartbeatFileFor(name);
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -43,21 +74,18 @@ describe('killChild force escalation', () => {
 
   maybe('force-kills a child that ignores SIGTERM', async () => {
     const name = 'stubborn-' + Date.now().toString(36);
-    // A node process that ignores SIGTERM and stays alive.
-    const child = spawn(process.execPath, ['-e',
-      'process.on("SIGTERM",()=>{}); setInterval(()=>{},1000);'],
-      { stdio: 'ignore', detached: true });
-    child.unref();
-    const pid = child.pid;
+    const { pid, ready } = spawnStubborn(name);
     register(name, pid);
 
-    await sleep(300);
+    // Wait for the child to install its SIGTERM handler before killing it.
+    await waitFor(() => fs.existsSync(ready), { label: 'child readiness' });
     expect(registry.isPidAlive(pid)).toBe(true);
 
     const res = await sup.killChild(name, { graceMs: 800 });
     expect(res.ok).toBe(true);
     expect(res.escalated).toBe(true);
-    await sleep(300);
+
+    await waitFor(() => !registry.isPidAlive(pid), { label: 'child exit' });
     expect(registry.isPidAlive(pid)).toBe(false);
   }, 30000);
 

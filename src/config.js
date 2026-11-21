@@ -92,15 +92,28 @@ const DEFAULTS = {
 
   // Agent behaviour
   WORKING_DIR        : process.cwd(),
+  // Resource envelope for one run (src/budget.js). MAX_ITERATIONS is the step
+  // limit the docs always promised; 0 disables the time / tool-call limits.
+  MAX_ITERATIONS     : 100,
+  MAX_RUNTIME_MS     : 0,
+  MAX_TOOL_CALLS     : 0,
   PARALLEL_TOOL_CALLS    : true,
   MAX_PARALLEL_TOOL_CALLS: 4,
   // Audio (Items 3 & 4): async, sequentially-queued speech by default.
   AUDIO_ASYNC            : true,
   AUDIO_SEQUENTIAL       : true,
-  // Anti-block: random pause between consecutive prompts.
-  PROMPT_PAUSE           : true,
+  // Anti-block. The fixed 10-20 s pause before every prompt is now OFF by
+  // default: it cost 10-20 minutes on a 60-step task and did not help when the
+  // provider actually throttled. Set PROMPT_PAUSE: true (or --prompt-pause) to
+  // restore it. Rate limiting is handled reactively instead (src/throttle.js).
+  PROMPT_PAUSE           : false,
   PROMPT_PAUSE_MIN_MS    : 10_000,
   PROMPT_PAUSE_MAX_MS    : 20_000,
+  // Reactive rate-limit backoff (default ON).
+  RATE_LIMIT_BACKOFF     : true,
+  RATE_LIMIT_BASE_MS     : 5_000,
+  RATE_LIMIT_MAX_MS      : 60_000,
+  RATE_LIMIT_MAX_ATTEMPTS: 4,
   SESSION_DIR: process.env.FORGE_SESSION_DIR
     ? path.resolve(process.env.FORGE_SESSION_DIR)
     : paths.forgePath('session'),
@@ -162,6 +175,9 @@ const DEFAULTS = {
   // Security
   ALLOW_DANGEROUS_COMMANDS: false,
   ALLOW_ENV_PLAIN_READ    : false,
+  // Overwriting a file the agent has neither read nor written this session is
+  // refused. Set false to restore the old silent-overwrite behaviour.
+  REQUIRE_READ_BEFORE_WRITE: true,
   AUDIT_LOG               : false,
   PARAM_VALIDATION        : true,
 
@@ -181,8 +197,9 @@ const DEFAULTS = {
   WIZARD_COMPLETED   : false,
 
   // Response Streak Thresholds
-  EMPTY_RESPONSE_THRESHOLD: 4,
-  PARTIAL_RESULT_THRESHOLD: 6,
+  EMPTY_RESPONSE_THRESHOLD: 4,   // consecutive stalls before restarting the chat
+  PARTIAL_RESULT_THRESHOLD: 6,   // consecutive stalls before returning a partial result
+  MAX_CHAT_RECOVERIES: 2,        // chat restarts allowed per run before giving up
 };
 
 // ─────────────────────────────────────────────

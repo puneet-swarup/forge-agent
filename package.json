@@ -1,7 +1,7 @@
 {
   "name": "@puneet-swarup/forge-agent",
-  "version": "2.1.0",
-  "description": "Forge Agent — Autonomous AI coding via browser automation. No API key needed.",
+  "version": "2.2.0",
+  "description": "Forge Agent \u2014 Autonomous AI coding via browser automation. No API key needed.",
   "main": "src/index.js",
   "bin": {
     "forge-agent": "src/index.js",

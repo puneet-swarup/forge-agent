@@ -9,7 +9,7 @@ automation to code, test, and ship software — completely free.
 
 [![npm](https://img.shields.io/badge/npm-@puneet--swarup%2Fforge--agent-cb3837?logo=npm&style=flat)](https://www.npmjs.com/package/@puneet-swarup/forge-agent)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-1774%20passing-brightgreen)](#)
+[![Tests](https://img.shields.io/badge/tests-2084%20passing-brightgreen)](#)
 [![Docker](https://img.shields.io/badge/docker-ghcr.io%2Fpuneet--swarup%2Fforge--agent-blue)](https://github.com/puneet-swarup/forge-agent/pkgs/container/forge-agent)
 
 ---
@@ -67,6 +67,9 @@ fa "add TypeScript to this project"
 | Feature | Description |
 |---|---|
 | 🌐 Browser Automation | Drives DeepSeek, Gemini, Google, Qwen — no API key |
+| 🎯 Measured turn boundary | Completion comes from a transcript baseline + the response envelope, not a 1.5 s guess |
+| 🛟 Reversible writes | Atomic writes, per-session snapshots, read-before-write, diff in every result |
+| ⛽ Run budgets | Step, wall-clock and tool-call limits are enforced (`--max-iterations`, `--max-runtime`) |
 | 🔧 37+ Built-in Tools | File I/O, git, shell, search, tests, packages, diff, env, processes |
 | 💾 Persistent Memory | Remembers project tech stack and past tasks |
 | 🎭 Agent Profiles | default, backend, frontend, data-science, devops |
@@ -77,7 +80,7 @@ fa "add TypeScript to this project"
 | 🔒 Security Sandbox | Blocks SSH keys, credentials, path traversal |
 | 🐳 Docker Ready | Official image, no local Node.js setup needed |
 | ⚡ Smart Caching | Skips repeated read-only tool calls |
-| ⏸ Anti-Block Pause | Random 10-20s pause between prompts (default ON; `--no-prompt-pause` disables) |
+| ⏸ Anti-Block Pause | Off by default. Rate limiting is handled reactively — back off 5s→60s only when the provider says so (`--prompt-pause` restores the old fixed 10-20s pause) |
 | 🗜 Context Compression | Auto-compresses long conversations |
 | 📝 Session Context | Durable, gitignored SESSION_CONTEXT.md survives compaction |
 | ✅ TODO Auto-Run | --auto works through FORGE_TODO.md unattended |
@@ -311,7 +314,9 @@ Supervisor: spawn_agent  list_agents  read_agent_task  kill_agent  (tools)
 Templates: --template  --list-templates  --save-template
 Output:    --format  --output  --no-tui  --compact
 Watch:     --watch  --watch-pattern  --watch-debounce
-Performance: --max-iterations  --timeout  --no-timeout  --no-prompt-pause
+Budget:    --max-iterations  --max-runtime  --max-tool-calls
+Recovery:  --snapshots  --rollback <path>
+Performance: --timeout  --no-timeout  --no-prompt-pause
 Plugins:   --list-plugins  --new-plugin
 Config:    --setup  --config-path
 Debug:     --debug  --headless  --diagnostics  --security
@@ -340,10 +345,11 @@ Run `forge-agent --setup` for guided configuration.
 
 ---
 
-## Key Stats — v2.0.2
+## Key Stats — v2.2.0
 
-- 🔧 **40+ tools** built in (incl. adapter-agnostic uploads)
-- 🧪 **1774 tests** across 90 suites — all green
+- 🔧 **45 tools** built in (incl. adapter-agnostic uploads)
+- 🧪 **2084 tests** across 116 suites — all green
+- 🛟 **Reversible by default** — atomic writes, snapshots, `--rollback`
 - 📁 **13 docs pages** including full CLI reference
 - 📋 **10 task templates** built in
 - 💡 **10 example projects** in gallery
@@ -355,12 +361,28 @@ Run `forge-agent --setup` for guided configuration.
 
 ---
 
+## Reliability
+
+What the agent guarantees, where each guarantee is enforced and which test proves
+it: **[docs/RELIABILITY.md](docs/RELIABILITY.md)**. Short version:
+
+| Guarantee | How |
+| --- | --- |
+| The reply you get is the new one | Transcript baselined before sending; a dropped submit fails loudly instead of replaying the last answer |
+| One contract | One system prompt, validated by `node scripts/verify-prompt.js` against the message the agent actually sends |
+| A stall restarts with its contract | Recovery re-sends the prompt, plan, progress and recent errors (bounded to `MAX_CHAT_RECOVERIES`) |
+| Writes are safe | Atomic, snapshotted, read-before-write, diff returned; `forge-agent --rollback <path>` |
+| Runs are bounded | `--max-iterations` (100), `--max-runtime` (`2h`), `--max-tool-calls` |
+| Prose is not a program | A fenced example or an unregistered tool name never executes; typos get a one-line suggestion |
+| Secrets stay put | Tool output is redacted before it is sent to the chat UI |
+
 ## Documentation
 
 Full documentation: [https://puneet-swarup.github.io/forge-agent](https://puneet-swarup.github.io/forge-agent)
 
 - [**Complete User Guide**](USER_GUIDE.md) - every feature with copy-paste examples
 - [**Testing Guide**](TESTING_PHASE1-4.md) - verify each feature by hand
+- [**Reliability invariants**](docs/RELIABILITY.md) - what is guaranteed, and what is not
 - [Getting Started](docs/getting-started.html)
 - [All Tools](docs/tools.html)
 - [CLI Reference](docs/cli-reference.html)

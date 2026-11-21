@@ -152,6 +152,87 @@ function sanitiseOutput(text) {
 }
 
 /**
+ * High-confidence secret patterns for EGRESS redaction.
+ *
+ * These run on everything the agent sends to a third-party chat UI, so they are
+ * deliberately narrow: each pattern is a token shape that has no legitimate
+ * reason to appear in ordinary source code. They must NOT match things like
+ * hashes, lockfile integrity values or base64 assets — over-redacting code the
+ * model is editing corrupts it (the model would write the placeholder back).
+ *
+ * `sanitiseOutput()` above stays as-is for stored logs, where lossy is fine.
+ */
+const SECRET_PATTERNS = [
+  {
+    kind: 'private-key',
+    re: /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
+  },
+  { kind: 'openai-key', re: /\bsk-(?:ant-|proj-)?[A-Za-z0-9_-]{20,}\b/g },
+  { kind: 'aws-access-key', re: /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g },
+  { kind: 'github-token', re: /\bgh[pousr]_[A-Za-z0-9]{36,}\b/g },
+  { kind: 'slack-token', re: /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/g },
+  { kind: 'google-api-key', re: /\bAIza[0-9A-Za-z_-]{35}\b/g },
+  { kind: 'stripe-key', re: /\b(?:sk|rk)_(?:live|test)_[0-9a-zA-Z]{16,}\b/g },
+  { kind: 'jwt', re: /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g },
+];
+
+// key = value / key: value assignments whose value looks like a credential.
+const ASSIGNMENT_RE =
+  /((?:password|passwd|pwd|secret|token|api[_-]?key|apikey|access[_-]?key|client[_-]?secret|private[_-]?key)[ \t]*[:=][ \t]*)(["'])([^"'\n]{8,})\2/gi;
+
+// .env style lines: NAME_WITH_SECRET_WORD=value
+const ENV_LINE_RE =
+  /^([A-Z0-9_]*(?:KEY|SECRET|TOKEN|PASSWORD|PASSWD|CREDENTIALS)[A-Z0-9_]*[ \t]*=[ \t]*)([^\s]{6,})$/gm;
+
+/**
+ * Redact secrets from text that is about to leave the machine.
+ *
+ * @param {string} text
+ * @returns {{ text: string, redactions: Array<{kind: string, count: number}> }}
+ */
+function redactSecrets(text) {
+  if (typeof text !== 'string' || text.length === 0) {
+    return { text: typeof text === 'string' ? text : String(text == null ? '' : text), redactions: [] };
+  }
+
+  const counts = new Map();
+  const bump = (kind, n = 1) => counts.set(kind, (counts.get(kind) || 0) + n);
+
+  let out = text;
+
+  for (const { kind, re } of SECRET_PATTERNS) {
+    out = out.replace(re, () => {
+      bump(kind);
+      return `[REDACTED:${kind}]`;
+    });
+  }
+
+  out = out.replace(ASSIGNMENT_RE, (match, prefix, quote, value) => {
+    bump('credential-assignment');
+    return `${prefix}${quote}[REDACTED]${quote}`;
+  });
+
+  out = out.replace(ENV_LINE_RE, (match, prefix, value) => {
+    // Leave obvious placeholders and references alone.
+    if (/^[\[\]$<{%]/.test(value) || /^(true|false|null|undefined)$/i.test(value)) return match;
+    bump('env-file-value');
+    return `${prefix}[REDACTED]`;
+  });
+
+  const redactions = [...counts.entries()].map(([kind, count]) => ({ kind, count }));
+  return { text: out, redactions };
+}
+
+/**
+ * Convenience wrapper: redact and return the text only.
+ * @param {string} text
+ * @returns {string}
+ */
+function redactSecretsText(text) {
+  return redactSecrets(text).text;
+}
+
+/**
  * Check if a file is an environment file.
  */
 function isEnvFile(filePath) {
@@ -219,6 +300,9 @@ module.exports = {
   validatePath,
   validateCommand,
   sanitiseOutput,
+  redactSecrets,
+  redactSecretsText,
+  SECRET_PATTERNS,
   isEnvFile,
   checkSensitiveFileType,
   generateSecurityReport,

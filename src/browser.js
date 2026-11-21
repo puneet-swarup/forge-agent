@@ -212,7 +212,9 @@ class DeepSeekBrowser {
   async _promptPause() {
     this._sendCount = (this._sendCount || 0) + 1;
     if (this._sendCount === 1) return; // no pause before the first prompt
-    if (config.PROMPT_PAUSE === false) return;
+    // Opt-in since 2.2.0: a fixed pause before every prompt is a tax on every
+    // run and does nothing for real throttling (see src/throttle.js).
+    if (!config.PROMPT_PAUSE) return;
     const min = Number(config.PROMPT_PAUSE_MIN_MS);
     const max = Number(config.PROMPT_PAUSE_MAX_MS);
     const lo = Number.isFinite(min) && min > 0 ? min : 10000;

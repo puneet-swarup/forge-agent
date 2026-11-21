@@ -44,11 +44,18 @@ describe('Parser Module', () => {
       expect(result.name).toBe('read_file');
     });
 
-    test('Case 4: JSON code block', () => {
-      const input = "Check this out:\n```json\n{\"tool\": \"read_file\", \"args\": {\"path\": \"test.js\"}}\n```";
+    test('Case 4: JSON code block that IS the whole response', () => {
+      const input = "```json\n{\"tool\": \"read_file\", \"args\": {\"path\": \"test.js\"}}\n```";
       const result = parseResponse(input);
       expect(result.type).toBe('tool_call');
       expect(result.name).toBe('read_file');
+    });
+
+    test('Case 4b: a JSON block with prose around it is an illustration, not a call', () => {
+      // Behaviour change: a model explaining a call used to execute it.
+      const input = "Check this out:\n```json\n{\"tool\": \"read_file\", \"args\": {\"path\": \"test.js\"}}\n```\nThat is the format.";
+      const result = parseResponse(input);
+      expect(result.type).toBe('text');
     });
 
     test('Case 5: Bare JSON object', () => {

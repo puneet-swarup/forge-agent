@@ -24,6 +24,7 @@ const logger        = require('./logger');
 const ToolCache = require('./tool-cache');
 const { smartTruncate } = require('./truncator');
 const security = require('./security');
+const { Workspace } = require('./workspace');
 const os = require('os');
 const readline = require('readline');
 const { decodeTransportArg } = require('./transport');
@@ -54,6 +55,30 @@ function truncate(str, max = config.MAX_OUTPUT_LENGTH, type = 'text') {
 function resolve(filePath) {
   if (path.isAbsolute(filePath)) return filePath;
   return path.resolve(config.WORKING_DIR, filePath);
+}
+
+// ─────────────────────────────────────────────
+//  Workspace (atomic writes, snapshots, read-before-write, diffs)
+// ─────────────────────────────────────────────
+// One instance per working directory. Rebuilt if WORKING_DIR changes, which
+// tests and the supervisor's child processes both do.
+let _workspace = null;
+
+function getWorkspace() {
+  const root = path.resolve(config.WORKING_DIR || process.cwd());
+  if (_workspace && _workspace.root === root) return _workspace;
+
+  _workspace = new Workspace({
+    root,
+    // Deterministic per project (no pid) so `forge-agent --rollback` can find
+    // the pre-image from a later process.
+    snapshotDir: path.join(
+      require('./paths').forgePath('snapshots'),
+      path.basename(root)
+    ),
+    requireReadBeforeWrite: config.REQUIRE_READ_BEFORE_WRITE !== false,
+  });
+  return _workspace;
 }
 
 // ─────────────────────────────────────────────
@@ -239,6 +264,9 @@ const TOOLS = {
         throw Errors.pathIsDirectory(filePath);
       }
 
+      // The read-before-write guard in workspace.write() keys off this.
+      getWorkspace().markSeen(abs);
+
       const firstLine = start_line == null ? 1 : Math.floor(Number(start_line));
 
       if (!Number.isSafeInteger(firstLine) || firstLine < 1) {
@@ -386,19 +414,29 @@ const TOOLS = {
     parameters: {
       path      : { type: 'string', required: true, description: 'Destination file path' },
       content   : { type: 'string', required: true, description: 'Full file content (Raw plain text or Base64 binary string)' },
-      is_base64 : { type: 'boolean', required: false, description: 'Set to true if content input is Base64 encoded' }
+      is_base64 : { type: 'boolean', required: false, description: 'Set to true if content input is Base64 encoded' },
+      is_hex    : { type: 'boolean', required: false, description: 'Set to true if content is hex-encoded' },
+      content_md5: { type: 'string', required: false, description: 'MD5 (32 hex chars) of the decoded content. The write is refused if it does not match.' }
     },
-    async execute({ path: filePath, content, is_base64 = false }) {
+    async execute({ path: filePath, content, is_base64 = false, is_hex = false, content_md5 = '' }) {
       const abs = assertSafePath(filePath, 'write');
-      const decoded = decodeTransportArg(content, is_base64, 'content');
+      const decoded = decodeTransportArg(content, {
+        isBase64: is_base64, isHex: is_hex, md5: content_md5, label: 'content',
+      });
+
+      let res;
       try {
-        fs.mkdirSync(path.dirname(abs), { recursive: true });
-        fs.writeFileSync(abs, decoded.buffer);
+        res = getWorkspace().write(abs, decoded.buffer);
       } catch (err) {
+        if (err && err.code === 'read_before_write') throw err;
         throw classifyFsError(err, filePath, 'write');
       }
-      const lineCount = decoded.text.split('\n').length;
-      return `✓ Wrote ${formatBytes(decoded.buffer.length)} (${lineCount} lines) → ${filePath}`;
+
+      const verb = res.created ? 'Wrote' : 'Updated';
+      const integrity = decoded.verified ? ' · integrity verified' : '';
+      let out = `✓ ${verb} ${formatBytes(res.bytes)} (${res.lines} lines) → ${filePath}${integrity}`;
+      if (res.diff) out += '\n\n' + res.diff;
+      return out;
     },
   },
 
@@ -408,18 +446,24 @@ const TOOLS = {
     parameters: {
       path      : { type: 'string', required: true, description: 'File path' },
       content   : { type: 'string', required: true, description: 'Text to append (Raw plain text or Base64 string)' },
-      is_base64 : { type: 'boolean', required: false, description: 'Set to true if content parameter is Base64 encoded' }
+      is_base64 : { type: 'boolean', required: false, description: 'Set to true if content parameter is Base64 encoded' },
+      is_hex    : { type: 'boolean', required: false, description: 'Set to true if content is hex-encoded' },
+      content_md5: { type: 'string', required: false, description: 'MD5 (32 hex chars) of the decoded content; refused if it does not match' }
     },
-    async execute({ path: filePath, content, is_base64 = false }) {
+    async execute({ path: filePath, content, is_base64 = false, is_hex = false, content_md5 = '' }) {
       const abs = assertSafePath(filePath, 'append');
-      const decoded = decodeTransportArg(content, is_base64, 'content');
+      const decoded = decodeTransportArg(content, {
+        isBase64: is_base64, isHex: is_hex, md5: content_md5, label: 'content',
+      });
+
+      let res;
       try {
-        fs.mkdirSync(path.dirname(abs), { recursive: true });
-        fs.appendFileSync(abs, decoded.buffer);
+        res = getWorkspace().append(abs, decoded.buffer);
       } catch (err) {
         throw classifyFsError(err, filePath, 'append');
       }
-      return `✓ Appended ${formatBytes(decoded.buffer.length)} to ${filePath}`;
+      const integrity = decoded.verified ? ' · integrity verified' : '';
+      return `✓ Appended ${formatBytes(res.bytes)} to ${filePath}${integrity}`;
     },
   },
 
@@ -432,15 +476,27 @@ const TOOLS = {
       replace        : { type: 'string',  required: true,  description: 'Replacement text (Plain string or Base64 string)' },
       use_regex      : { type: 'boolean', required: false, description: 'Treat "find" as a regex pattern (default: false)' },
       all_occurrences: { type: 'boolean', required: false, description: 'Replace all occurrences (default: true)' },
-      is_base64      : { type: 'boolean', required: false, description: 'Set to true if find and replace parameters are Base64 strings' }
+      is_base64      : { type: 'boolean', required: false, description: 'Set to true if find and replace parameters are Base64 strings' },
+      is_hex         : { type: 'boolean', required: false, description: 'Set to true if find and replace are hex-encoded' },
+      find_md5       : { type: 'string',  required: false, description: 'MD5 of the decoded find text; the replace is refused if it does not match' },
+      replace_md5    : { type: 'string',  required: false, description: 'MD5 of the decoded replacement text' }
     },
-    async execute({ path: filePath, find, replace, use_regex = false, all_occurrences = true, is_base64 = false }) {
+    async execute({ path: filePath, find, replace, use_regex = false, all_occurrences = true, is_base64 = false, is_hex = false, find_md5 = '', replace_md5 = '' }) {
       const abs = assertSafePath(filePath, 'write');
       let content = fs.readFileSync(abs, 'utf8');
       const original = content;
 
-      const searchVal = decodeTransportArg(find, is_base64, 'find').text;
-      const targetVal = decodeTransportArg(replace, is_base64, 'replace').text;
+      // It has just been read; the workspace snapshots the pre-image and
+      // writes atomically so a crash cannot truncate the file.
+      const ws = getWorkspace();
+      ws.markSeen(abs);
+
+      const searchVal = decodeTransportArg(find, {
+        isBase64: is_base64, isHex: is_hex, md5: find_md5, label: 'find',
+      }).text;
+      const targetVal = decodeTransportArg(replace, {
+        isBase64: is_base64, isHex: is_hex, md5: replace_md5, label: 'replace',
+      }).text;
 
       if (use_regex) {
         const flags = all_occurrences ? 'g' : '';
@@ -460,7 +516,7 @@ const TOOLS = {
         new RegExp(use_regex ? searchVal : searchVal.replace(/[.*+?^${}()|[\\\]]/g, '\\$&'), 'g')
       ) || []).length;
 
-      fs.writeFileSync(abs, content, 'utf8');
+      ws.write(abs, content, { allowUnread: true });
       return `✓ Replaced ${count} occurrence(s) inside ${filePath}`;
     },
   },
@@ -474,12 +530,15 @@ const TOOLS = {
     async execute({ path: filePath }) {
       const abs = assertSafePath(filePath, 'delete');
       if (!fs.existsSync(abs)) throw Errors.fileNotFound(filePath);
+      let snap = null;
       try {
-        fs.unlinkSync(abs);
+        snap = getWorkspace().remove(abs).snapshot;
       } catch (err) {
         throw classifyFsError(err, filePath, 'delete');
       }
-      return `✓ Deleted ${filePath}`;
+      return snap
+        ? `✓ Deleted ${filePath} (snapshot kept — restore with: forge-agent --rollback ${filePath})`
+        : `✓ Deleted ${filePath}`;
     },
   },
 
@@ -883,7 +942,7 @@ const TOOLS = {
       files: {
         type       : 'array',
         required   : true,
-        description: 'Array of {path, content, is_base64} objects',
+        description: 'Array of {path, content, is_base64?, is_hex?, content_md5?} objects',
       },
     },
     async execute({ files }) {
@@ -899,11 +958,16 @@ const TOOLS = {
         const abs = assertSafePath(filePath, 'write');
 
 		try {
-          const isBase64 = !!item.is_base64;
-          const decoded = decodeTransportArg(content, isBase64, `files[].content (${filePath})`);
-          await fsp.mkdir(path.dirname(abs), { recursive: true });
-          await fsp.writeFile(abs, decoded.buffer);
+          const decoded = decodeTransportArg(content, {
+            isBase64: !!item.is_base64,
+            isHex: !!item.is_hex,
+            md5: item.content_md5 || '',
+            label: `files[].content (${filePath})`,
+          });
+          // Same guarantees as write_file: atomic, snapshotted, guarded.
+          getWorkspace().write(abs, decoded.buffer);
         } catch (err) {
+          if (err && err.code === 'read_before_write') throw err;
           throw classifyFsError(err, filePath, 'write');
         }
         return filePath;

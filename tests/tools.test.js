@@ -125,10 +125,28 @@ describe('write_file', () => {
     expect(fs.readFileSync(tmp('write_test.txt'), 'utf8')).toBe('hello world');
   });
 
-  test('overwrites an existing file', async () => {
+  test('overwrites an existing file after it has been read', async () => {
     await writeTemp('overwrite.txt', 'old content');
-    await executeTool('write_file', { path: tmp('overwrite.txt'), content: 'new content' });
+    await executeTool('read_file', { path: tmp('overwrite.txt') });
+
+    const res = await executeTool('write_file', {
+      path: tmp('overwrite.txt'),
+      content: 'new content',
+    });
+
     expect(fs.readFileSync(tmp('overwrite.txt'), 'utf8')).toBe('new content');
+    expect(res).toContain('Updated');
+    expect(res).toContain('--- a/overwrite.txt');   // diff is returned
+  });
+
+  test('refuses to overwrite an existing file it has not read', async () => {
+    await writeTemp('precious.txt', 'precious');
+
+    await expect(
+      executeTool('write_file', { path: tmp('precious.txt'), content: 'clobbered' })
+    ).rejects.toThrow(/Refusing to overwrite/);
+
+    expect(fs.readFileSync(tmp('precious.txt'), 'utf8')).toBe('precious');
   });
 
   test('creates parent directories automatically', async () => {
@@ -659,11 +677,14 @@ describe('write_files', () => {
 // ─────────────────────────────────────────────────────────
 
 describe('read_url', () => {
-  test('fetches content from a real URL', async () => {
-    const result = await executeTool('read_url', { url: 'http://example.com' });
-    expect(typeof result).toBe('string');
-    expect(result.length).toBeGreaterThan(10);
-  }, 60000);
+  // Was: fetches http://example.com. A unit test must not depend on the public
+  // internet — it failed in every sandboxed/CI environment without egress.
+  // The hermetic coverage below uses a local server; this only checks the tool
+  // exists and validates its input.
+  test('rejects a missing or malformed url', async () => {
+    await expect(executeTool('read_url', {})).rejects.toThrow();
+    await expect(executeTool('read_url', { url: 'not-a-url' })).rejects.toThrow();
+  });
 
   describe('P1.4 read_url guards (local server)', () => {
     const http = require('http');
