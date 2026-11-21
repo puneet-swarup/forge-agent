@@ -256,3 +256,62 @@ describe('Logger Integration', () => {
     expect(clean).toContain('command not found');
     expect(clean).not.toContain('run_command');
   });
+
+// ─────────────────────────────────────────────
+//  Completion panel — aligned, honest, and free of width-ambiguous glyphs
+// ─────────────────────────────────────────────
+
+describe('renderCompletion panel', () => {
+  function render(status, progress, opts) {
+    const t = new TUI({ noColor: true });
+    const out = [];
+    t._print = (s) => out.push(s);
+    t.startTime = Date.now() - 94_000;
+    t.stepNum = 7;
+    t.renderCompletion(progress, status, opts);
+    return stripAnsi(out.join(''));
+  }
+
+  test('every line is the same width, so the box closes', () => {
+    const out = render('completed', { filesWritten: new Map([['a', 'src/a.js']]) }, { verification: 'verified: npm test passed' });
+    const widths = [...new Set(out.split('\n').filter(Boolean).map((l) => l.length))];
+    expect(widths).toEqual([80]);
+  });
+
+  test('shows the verification result when given one', () => {
+    const out = render('completed', null, { verification: 'verified: `npm test` passed' });
+    expect(out).toContain('Verified');
+    expect(out).toContain('npm test');
+  });
+
+  test('says "unverified" rather than implying success', () => {
+    const out = render('completed', null, { verification: 'no project checks found — completion is unverified' });
+    expect(out).toMatch(/unverified/i);
+  });
+
+  test('each status is labelled in words, not only in colour', () => {
+    expect(render('completed', null)).toContain('Task complete');
+    expect(render('partial', null)).toContain('Partial result');
+    expect(render('timeout', null)).toContain('Timed out');
+    expect(render('failed', null)).toContain('Failed');
+  });
+
+  test('carries no double-width glyph in the title', () => {
+    // A ✓ or ✗ is double-width in some terminal fonts and pushes the right
+    // border out by a column; the box must stay closed everywhere.
+    const out = render('completed', null);
+    const titleLine = out.split('\n').find((l) => l.includes('Task complete'));
+    expect(titleLine).toBeTruthy();
+    expect(titleLine).not.toMatch(/[✓✗✔✘]/);
+  });
+
+  test('lists at most six files and counts the rest', () => {
+    const files = new Map();
+    for (let i = 0; i < 9; i++) files.set(`f${i}`, `src/file${i}.js`);
+    const out = render('completed', { filesWritten: files });
+
+    expect(out).toContain('src/file0.js');
+    expect(out).toContain('and 3 more');
+    expect(out).not.toContain('src/file8.js');
+  });
+});
