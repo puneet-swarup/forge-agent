@@ -59,10 +59,10 @@ the same function, that no other module embeds a prompt, and that the message
 contains the envelope, the single call format, `TASK_COMPLETE`, the artifact
 protocol, and every registered tool.
 
-**Note.** The artifact protocol (`FORGE_PLAN.md` etc.) is enforced by
-`scripts/lifecycle.js`. It used to be absent from the prompt the model received,
-which made the gate unfair. The two must stay in sync; the test above asserts
-the prompt side.
+**Note.** The artifact protocol (`FORGE_PLAN.md` etc.) is enforced by the agent
+loop (see §14). It used to be absent from the prompt the model received, which
+made the gate unfair. The two must stay in sync; the test above asserts the
+prompt side.
 
 ---
 
@@ -348,6 +348,41 @@ rotations. `CONTEXT_ROTATION_TURNS=0` disables it.
 the contract present in the new chat, the counter resets so it repeats, the log
 is trimmed, it can be disabled, and recovery/rotation are proven to share one
 code path.
+
+## 14. The plan is gated at both ends
+
+**Invariant.** A multi-step task writes `FORGE_PLAN.md` before it changes
+anything, and `TASK_COMPLETE` is refused while the plan still has unchecked
+steps.
+
+**Enforced by.** `src/lifecycle-gate.js`, called from three places in
+`agent.js`: before a single tool call, before a tool batch, and at the top of the
+completion branch.
+
+The contract itself (`src/lifecycle.js`) always said `FORGE_PLAN.md` is created
+at task start and kept until sign-off, and `scripts/lifecycle.js` could check it
+— but nothing in the loop called the check, so both rules were advisory.
+
+- **Start.** Before the first *mutating* tool of a multi-step task, the plan must
+exist and contain at least one `- [ ]` step. A refusal goes back to the model
+with the file name and the format; the tool does not run, and the user is never
+asked to approve an action that was refused. Writing `FORGE_PLAN.md` is always
+allowed, so the gate can always be satisfied.
+- **End.** At `TASK_COMPLETE`, every step must be ticked. The refusal lists the
+open steps by line number. This runs *after* the verification gate, because a
+green suite does not mean the agent finished what it said it would.
+- **Quiet on small tasks.** A one-clause instruction (`create hello.js`) is not
+asked for a plan. `PLAN_GATE_MULTISTEP_ONLY=false` gates every task.
+- **Bounded and never deadlocking.** After `MAX_PLAN_GATE_ATTEMPTS` (default 2)
+the gate steps aside with a warning rather than blocking the run. A missing plan
+at completion is reported, not refused — the start gate already had its chance.
+- `PLAN_GATE=false` disables both gates; the counters reset on every `run()`.
+
+**Verify.** `tests/lifecycle-gate.test.js` — the decisions (refuse, satisfied,
+single-step, exhausted, disabled, no deadlock), the plan-write exemption on POSIX
+and Windows paths, and six end-to-end loop cases: a mutating tool refused until
+the plan exists, a read-only tool never gated, a single-step task never gated,
+completion refused with an open step, the bound reached, and the kill switch.
 
 ## What is still missing
 

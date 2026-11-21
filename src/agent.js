@@ -23,6 +23,7 @@ const shellPolicy                  = require('./shell-policy');
 const { Budget, BudgetExceeded }    = require('./budget');
 const { Throttle }                  = require('./throttle');
 const { verifyProject, describeVerification } = require('./verify');
+const { decideStart, decideEnd, isPlanWrite } = require('./lifecycle-gate');
 const { sleep }                    = require('./retry');
 const { ProgressTracker }          = require('./progress');
 const { MemoryStore }              = require('./memory');
@@ -366,6 +367,78 @@ class DeepSeekAgent {
   }
 
   /**
+   * Plan gate, task start: refuse the first mutating tool of a multi-step task
+   * until FORGE_PLAN.md exists.
+   *
+   * Returns null when the call may proceed, or the feedback message that should
+   * go back to the model instead of executing the tool. A write to FORGE_PLAN.md
+   * is always allowed — it is how the gate gets satisfied. Bounded by
+   * MAX_PLAN_GATE_ATTEMPTS, after which the gate steps aside rather than
+   * blocking the task.
+   *
+   * @param {string} name
+   * @param {object} args
+   * @returns {string|null}
+   */
+  _planGateBeforeTool(name, args) {
+    if (!this._planGate) return null;
+    // Reading, searching and status checks never need a plan.
+    if (isReadOnly(name)) return null;
+    if (isPlanWrite(name, args)) return null;
+
+    const decision = decideStart({
+      dir: config.WORKING_DIR || process.cwd(),
+      task: this._planGate.task,
+      attempt: this._planGate.startAttempts,
+      maxAttempts: config.MAX_PLAN_GATE_ATTEMPTS,
+      enabled: config.PLAN_GATE !== false,
+      multistepOnly: config.PLAN_GATE_MULTISTEP_ONLY !== false,
+    });
+
+    if (decision.allow) {
+      if (decision.exhausted) {
+        logger.warn('Plan gate: still no ' + require('./lifecycle').PLAN_FILE +
+          ' after ' + this._planGate.startAttempts + ' refusal(s) — continuing without a plan');
+      }
+      return null;
+    }
+
+    this._planGate.startAttempts++;
+    logger.warn('Plan gate — ' + decision.errors.join('; '));
+    return decision.feedback;
+  }
+
+  /**
+   * Plan gate, completion: refuse TASK_COMPLETE while the plan still has open
+   * steps. Returns null when completion may be accepted, or the feedback to
+   * send back. Bounded by MAX_PLAN_GATE_ATTEMPTS.
+   *
+   * @returns {string|null}
+   */
+  _planGateBeforeComplete() {
+    if (!this._planGate) return null;
+
+    const decision = decideEnd({
+      dir: config.WORKING_DIR || process.cwd(),
+      attempt: this._planGate.endAttempts,
+      maxAttempts: config.MAX_PLAN_GATE_ATTEMPTS,
+      enabled: config.PLAN_GATE !== false,
+    });
+
+    if (decision.allow) {
+      if (decision.reason === 'exhausted') {
+        logger.warn('Plan gate: plan still incomplete after ' + this._planGate.endAttempts +
+          ' refusal(s) — accepting completion anyway');
+      }
+      return null;
+    }
+
+    this._planGate.endAttempts++;
+    logger.warn('Completion refused — ' + decision.errors.join('; '));
+    return decision.feedback;
+  }
+
+  /**
    * Run a task to completion.
    * Returns the final response string, or a partial summary on timeout.
    */
@@ -385,6 +458,9 @@ class DeepSeekAgent {
     this._lastToolCallCountAtFailure = 0;
     this._verifyAttempts = 0;
     this._lastVerification = null;
+    // Plan gate counters: refusals issued this run, per gate. Reset per run so a
+    // second run() on the same agent gets a fresh budget of attempts.
+    this._planGate = { task, startAttempts: 0, endAttempts: 0 };
     this._turnsSinceRotation = 0;
     // Resource envelope for this run: steps, wall clock, tool calls.
     const budget = new Budget(config);
@@ -770,6 +846,19 @@ class DeepSeekAgent {
             }
           }
 
+          // ── Plan gate ──────────────────────────────────────────────────
+          // A multi-step task must have FORGE_PLAN.md before the first
+          // mutating tool. Refused here, before the permission prompt, so the
+          // user is never asked to approve an action that will not run.
+          const _planRefusal = this._planGateBeforeTool(parsed.name, parsed.args);
+          if (_planRefusal) {
+            progress.recordError('plan gate: no FORGE_PLAN.md');
+            const gateMsg = this.conversation.addToolResult('SYSTEM', _planRefusal, true);
+            await this.browser.sendMessage(gateMsg);
+            step++;
+            continue;
+          }
+
           if (this._needsPermission(parsed.name, parsed.args)) {
             const category = getCategory(parsed.name);
             if (!this.permissionStore.isPreApproved(category)) {
@@ -960,6 +1049,18 @@ class DeepSeekAgent {
             }
 
             logger.dim(`  ${describeVerification(verification)}`);
+          }
+
+          // ── Plan gate ────────────────────────────────────────────────────
+          // The project's checks can pass while the agent's own plan still has
+          // unchecked steps. Both gates must agree before completion stands.
+          const _planEnd = this._planGateBeforeComplete();
+          if (_planEnd) {
+            progress.recordError('plan gate: plan still open');
+            const gateMsg = this.conversation.addToolResult('SYSTEM', _planEnd, true);
+            await this.browser.sendMessage(gateMsg);
+            step++;
+            continue;
           }
 
           const content = parsed.content || rawResponse;
@@ -1191,6 +1292,19 @@ class DeepSeekAgent {
       const emptyMsg = this.conversation.addToolResult('SYSTEM', 'Empty tool batch received. Please emit one or more tool calls.', true);
       await this.browser.sendMessage(emptyMsg);
       return { stop: false };
+    }
+
+    // Plan gate: one refusal for the whole batch. Nothing in it runs, so a
+    // batch cannot smuggle a mutating call past the gate.
+    const _firstMutating = calls.find((c) => c && c.name && !isReadOnly(c.name));
+    if (_firstMutating) {
+      const refusal = this._planGateBeforeTool(_firstMutating.name, _firstMutating.args);
+      if (refusal) {
+        progress.recordError('plan gate: no FORGE_PLAN.md');
+        const gateMsg = this.conversation.addToolResult('SYSTEM', refusal, true);
+        await this.browser.sendMessage(gateMsg);
+        return { stop: false };
+      }
     }
 
     for (const c of calls) {
