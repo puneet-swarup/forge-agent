@@ -245,7 +245,30 @@ class DeepSeekAgent {
    * @returns {Promise<void>}
    */
   async _recoverWithNewChat(task, progress) {
-    logger.warn('Chat stalled — restarting with the full contract and state');
+    return this._rotateChat(task, progress, 'the previous chat stopped responding');
+  }
+
+  /**
+   * Start a fresh chat and re-send the contract plus the state that matters.
+   *
+   * Used by two callers, deliberately through one code path so they cannot
+   * diverge:
+   *   - stall recovery (the model stopped answering);
+   *   - routine context rotation, every CONTEXT_ROTATION_TURNS turns.
+   *
+   * Rotation exists because the model's real context window belongs to the
+   * remote chat, not to this process. `ConversationManager.compress()` rewrites
+   * a local log that is never re-sent, so the remote context keeps growing until
+   * the provider silently truncates it — and the model then loses the tool
+   * contract and starts replying in prose. Rotating on our own terms, with the
+   * contract and a state digest, is the fix.
+   *
+   * @param {string} task
+   * @param {ProgressTracker} progress
+   * @param {string} reason  shown to the model
+   */
+  async _rotateChat(task, progress, reason) {
+    logger.warn(`Restarting chat — ${reason}`);
 
     await this.browser.newChat();
     await sleep(2_000);
@@ -258,12 +281,17 @@ class DeepSeekAgent {
       recentErrors: typeof progress.recentErrors === 'function'
         ? progress.recentErrors(3)
         : [],
-      reason: 'the previous chat stopped responding',
+      reason,
       profile: config.ACTIVE_PROFILE,
       workingDir: config.WORKING_DIR,
     });
 
+    // The local log mirrors the new chat: the resume message is the whole
+    // history now, so the array cannot grow without bound across rotations.
+    this.conversation.resetTo(message);
+
     await this.browser.sendMessage(message);
+    this._turnsSinceRotation = 0;
     logger.dim('  Contract re-sent: system prompt + plan + progress');
   }
 
@@ -357,6 +385,7 @@ class DeepSeekAgent {
     this._lastToolCallCountAtFailure = 0;
     this._verifyAttempts = 0;
     this._lastVerification = null;
+    this._turnsSinceRotation = 0;
     // Resource envelope for this run: steps, wall clock, tool calls.
     const budget = new Budget(config);
     this._budget = budget;
@@ -579,6 +608,21 @@ class DeepSeekAgent {
 
         // Clear streak on successful response
         this._emptyStreak = 0;
+        this._turnsSinceRotation = (this._turnsSinceRotation || 0) + 1;
+
+        // Routine rotation: keep the remote context bounded on our terms rather
+        // than letting the provider truncate it silently. Checked before the
+        // reply is parsed, because the reply we just read belongs to the chat we
+        // are about to leave — it has already been recorded.
+        const rotationTurns = Number(config.CONTEXT_ROTATION_TURNS) || 0;
+        if (rotationTurns > 0 && this._turnsSinceRotation >= rotationTurns) {
+          await this._rotateChat(
+            task, progress,
+            `routine rotation after ${this._turnsSinceRotation} turns`
+          );
+          step++;
+          continue;
+        }
 
         // ── Rate limiting ───────────────────────────────────────────────────
         // A throttled reply is transport, not an answer: do not parse it, do

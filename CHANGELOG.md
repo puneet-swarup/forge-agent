@@ -76,6 +76,15 @@ repository. See `docs/RELIABILITY.md` for the invariants and how to verify them.
   `getModelUrl()` fails with an actionable message naming `--model-url`.
 
 ### Added
+- **Routine context rotation** — the model's real context window belongs to the
+  remote chat, not to this process: `ConversationManager.compress()` rewrote a
+  local log that was never re-sent, so the remote context grew until the provider
+  truncated it silently and the model lost the tool contract. Every
+  `CONTEXT_ROTATION_TURNS` (default 25) assistant turns the agent now starts a
+  fresh chat on its own terms and re-sends the contract plus a state digest
+  (task, progress, plan, session notes, recent errors) through the same
+  `_rotateChat()` path used by stall recovery. The local log is trimmed to the
+  resume message, so it no longer grows across rotations. `0` disables it.
 - **Shell policy with three verdicts** — the guard was six literal substrings
   matched with `String.includes()`, which `rm -rf $HOME`, `git reset --hard`,
   `find . -delete` and `curl … | sh` all walked past. `src/shell-policy.js`

@@ -19,6 +19,22 @@ const {
   statusIcon,
 } = require('../src/process-manager');
 
+/**
+ * Poll until `predicate()` is true, or fail after `timeoutMs`.
+ *
+ * Fixed sleeps raced the child process: under load a `node -e "process.exit(0)"`
+ * had not exited within 500 ms, so the status was still "running" and the suite
+ * went red at random. Same class of flake as the kill-escalation test.
+ */
+async function waitFor(predicate, { timeoutMs = 5000, intervalMs = 25, label = 'condition' } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return true;
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+  throw new Error(`timed out waiting for ${label}`);
+}
+
 // ─────────────────────────────────────────────
 //  Clean registry between tests
 // ─────────────────────────────────────────────
@@ -93,7 +109,10 @@ describe('startProcess', () => {
 
   test('captures stdout output', async () => {
     startProcess('output-test', 'node -e "console.log(\'hello from process\')"');
-    await new Promise(r => setTimeout(r, 300));
+    await waitFor(
+      () => (getProcessLogs('output-test', 50) || []).some((l) => String(l).includes('hello from process')),
+      { label: 'stdout' }
+    );
     const logs = getProcessLogs('output-test', 50);
     expect(logs).toBeDefined();
     expect(logs.some(l => l.includes('hello from process'))).toBe(true);
@@ -114,16 +133,15 @@ describe('startProcess', () => {
 
   test('process status becomes stopped after exit', async () => {
     startProcess('exit-test', 'node -e "process.exit(0)"');
-    await new Promise(r => setTimeout(r, 500));
+    await waitFor(() => getProcessStatus('exit-test').status !== 'running', { label: 'exit' });
     const status = getProcessStatus('exit-test');
     expect(['stopped', 'crashed']).toContain(status.status);
   });
 
   test('crashed process has crashed status', async () => {
     startProcess('crash-test', 'node -e "process.exit(1)"');
-    await new Promise(r => setTimeout(r, 500));
-    const status = getProcessStatus('crash-test');
-    expect(status.status).toBe('crashed');
+    await waitFor(() => getProcessStatus('crash-test').status !== 'running', { label: 'crash' });
+    expect(getProcessStatus('crash-test').status).toBe('crashed');
   });
 });
 
@@ -148,7 +166,7 @@ describe('stopProcess', () => {
 
   test('returns stopped:false for already stopped process', async () => {
     startProcess('already-stopped', 'node -e "process.exit(0)"');
-    await new Promise(r => setTimeout(r, 500));
+    await waitFor(() => getProcessStatus('already-stopped').status !== 'running', { label: 'exit' });
     const result = stopProcess('already-stopped');
     expect(result.stopped).toBe(false);
   });

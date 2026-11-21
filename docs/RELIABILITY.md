@@ -322,14 +322,38 @@ quoting and pipe evasion, `strict` mode, segment and binary parsing (including a
 quoted Windows path), environment scrubbing, an end-to-end `run_command` proving
 a secret in `process.env` is absent from the child, and the prompt-skipping rule.
 
+## 13. The remote context is rotated on our terms
+
+**Invariant.** A long run does not depend on the provider's context window
+behaving. The agent restarts the chat on a schedule it controls, re-sending the
+contract and a state digest.
+
+**Enforced by.** `agent.js` (`_rotateChat`), called from two places through one
+path: stall recovery and routine rotation every `CONTEXT_ROTATION_TURNS`
+(default 25) assistant turns.
+
+Why it is needed: the model's real context lives in the remote chat.
+`ConversationManager.compress()` rewrites a local log that is **never re-sent**,
+so it manages a copy of the conversation rather than the conversation. When the
+provider finally truncates, the model has lost the tool contract and answers in
+prose — which the loop then reads as a protocol violation.
+
+What a rotation sends: the full system prompt, the task, the progress line, the
+current `FORGE_PLAN.md` (bounded), the session notes (bounded) and the last three
+errors — then asks the model to resume from the next unfinished step. The local
+message log is replaced by that message, so memory does not grow across
+rotations. `CONTEXT_ROTATION_TURNS=0` disables it.
+
+**Verify.** `tests/context-rotation.test.js` — rotation fires after N turns with
+the contract present in the new chat, the counter resets so it repeats, the log
+is trimmed, it can be disabled, and recovery/rotation are proven to share one
+code path.
+
 ## What is still missing
 
 Honest list of gaps this release does **not** close. Each one has a test-shaped
 hole; none is hidden behind a passing suite.
 
-2. **Local context compression is bookkeeping.** The model's real context lives
-   in the remote chat; `ConversationManager.compress()` rewrites a local log
-   that is never re-sent. Deliberate rotation every N turns is the fix.
 3. **The shell guard is a blocklist.** `security.BLOCKED_COMMANDS` is six
    substrings; `run_command` inherits the full `process.env`. An allowlist with
    a scrubbed environment is the fix.

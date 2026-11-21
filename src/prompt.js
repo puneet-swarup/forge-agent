@@ -134,6 +134,18 @@ class ConversationManager {
     return content;
   }
 
+  /**
+   * Replace the conversation with a single message — used when the chat is
+   * rotated, so the local log mirrors the new remote chat instead of growing
+   * without bound across rotations.
+   *
+   * @param {string} message
+   */
+  resetTo(message) {
+    this.messages = [{ role: 'user', content: message }];
+    return this.messages;
+  }
+
   prependMemoryContext(memoryText) {
     if (this.messages.length > 0 && this.messages[0].role === 'user') {
       this.messages[0].content = memoryText + '\n\n' + this.messages[0].content;
