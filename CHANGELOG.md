@@ -9,6 +9,24 @@ Versioning: [Semantic Versioning](https://semver.org/)
 ## [Unreleased]
 
 ### Added
+- **Loom, slice 1 — the project index's storage layer** (`src/loom/`). Loom is
+  the persistent index described in `src/loom_specs.md`: files, symbols,
+  dependency edges and one-line purposes, compiled into a digest for the first
+  prompt. This slice is the part everything else stands on — `config.js`
+  (`LOOM_*` parsing that warns and falls back instead of throwing), `paths.js`
+  (project-relative paths, project id, index location, generated-artifact
+  `.gitignore`), `hash.js` (sha256 plus the mtime/size fast negative),
+  `ignore.js` (hard deny, secret deny, a minimal `.gitignore` matcher with no
+  new dependency), `db.js` (one table-oriented interface over `node:sqlite`
+  and a mandatory JSON fallback), `migrate.js` (versioning, checksums, `meta`
+  seeding, 90-day access retention) and `schema/001_init.sql`.
+  `open()` / `close()` / `status()` / `stats()` are the public surface; nothing
+  is wired into the agent loop yet.
+  Three invariants hold from the start: no Loom call throws into a tool handler,
+  `LOOM_ENABLED=0` performs no I/O at all, and every stored path is
+  project-relative with forward slashes. A corrupt or unknown-version index is
+  quarantined (`.bad`) and rebuilt rather than repaired — the index is derivable,
+  never authoritative. See `docs/LOOM.md`.
 - **The plan gate** — `FORGE_PLAN.md` is now enforced by the agent loop instead
   of only declared in the prompt. Before the first mutating tool of a multi-step
   task the plan must exist with at least one `- [ ]` step; at `TASK_COMPLETE`
