@@ -133,7 +133,9 @@ Versioning: [Semantic Versioning](https://semver.org/)
       --prompt-pause          the old blanket 10-20 s for every model
 
   `local`, `ollama`, `colab` and `sarvam-api` never pause unless named explicitly
-  (`PROMPT_PAUSE_SKIP`). The policy lives in `resolvePromptPause()`, a pure
+  (`PROMPT_PAUSE_SKIP`). `sarvam` is **not** in that list: it is the Indus chat
+  UI, a rate-limited web surface like DeepSeek, and it pauses. Only the hosted
+  `sarvam-api` is skipped. The policy lives in `resolvePromptPause()`, a pure
   function, so it is tested without a browser or a clock.
 - **`--probe=<url>`** — test an OpenAI-compatible endpoint (llama.cpp, vLLM,
   Ollama, a Colab tunnel) without involving the agent. It reports three things

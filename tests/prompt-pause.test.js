@@ -117,3 +117,51 @@ describe('the CLI exposes it', () => {
     expect(src).toContain('--pause needs a number of seconds');
   });
 });
+
+// ─────────────────────────────────────────────
+//  sarvam (the UI) and sarvam-api (the hosted API) are different things
+//
+//  Both are Sarvam, and only one of them is an API. The UI is a rate-limited web
+//  chat surface exactly like DeepSeek or ChatGPT; the API is an HTTP endpoint
+//  where nothing throttles a browser. Conflating them would either tax the UI
+//  run or invite a block on it.
+// ─────────────────────────────────────────────
+
+describe('the two Sarvam models are classified separately', () => {
+  const on = {
+    ...base,
+    PROMPT_PAUSE: true,
+  };
+
+  test('sarvam is a browser UI and pauses like the other cloud UIs', () => {
+    expect(resolvePromptPause('sarvam', on, () => 0)).toBeGreaterThan(0);
+  });
+
+  test('sarvam-api is an HTTP endpoint and does not pause', () => {
+    expect(resolvePromptPause('sarvam-api', on, () => 0)).toBe(0);
+  });
+
+  test('every browser-driven cloud UI pauses', () => {
+    // These are web chat surfaces: a provider can and will throttle them.
+    for (const model of ['deepseek', 'gemini', 'qwen', 'chatgpt', 'google', 'sarvam']) {
+      expect(resolvePromptPause(model, on, () => 0)).toBeGreaterThan(0);
+    }
+  });
+
+  test('every HTTP-backed model is skipped', () => {
+    // sarvam-api is a hosted API; colab/local/ollama are endpoints reached
+    // through a bundled page. None of them is a rate-limited chat UI.
+    for (const model of ['sarvam-api', 'colab', 'local', 'ollama']) {
+      expect(resolvePromptPause(model, on, () => 0)).toBe(0);
+    }
+  });
+
+  test('the skip list names only HTTP-backed models', () => {
+    const config = require('../src/config');
+    const browserUis = ['deepseek', 'gemini', 'qwen', 'chatgpt', 'google', 'sarvam'];
+
+    for (const model of browserUis) {
+      expect(config.PROMPT_PAUSE_SKIP).not.toContain(model);
+    }
+  });
+});

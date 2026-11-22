@@ -112,9 +112,13 @@ const DEFAULTS = {
   // Per-model override, in seconds: { chatgpt: 2, deepseek: 15 }. Takes
   // precedence over the global range and needs no PROMPT_PAUSE.
   PROMPT_PAUSE_BY_MODEL  : {},
-  // Models that are a local process or a plain HTTP API. A pause before every
-  // prompt is pointless against them: nothing is throttling you, and the only
-  // cost is time. Overridable if you disagree.
+  // Models whose endpoint is an HTTP API rather than a web chat UI. A pause
+  // before every prompt is pointless against them: nothing is throttling a
+  // browser, and the only cost is time.
+  //
+  // Note `sarvam-api` here but NOT `sarvam`: the first is Sarvam's hosted API,
+  // the second is their Indus chat UI, which is a rate-limited web surface like
+  // DeepSeek or ChatGPT and does pause.
   PROMPT_PAUSE_SKIP      : ['local', 'ollama', 'colab', 'sarvam-api'],
   // Loom project index (src/loom_specs.md). ON by default since slice 4: the
   // stored index and incremental refresh are in place, so the digest ranks by
