@@ -1,7 +1,8 @@
 # NEXT SESSION — Forge Agent workstreams
 
-**Verified:** 2026-11-21, against `main` @ `v2.3.0` (PRs #3-#21). The runner
-never merges; the lead agent merges after CI is green.
+**Verified:** 2026-11-22, against `main` @ `9340f07` (PRs #3-#33, 90 commits).
+Supersedes the 2026-11-21 pass: the counts and statuses below were re-run, not
+carried over.
 **Rule for this file:** implementation and tests are authoritative. A status here
 is only "done" if the evidence column can be re-run and passes. Anything carried
 over from an earlier handoff is marked *(unverified)* until someone checks it.
@@ -9,7 +10,7 @@ over from an earlier handoff is marked *(unverified)* until someone checks it.
 Re-verify everything in one pass:
 
 ```bash
-npm test                                  # suite must be green (2,359 passing / 19 skipped)
+npm test                                  # suite must be green (2,768 passing / 19 skipped)
 npm run typecheck
 node scripts/verify-prompt.js             # the prompt the agent actually sends
 grep -rn "encodeTransportArg" src/transport.js   # T1
@@ -85,11 +86,15 @@ rotation are all on `main`.
 | Task | Workstream | Status | Evidence | Next action |
 | --- | --- | --- | --- | --- |
 | **T1** | Transport | **DONE** | `src/transport.js` exports `encodeTransportArg` / `decodeTransportArg` / `md5hex`; `content_md5`, `is_hex`, `find_md5`, `replace_md5` are in `src/tools.js`; `tests/transport-integrity.test.js` (19) green | none — see limitation below |
-| **T2** | Loom | **IN PROGRESS — slices 1-3 merged** | storage (`config, paths, hash, ignore, db, migrate, schema`), extractors for js/ts/py/go/rs/sql/md/data (`src/loom/extract/`), import resolution (`src/loom/resolve.js`), the dependency graph (`src/loom/graph.js`) and the digest (`src/loom/digest.js`); 333 tests green; attached to the first message behind `src/loom/attach.js`, `LOOM_ENABLED` default false | slice 4: the stored index + refresh, so the digest ranks by real access instead of alphabetical ties |
-| **T3** | Adapters | **OPEN — live-DOM accuracy only** | all 8 adapters implement the 6 contract methods; `tests/adapter-contract.test.js` (50) green | per-adapter live smoke test with a real login |
+| **T2** | Loom | **PARTIAL — slices 1-3 of 5** | 19 modules in `src/loom/`: storage (`config, paths, hash, ignore, db, migrate, schema`), extractors for 8 languages, `resolve.js`, `graph.js`, `digest.js`; attached to the first message via `attach.js`. **No `refresh.js`, no query path, `LOOM_ENABLED=false`** — the digest is not injected today | slice 4: stored index + incremental refresh, then access tracking so the digest ranks by real reads instead of alphabetical ties |
+| **T3** | Adapters | **IN PROGRESS — live work started** | 11 adapters (sarvam + sarvam-api added). Live-verified 2026-11-22: **sarvam** READY (input/send/new-chat found, round trip 5.1s), **chatgpt** round trip 4.5s. Gemini send/new-chat fixed. qwen, google, ollama, local-chat still unverified against a live UI | `--diagnose=<model> --round-trip` on qwen and google |
 | **T4** | Plan lifecycle | **DONE** (PR #9 merged) | `src/lifecycle-gate.js` gates the first mutating tool and `TASK_COMPLETE`, bounded by `MAX_PLAN_GATE_ATTEMPTS`; `PLAN_GATE=false` disables it | nothing |
 | **T5** | Cross-platform paths | **DONE (targeted)** | no literal `/tmp` in `src/`; `icacls` hints on win32; `tests/path-portability.test.js` green | extend only if a new path bug appears |
 | **T6** | Markdown governance | **DONE** | `docs/MARKDOWN_SCOPE.md` re-audited (21 tracked files, verified against the tree); `tests/markdown-scope.test.js` (14) green and fails on any undocumented `.md` | follow the three open findings below |
+
+| **T7** | Dashboard | **DONE** | `src/dashboard/` (state, server, page): loopback-only, token-authenticated, one self-contained page showing agents/sessions/projects/tasks/processes with a Stop control; 46 tests | none |
+| **T8** | Diagnostics | **DONE** | `--diagnose=<model>` prints every candidate selector with its match count, the real DOM, and (with `--round-trip`) a live send/receive plus the text containers on the page | use it to close T3 |
+| **T9** | Protocol strictness | **DONE** | `STRICT_TOOL_FORMAT` (default on) refuses a fenced/bare-JSON/function-style tool call, asks for `<tool_call>{json}</tool_call>`, then fails naming the format. `strategy` is recorded per turn | none |
 
 ---
 
@@ -328,9 +333,42 @@ and the test enforces that.
 
 ---
 
+## What was delivered, and what it cost
+
+Between the handover (`9882d14`) and `9340f07`: **90 commits, 25 merged PRs,
+122 source modules, 152 test suites, 2,768 passing tests**.
+
+Delivered by sub-agents (each in an isolated sandbox, reviewed and merged by the
+lead agent): Loom extractors (8 languages, 67 tests), Loom graph + digest (71
+tests), the README rewrite, the dashboard (46 tests).
+
+What that approach cost, stated plainly:
+
+1. **Duplicate work.** The scheduled runner and a sub-agent both built Loom
+   slice 2, because neither could see the other. #14 was salvaged for its
+   `resolve.js`; #19 was closed as a duplicate.
+2. **Work parked on branches.** Verified work sat on `fix/gemini-live-report` for
+   hours while the lead agent kept asking for a branch checkout instead of
+   merging. Three requests, three wrong answers.
+3. **A file lost in a tree.** `src/adapters/sarvam-adapter.js` existed on the
+   `loom` branch the whole time. It was missed because only selected files were
+   cherry-picked from that branch, never a full `--name-status` diff — and it was
+   never registered in the adapter factory, so no grep of the factory could
+   reveal it.
+4. **A stale status file.** This document claimed v2.3.0 and 2,359 tests while
+   `main` was 12 commits and 400 tests further on.
+
+The rule that follows: **before cherry-picking from a branch, run
+`git diff --name-status` and read the whole list**; and a status file that is not
+re-verified is worse than none.
+
 ## What is next, in order
 
-1. **Loom slice 4** — the stored index and incremental refresh, plus access
+1. **T3 first — finish the adapters.** qwen and google are unverified; google is
+   `www.google.com/ai`, which is a search surface, not a chat UI, and should
+   either be scoped to research or dropped from the model list. Use
+   `--diagnose=<model> --round-trip` for each.
+2. **Loom slice 4** — the stored index and incremental refresh, plus access
    tracking so the digest ranks by what the agent actually reads and edits.
    Until then `LOOM_ENABLED` stays false: the digest is real but its hot-file
    order is alphabetical among ties.
