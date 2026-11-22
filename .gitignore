@@ -90,3 +90,6 @@ SESSION_TASK.md
 
 # Generated coverage output — never committed
 coverage/
+
+# Loom project index (generated, per-project)
+.forge/

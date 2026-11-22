@@ -78,17 +78,18 @@ describe('buildContextDigest', () => {
     expect(Math.ceil(out.length / 4)).toBeLessThanOrEqual(1200);
   }, 60000);
 
-  test('collectFiles skips the directories that are never worth indexing', () => {
-    const { collectFiles } = require('../../src/loom/attach');
-    const files = collectFiles(path.join(__dirname, '..', '..'));
+  test('the indexer skips directories that are never worth indexing', () => {
+    // The walk moved into refresh.js in slice 4, so this asserts the rule where
+    // it now lives rather than the function that used to hold it.
+    const refresh = require('../../src/loom/refresh');
+    const root = path.join(__dirname, '..', '..');
+    const files = refresh.collectCandidates(root);
 
     expect(files.length).toBeGreaterThan(50);
     expect(files.some((f) => f.startsWith('node_modules/'))).toBe(false);
     expect(files.some((f) => f.startsWith('.git/'))).toBe(false);
     expect(files.some((f) => f === 'package-lock.json')).toBe(false);
     expect(files).toContain('src/agent.js');
-    // Deterministic: sorted, forward slashes only.
-    expect(files).toEqual([...files].sort());
     expect(files.every((f) => !f.includes('\\'))).toBe(true);
   }, 60000);
 

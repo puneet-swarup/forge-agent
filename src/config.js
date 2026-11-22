@@ -109,9 +109,11 @@ const DEFAULTS = {
   PROMPT_PAUSE           : false,
   PROMPT_PAUSE_MIN_MS    : 10_000,
   PROMPT_PAUSE_MAX_MS    : 20_000,
-  // Loom project index (src/loom_specs.md). Disabled by default until slice 3
-  // lands: LOOM_ENABLED=0 makes every Loom call a no-op with no I/O (spec I2).
-  LOOM_ENABLED             : false,
+  // Loom project index (src/loom_specs.md). ON by default since slice 4: the
+  // stored index and incremental refresh are in place, so the digest ranks by
+  // real reads instead of alphabetical ties. LOOM_ENABLED=0 (or --no-loom) makes
+  // every Loom call a no-op with no I/O (spec I2).
+  LOOM_ENABLED             : true,
 
   // Planning is optional. A plan response that never arrives must not stall the
   // run at "Generating execution plan..." until the generic response timeout.

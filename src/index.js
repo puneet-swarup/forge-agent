@@ -194,6 +194,7 @@ function parseArgs(argv) {
       case '--headed':      opts.headed      = true;    break;
       case '--diagnose':    opts.diagnose    = true;    break;
       case '--round-trip':  opts.roundTrip   = true;    break;
+      case '--no-loom':     opts.noLoom      = true;    break;
       case '--port':        opts.port        = args[++i]; break;
       case '--json':        opts.json = true;         break;
       case '-a':
@@ -576,6 +577,7 @@ ${c('1;36', 'DEBUGGING')}
                          selector, the real DOM, and (with --round-trip) a live
                          send/receive check. Add --headed to watch it.
       --round-trip       With --diagnose: send one message and report the reply
+      --no-loom          Disable the project index for this run (on by default)
       --test-model=<n>   Test: deepseek | qwen | chatgpt | gemini | google | sarvam
                          (add --headed to see the window, which Google needs)
 
@@ -632,6 +634,12 @@ ${c('1;36', 'MORE INFO')}
 
 function applyFlagsToConfig(args, config) {
   // Model
+  // Loom switch. On by default; --no-loom turns it off for a run.
+  if (args.noLoom) {
+    config.LOOM_ENABLED = false;
+    process.env.LOOM_ENABLED = '0';
+  }
+
   if (args.model) {
     try {
       const { SUPPORTED_MODELS } = require('./adapter-factory');

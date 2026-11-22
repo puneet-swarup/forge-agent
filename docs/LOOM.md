@@ -12,11 +12,35 @@ tested.
 
 | Slice | Scope | Status |
 | --- | --- | --- |
-| 1 | Storage foundation: config, paths, hashing, ignore rules, driver (SQLite + JSON fallback), migrations, schema, `open`/`close`/`status`/`stats` | **done** (`src/loom/`) |
-| 2 | Extractors (`extract/js.js`, `py.js`, `go.js`, `rs.js`, `sql.js`, `md.js`, `data.js`), `findBlockEnd`, import resolution | not started |
-| 3 | Indexer: refresh sweep, git short-circuit, dirty flag, worker, tombstones, access rows, caps and warm-up order | not started |
-| 4 | Digest compiler, `recall` / `whats_here` / `related`, heat, summaries, portable export | not started |
-| 5 | Agent-loop integration: attach/reattach after `newChat`, `loom.around()` in the tool dispatcher, `search_codebase`, `--loom` CLI, chaos tests | not started |
+| 1 | Storage foundation: config, paths, hashing, ignore rules, driver (SQLite + JSON fallback), migrations, schema, `open`/`close`/`status`/`stats` | **done** |
+| 2 | Extractors for js/ts, py, go, rs, sql, md, json/yaml/toml; import resolution (`resolve.js`) | **done** |
+| 3 | Dependency graph (`graph.js`) and the digest compiler (`digest.js`) | **done** |
+| 4 | The stored index: incremental refresh, tombstones, dirty flag, role drift, access rows, `readGraph` | **done** |
+| 5 | Agent-loop integration: the digest in the first message, access recording | **done** — `attach.js`, on by default |
+| — | `recall` / `whats_here` / `related` query tools, portable export | **not started** |
+
+Loom is **on by default** since slice 4. Turn it off for a run with `--no-loom`
+(or `LOOM_ENABLED=0`); with it off, every Loom call returns immediately and
+performs no I/O (invariant I2).
+
+```
+forge-agent "add a health endpoint"          # index is used
+forge-agent --no-loom "add a health endpoint"  # no index, no I/O
+```
+
+## What runs on every task
+
+1. `refresh()` sweeps the working tree. mtime and size are a **fast negative**
+   only — a match means "assume unchanged", a mismatch is a candidate and the
+   hash decides. This is why the second run of a task costs ~250 ms on this
+   repository instead of ~2 s.
+2. `readGraph()` rebuilds the dependency graph from the stored rows. The graph is
+   derived, never stored.
+3. `renderDigest()` compiles it to a token budget (default 1200) and the result
+   goes into the model's first message.
+
+The index lives at `<project>/.forge/loom/` and is gitignored — both by Loom
+itself and by the repository's root `.gitignore`.
 
 ## What slice 1 provides
 

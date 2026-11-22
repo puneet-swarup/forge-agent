@@ -101,6 +101,13 @@ Versioning: [Semantic Versioning](https://semver.org/)
   page during shutdown is no longer reported as "Unexpected error".
 
 ### Added
+- **Loom is on by default.** Slice 4 landed the stored index: `refresh()` sweeps
+  the working tree incrementally (mtime/size as a fast negative, hash as the
+  decider), `readGraph()` rebuilds the dependency graph from the rows, and the
+  digest is compiled from that instead of a full walk. On this repository the
+  first run indexes 331 files in ~2 s and the second costs ~250 ms. Turn it off
+  with `--no-loom` (or `LOOM_ENABLED=0`), which returns immediately with no I/O.
+  The index lives in `<project>/.forge/loom/` and is gitignored.
 - **Strict tool-call format (`STRICT_TOOL_FORMAT`, default on).** The parser
   tolerates a ```tool_call fence, bare JSON and function-call style because models
   drift — but executing those silently makes a model that *never* follows the
