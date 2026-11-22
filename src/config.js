@@ -116,10 +116,11 @@ const DEFAULTS = {
   // before every prompt is pointless against them: nothing is throttling a
   // browser, and the only cost is time.
   //
-  // Note `sarvam-api` here but NOT `sarvam`: the first is Sarvam's hosted API,
-  // the second is their Indus chat UI, which is a rate-limited web surface like
-  // DeepSeek or ChatGPT and does pause.
-  PROMPT_PAUSE_SKIP      : ['local', 'ollama', 'colab', 'sarvam-api'],
+  // `sarvam` is deliberately absent: it is Sarvam's Indus chat UI, a
+  // rate-limited web surface like DeepSeek or ChatGPT, so it does pause. Sarvam's
+  // hosted API needs no separate adapter — it is OpenAI-compatible, so
+  // `--model=colab --model-url=https://api.sarvam.ai/v1` reaches it.
+  PROMPT_PAUSE_SKIP      : ['local', 'ollama', 'colab'],
   // Loom project index (src/loom_specs.md). ON by default since slice 4: the
   // stored index and incremental refresh are in place, so the digest ranks by
   // real reads instead of alphabetical ties. LOOM_ENABLED=0 (or --no-loom) makes

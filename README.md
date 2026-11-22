@@ -102,7 +102,7 @@ The same document ends with an honest list of what is *not* closed yet.
 
 | Area | What you get |
 | --- | --- |
-| **Models** | `deepseek` (default), `gemini`, `qwen`, `chatgpt`, `sarvam` (Indus UI), `sarvam-api` (hosted API), plus `local`, `ollama` and `colab` endpoints — switch with `--model`. `google` is a **research fallback only**: it drives a search surface, not a chat UI |
+| **Models** | `deepseek` (default), `gemini`, `qwen`, `chatgpt`, `sarvam` (Indus UI), plus `local`, `ollama` and `colab` endpoints — switch with `--model`. `google` is a **research fallback only**: it drives a search surface, not a chat UI |
 | **Tools** | 45 registered tools (the 2.0 release documented 37+): file read/write/replace/delete, directory and search, `run_command`, git (status, log, diff, blame, branches, show), tests, packages, env files, processes, child agents, clipboard, screenshots |
 | **Profiles** | `default`, `backend`, `frontend`, `data-science`, `devops` — `--profile`, or `--custom-profile=<file>` for your own JSON |
 | **Sessions** | Named sessions with their own browser profile and login (`--session`, `--session auto`), instance listing (`ps` / `--ps`), resume and history (`--resume`, `--continue`, `--history`), per-run summaries (`--summary`) |

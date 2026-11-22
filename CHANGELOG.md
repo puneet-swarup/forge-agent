@@ -153,6 +153,12 @@ Versioning: [Semantic Versioning](https://semver.org/)
   an agent is a visible mistake rather than a confusing run.
 
 ### Changed
+- **`sarvam-api` removed.** It was added on 2026-11-21 (commit `66316d1`) on a
+  wrong premise — that Sarvam was API-only — and kept as a sibling when the Indus
+  UI adapter was restored. Nobody asked for it, it was never verified against the
+  real API (no key was ever supplied), and it is redundant: Sarvam's hosted API is
+  OpenAI-compatible, so `--model=colab --model-url=https://api.sarvam.ai/v1`
+  reaches it. Nine models, not ten.
 - **Coverage gate raised to 72 / 64 / 74 / 73** from 69 / 61 / 72 / 70, matching
   the measured 73.7 / 66.2 / 75.6 / 75.4. The gate can only ratchet upward.
 - **`ARCHITECTURE.md` re-verified** against the code: eleven adapters, Loom and

@@ -31,7 +31,12 @@ describe('MODEL validation', () => {
 
   test('sarvam is accepted — the regression that started this', () => {
     expect(setModel('sarvam')).toBe('sarvam');
-    expect(setModel('sarvam-api')).toBe('sarvam-api');
+  });
+
+  test('a removed model is no longer accepted', () => {
+    // sarvam-api existed for a few hours and was never requested; Sarvam's hosted
+    // API is OpenAI-compatible, so --model=colab --model-url reaches it.
+    expect(setModel('sarvam-api')).toBe('deepseek');
   });
 
   test('an unknown model is rejected and leaves the previous value intact', () => {

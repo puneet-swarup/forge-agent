@@ -46,16 +46,6 @@ const MODEL_REGISTRY = Object.freeze({
     adapter: './adapters/sarvam-adapter',
   },
 
-  'sarvam-api': {
-    displayName: 'Sarvam AI (API)',
-    dedicated: true,
-    // The hosted API, for when you would rather use a key than a login. Same
-    // models (sarvam-105b), OpenAI-compatible, no browser.
-    url: 'https://api.sarvam.ai/v1',
-    aliases: ['sarvam-api', 'sarvam105b'],
-    adapter: './adapters/sarvam-api-adapter',
-  },
-
   deepseek: {
     displayName: 'DeepSeek',
     url: 'https://chat.deepseek.com',

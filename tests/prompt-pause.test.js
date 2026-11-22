@@ -137,8 +137,12 @@ describe('the two Sarvam models are classified separately', () => {
     expect(resolvePromptPause('sarvam', on, () => 0)).toBeGreaterThan(0);
   });
 
-  test('sarvam-api is an HTTP endpoint and does not pause', () => {
-    expect(resolvePromptPause('sarvam-api', on, () => 0)).toBe(0);
+  test('sarvam (the UI) pauses; there is no separate sarvam-api model', () => {
+    // Sarvam's hosted API is OpenAI-compatible, so --model=colab --model-url
+    // reaches it; a dedicated adapter was added and then removed as redundant.
+    const config = require('../src/config');
+    expect(config.PROMPT_PAUSE_SKIP).not.toContain('sarvam');
+    expect(resolvePromptPause('sarvam', on, () => 0)).toBeGreaterThan(0);
   });
 
   test('every browser-driven cloud UI pauses', () => {
@@ -149,9 +153,9 @@ describe('the two Sarvam models are classified separately', () => {
   });
 
   test('every HTTP-backed model is skipped', () => {
-    // sarvam-api is a hosted API; colab/local/ollama are endpoints reached
-    // through a bundled page. None of them is a rate-limited chat UI.
-    for (const model of ['sarvam-api', 'colab', 'local', 'ollama']) {
+    // colab/local/ollama are endpoints reached through a bundled page. None of
+    // them is a rate-limited chat UI.
+    for (const model of ['colab', 'local', 'ollama']) {
       expect(resolvePromptPause(model, on, () => 0)).toBe(0);
     }
   });
