@@ -1,7 +1,7 @@
 // tests/adapter-url-authority.test.js — one source of truth for "where is the UI".
 //
 // browser.js navigated using the factory's URL while the health check and
-// newChat() used adapter.getModelUrl(). For ollama those disagreed — the factory
+// newChat() used adapter.getModelUrl(). For the local model those disagreed — the factory
 // said http://localhost:11434 (the REST API, plain text) and the adapter honoured
 // OLLAMA_UI_URL — so a run navigated to one page and was immediately told it was
 // on the wrong one.
@@ -37,16 +37,13 @@ describe('navigation URL authority', () => {
     }
   });
 
-  test('the ollama adapter prefers OLLAMA_UI_URL over the API root', () => {
+  test('the local model serves its own proxy page', () => {
+    // LocalChatAdapter starts a loopback server that serves the chat page and
+    // proxies to OLLAMA_BASE_URL, so the page URL is that server — not the
+    // daemon's API root, and not a file:// page.
     const factory = require('../src/adapter-factory');
-    const previous = process.env.OLLAMA_UI_URL;
-    process.env.OLLAMA_UI_URL = 'https://example.ngrok-free.dev';
-    try {
-      const adapter = factory.getAdapter('ollama', null, {});
-      expect(adapter.getModelUrl()).toBe('https://example.ngrok-free.dev');
-    } finally {
-      if (previous === undefined) delete process.env.OLLAMA_UI_URL;
-      else process.env.OLLAMA_UI_URL = previous;
-    }
+    const adapter = factory.getAdapter('local', null, {});
+    expect(adapter.getModelUrl()).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
   });
+
 });

@@ -1,6 +1,6 @@
 // tests/adapter-contract.test.js — every adapter honours the common contract.
 //
-// T3 of the handoff lists qwen / gemini / google / local-chat / ollama as
+// T3 of the handoff lists qwen / gemini / google / local-chat as
 // "broken". Checked against the code, all eight adapters implement the six
 // contract methods (colab inherits them from local-chat, by design) — so the
 // defect, if any, is in the selector VALUES against a live UI, which cannot be
@@ -17,7 +17,7 @@ const path = require('path');
 const fs = require('fs');
 
 const ADAPTERS = [
-  'deepseek', 'chatgpt', 'gemini', 'google', 'qwen', 'local-chat', 'ollama', 'colab',
+  'deepseek', 'chatgpt', 'gemini', 'google', 'qwen', 'local-chat', 'colab',
 ];
 
 const CONTRACT = [

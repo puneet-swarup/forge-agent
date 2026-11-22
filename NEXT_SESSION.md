@@ -25,6 +25,24 @@ npx jest tests/markdown-scope.test.js     # T6 (14)
 
 ---
 
+## Working agreement — plan first, then execute
+
+1. **The agent proposes** a numbered plan: what changes, why, how it is verified,
+   and what it will deliberately leave alone.
+2. **The operator approves, amends, or rejects.** No code until approved.
+3. **The agent executes the approved scope only.** Anything discovered mid-way
+   that is not in the plan is reported, not silently fixed.
+4. **The agent reports** what changed, what the tests say, and what surprised it.
+
+This exists because three things were built that nobody asked for and that then
+outlived their reason: the scheduled runner (duplicate PRs), `sarvam-api` (a
+redundant adapter kept out of politeness), and a second `ollama` registry entry
+(duplication dressed up as flexibility). All three came from the same habit —
+treating "I can build this" as a reason to keep it.
+
+A plan is also the only place "how will this be verified" gets answered before
+the code exists, rather than after.
+
 ## Coordination rule — one writer at a time
 
 Two workers share this repo: the **lead agent** (interactive, merges) and the

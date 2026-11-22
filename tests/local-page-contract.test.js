@@ -1,4 +1,4 @@
-// tests/ollama-page-contract.test.js — the adapter and its bundled page must agree.
+// tests/local-page-contract.test.js — the adapter and its bundled page must agree.
 //
 // The ollama adapter shipped selectors for #send-button and #new-chat while the
 // page it drives has #send-btn and #new-chat-btn. Nothing caught it: the
@@ -15,8 +15,8 @@ const path = require('path');
 const HTML = fs.readFileSync(
   path.join(__dirname, '..', 'src', 'html', 'local-ollama-chat.html'), 'utf8');
 
-const OllamaAdapter = require('../src/adapters/ollama-adapter');
-const selectorsFor = (method) => Object.create(OllamaAdapter.prototype)[method]();
+const LocalChatAdapter = require('../src/adapters/local-chat-adapter');
+const selectorsFor = (method) => Object.create(LocalChatAdapter.prototype)[method]();
 
 /** Every id the page defines. */
 const pageIds = new Set([...HTML.matchAll(/id="([^"]+)"/g)].map((m) => m[1]));
@@ -28,19 +28,34 @@ const pageClasses = new Set(
 
 /** The id or class a simple selector depends on. */
 function dependencyOf(selector) {
+  // #id
   const id = selector.match(/^#([\w-]+)$/);
   if (id) return { kind: 'id', name: id[1] };
 
+  // tag#id  /  tag[...]#id
   const tagId = selector.match(/^[a-z]+\[?[^#]*#([\w-]+)/);
   if (tagId) return { kind: 'id', name: tagId[1] };
 
+  // .class
   const cls = selector.match(/^\.([\w-]+)$/);
   if (cls) return { kind: 'class', name: cls[1] };
+
+  // tag.class — `button.stop-gen-btn`. The page reuses #send-btn as its stop
+  // control and toggles this class at runtime, so it appears in the script and
+  // the stylesheet rather than in a static class attribute.
+  const tagCls = selector.match(/^[a-z]+(?:\[[^\]]*\])?\.([\w-]+)/);
+  if (tagCls) return { kind: 'class', name: tagCls[1] };
 
   return null; // structural or attribute selector: nothing to check here
 }
 
-describe('the ollama adapter matches the page it ships', () => {
+/** Does the page mention this token at all — as an id, a class, or in its script? */
+function pageKnows(dep) {
+  if (dep.kind === 'id') return pageIds.has(dep.name);
+  return pageClasses.has(dep.name) || HTML.includes(dep.name);
+}
+
+describe('the local adapter matches the page it ships', () => {
   const groups = {
     input: '_getInputSelectors',
     send: '_getSendSelectors',
@@ -52,8 +67,7 @@ describe('the ollama adapter matches the page it ships', () => {
     test(`${group}: at least one selector exists in the page`, () => {
       const deps = selectorsFor(method).map(dependencyOf).filter(Boolean);
 
-      const found = deps.filter((d) =>
-        d.kind === 'id' ? pageIds.has(d.name) : pageClasses.has(d.name));
+      const found = deps.filter(pageKnows);
 
       expect(found.length).toBeGreaterThan(0);
     });

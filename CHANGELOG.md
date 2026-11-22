@@ -153,6 +153,13 @@ Versioning: [Semantic Versioning](https://semver.org/)
   an agent is a visible mistake rather than a confusing run.
 
 ### Changed
+- **`ollama` folded into `local`.** They were two registry entries pointing at the
+  same bundled page with different adapters — the duplication this project keeps
+  producing. `local` is the name that survives, deliberately: the backend may be
+  Ollama today and llama.cpp tomorrow, and a model name should not have to change
+  when it does. `ollama`, `llama`, `llamacpp` and `local-chat` are aliases.
+  `src/adapters/ollama-adapter.js` is gone; `local-chat-adapter` serves the page
+  and proxies to `OLLAMA_BASE_URL`.
 - **`sarvam-api` removed.** It was added on 2026-11-21 (commit `66316d1`) on a
   wrong premise — that Sarvam was API-only — and kept as a sibling when the Indus
   UI adapter was restored. Nobody asked for it, it was never verified against the

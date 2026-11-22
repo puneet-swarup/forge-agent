@@ -3,23 +3,19 @@
 
 const MODEL_REGISTRY = Object.freeze({
   local: {
-    displayName: 'Local Ollama Chat',
- dedicated: true,
-    url: 'file://' + __dirname + '/html/local-ollama-chat.html',
-    aliases: ['local', 'local-chat'],
-    adapter: './adapters/local-chat-adapter',
-  },
-
-  ollama: {
-    // Port 11434 is Ollama's REST API, not a chat UI — browsing to it returns
-    // plain text, so every selector missed and the run failed with "input not
-    // found". The UI is the bundled page, which proxies to the daemon. Point
-    // OLLAMA_UI_URL at Open WebUI or similar if you prefer a different one.
-    displayName: 'Local Ollama',
+    // One name for "a model on this machine, or an endpoint I control", on
+    // purpose: the backend may be Ollama today and llama.cpp tomorrow, and a
+    // model name should not have to change when it does. `ollama` and `llama`
+    // are aliases of this entry, not separate models.
+    //
+    // The URL is the bundled chat page, which proxies to OLLAMA_BASE_URL. Port
+    // 11434 is Ollama's REST API — browsing to it returns plain text, so every
+    // selector would miss.
+    displayName: 'Local model',
     dedicated: true,
     url: 'file://' + __dirname + '/html/local-ollama-chat.html',
- aliases: ['ollama', 'local-ollama', 'ollama-local'],
- adapter: './adapters/ollama-adapter',
+    aliases: ['local', 'local-chat', 'ollama', 'llama', 'llamacpp', 'local-ollama'],
+    adapter: './adapters/local-chat-adapter',
   },
 
   colab: {

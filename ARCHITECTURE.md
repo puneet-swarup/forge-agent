@@ -18,7 +18,7 @@ is a browser tab the agent types into and scrapes replies from. That single fact
 drives every architectural trade-off in this document.
 
 Eleven adapters ship: `deepseek` (default), `gemini`, `qwen`, `chatgpt`,
-`sarvam` (the Indus chat UI), `google` (a search surface, marked research-only), and `local`, `ollama`, `colab` for self-hosted endpoints.
+`sarvam` (the Indus chat UI), `google` (a search surface, marked research-only), and `local` / `colab` for self-hosted endpoints. `ollama` and `llama` are aliases of `local`, not separate models: the backend may change, the name should not.
 
 Two systems sit beside the loop: **Loom**, a persistent project index compiled
 into the model's first prompt, and the **dashboard**, a loopback-only web view of

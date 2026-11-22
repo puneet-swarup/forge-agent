@@ -403,12 +403,12 @@ silently disappears is as untrustworthy as one that is never admitted):
 
 1. **Live adapter coverage is per-model and manual.** Verified against live UIs on
    2026-11-22: **sarvam** (READY, 5.1 s), **chatgpt** (4.5 s), **qwen** (8.6 s,
-   `.qwen-markdown` and the send class confirmed). `ollama` was misconfigured
-   rather than unverified: it pointed at port 11434, which is Ollama's REST API
-   and serves plain text, so no selector could ever match. It now drives the
-   bundled chat page, and `OLLAMA_UI_URL` remains the way to point it at a
-   remote UI (a Colab tunnel, Open WebUI). Not yet verified: `local-chat`, and
-   `google` — which is research-only by design. `--diagnose`
+   `.qwen-markdown` and the send class confirmed). `local` (formerly also `ollama`) was
+   misconfigured rather than unverified: it pointed at port 11434, which is
+   Ollama's REST API and serves plain text, so no selector could ever match. It
+   now drives the bundled chat page and proxies to `OLLAMA_BASE_URL`. `ollama`
+   and `llama` are aliases of `local`. Not yet verified live: the `local` model
+   end to end, and `google` — which is research-only by design. `--diagnose`
    makes each one a two-minute job, but it still needs a human with a login;
    there is no way to check someone else's UI from CI.
 2. **No provenance on untrusted content.** `read_url` output reaches the model

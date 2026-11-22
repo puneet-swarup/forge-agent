@@ -101,12 +101,15 @@ describe('adapter factory registration for colab', () => {
     expect(a).toBeInstanceOf(ColabAdapter);
   });
 
-  test('ollama alias resolves to the local daemon adapter (not the proxy)', () => {
-    expect(factory.resolveModelName('ollama')).toBe('ollama');
-    const info = factory.getModelInfo('ollama');
-    expect(info.adapter || info.url).toBeTruthy();
+  test('ollama is an alias of local, not a model of its own', () => {
+    // One name for "a model on this machine": the backend may be Ollama today
+    // and llama.cpp tomorrow, so the name should not have to change.
+    expect(factory.resolveModelName('ollama')).toBe('local');
+    expect(factory.resolveModelName('llama')).toBe('local');
+    expect(factory.SUPPORTED_MODELS).not.toContain('ollama');
+
     const a = factory.getAdapter('ollama', {}, {});
-    expect(a.constructor.name).toBe('OllamaAdapter');
+    expect(a.constructor.name).toBe('LocalChatAdapter');
   });
 
   test('local alias resolves to the generic proxy adapter', () => {
