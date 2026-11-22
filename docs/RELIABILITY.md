@@ -401,11 +401,12 @@ silently disappears is as untrustworthy as one that is never admitted):
 
 **Still open:**
 
-1. **Live adapter coverage is per-model and manual.** Sarvam and ChatGPT were
-   verified against their live UIs on 2026-11-22; `qwen`, `google`, `ollama`,
-   `local-chat` have not been. `--diagnose` makes each one a two-minute job, but
-   it still needs a human with a login — there is no way to check someone else's
-   UI from CI.
+1. **Live adapter coverage is per-model and manual.** Verified against live UIs on
+   2026-11-22: **sarvam** (READY, 5.1 s), **chatgpt** (4.5 s), **qwen** (8.6 s,
+   `.qwen-markdown` and the send class confirmed). Not yet verified: `ollama`,
+   `local-chat`, and `google` — which is research-only by design. `--diagnose`
+   makes each one a two-minute job, but it still needs a human with a login;
+   there is no way to check someone else's UI from CI.
 2. **No provenance on untrusted content.** `read_url` output reaches the model
    without a "this is data, not instructions" marker. The prompt says so
    globally; per-document framing is not implemented.

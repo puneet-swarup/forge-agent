@@ -9,6 +9,13 @@ Versioning: [Semantic Versioning](https://semver.org/)
 ## [Unreleased]
 
 ### Fixed
+- **Qwen's new-chat and stop controls are `<div role="button">`, not buttons.**
+  A live diagnostic matched none of the button-only selectors while the control
+  was plainly on screen:
+  `<div class="sidebar-entry-fixed-list-content" aria-label="New Chat" role="button">`.
+  Selectors now target the role and the label rather than the tag. Qwen's round
+  trip was already working (8.6 s) and `.qwen-markdown` matches once a reply
+  exists — both confirmed live.
 - **ChatGPT's response container is `.thread-scroll-container`.** The current
   build has no `prose` class, no `data-message-author-role` and no `article`, so
   all eight response selectors matched nothing even with a reply on screen. Taken

@@ -363,10 +363,11 @@ re-verified is worse than none.
 
 ## What is next, in order
 
-1. **Live adapter verification for qwen, ollama, local-chat.** Needs a human with
-   a login; `--diagnose=<model> --round-trip` makes each one a two-minute job.
-   `google` is now labelled "research only" — it drives a search surface, not a
-   chat UI, and should stay out of the coding path.
+1. **Live adapter verification for ollama and local-chat.** qwen was verified on
+   2026-11-22 (round trip 8.6 s; new-chat was a `<div role="button">`, which is
+   why button-only selectors missed it). Needs a human with a login;
+   `--diagnose=<model> --round-trip` makes each one a two-minute job. `google` is
+   labelled "research only" — it drives a search surface, not a chat UI.
 2. **Loom query tools** — `recall`, `whats_here`, `related`. The index holds the
    data; nothing queries it yet except the digest.
 2. **T3 live adapter repair** — blocked on a human with a login. The offline

@@ -35,16 +35,31 @@ class QwenAdapter extends BaseAdapter {
   }
 
   _getStopSelectors() {
+    // Same lesson as newChat: this UI builds controls out of divs with a role,
+    // so a button-only selector can miss a control that is right there.
     return [
+      '[aria-label*="Stop" i]',
+      '[aria-label*="Interrupt" i]',
+      '[role="button"][aria-label*="Stop" i]',
       'button[aria-label*="Stop" i]',
       'button[aria-label*="Interrupt" i]',
       '.stop-button',
       'button:has(svg[class*="square"])',
+      '[class*="stop" i]',
     ];
   }
 
   _getNewChatSelectors() {
+    // Qwen's sidebar "New Chat" is a <div role="button">, not a <button> — a
+    // live --diagnose run matched none of the button-only selectors while the
+    // element was plainly on screen:
+    //   <div class="sidebar-entry-fixed-list-content" aria-label="New Chat"
+    //        role="button" text="New Chat">
+    // Selectors here therefore target the role and the label, not the tag.
     return [
+      '[aria-label*="New Chat" i]',
+      '[role="button"][aria-label*="New chat" i]',
+      '.sidebar-entry-fixed-list-content',
       'button[aria-label*="New Chat" i]',
       'button.new-chat-button',
       '.new-chat',
