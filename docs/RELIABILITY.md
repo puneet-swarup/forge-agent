@@ -421,6 +421,28 @@ silently disappears is as untrustworthy as one that is never admitted):
    directly; the command handlers (help, doctor, benchmark, watch, parallel) are
    not, and the file mixes dispatch with implementation.
 
+## Branch protection
+
+`main` is protected: force-push and deletion are refused, and a pull request must
+pass four status checks before it can merge.
+
+| Check | What it proves |
+| --- | --- |
+| `Test (Node 20)` | the suite on the oldest supported runtime |
+| `Test (Node 22)` | the suite on the current LTS |
+| `Test (Node 24)` | the suite on the newest supported runtime |
+| `Integration (browser E2E)` | the agent loop against a mock chat page |
+
+The repository owner is exempt as admin, so direct commits remain possible; the
+checks are what gate everything else. Each CI job carries
+`timeout-minutes: 20` — a stalled runner fails visibly instead of sitting "in
+progress" and blocking merges behind it, which happened once and cost an evening.
+
+`tests/branch-protection.test.js` pins these four names against the workflow that
+produces them. A job rename that is not mirrored here fails the suite, because a
+protection rule waiting for a check name CI no longer reports looks enforced and
+is not.
+
 ## How to verify this document
 
 Every invariant above names the test that proves it. Re-run them all:
