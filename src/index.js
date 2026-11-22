@@ -76,9 +76,114 @@ const { Errors, displayError } = require('./errors');
 //  Parse CLI arguments
 // ─────────────────────────────────────────────
 
+/**
+ * Every flag the CLI understands.
+ *
+ * Kept next to the parser so an unknown flag can be reported instead of
+ * absorbed — the failure mode that let `--model=gemini` silently do nothing for
+ * as long as it did. `tests/cli-flags.test.js` asserts this list stays in step
+ * with the help text.
+ */
+const KNOWN_FLAGS = new Set([
+  // Handled before parseArgs (they set the session directory before config loads)
+  '--session', '-s', '--session-dir', '--role', '--random-session',
+  // Boolean and value flags in the switch
+  '--test-model', '-i', '--interactive', '--debug', '--verbose', '--security',
+  '--audit-log', '--strict-sandbox', '--sponsor', '--no-sponsor-nudge',
+  '--launch-assets', '--headless', '--instances', '--ps', 'ps', '--new-session',
+  '--dashboard', '--headed', '--diagnose', '--round-trip', '--no-loom',
+  '--model', '--model-url', '--api-key', '--profile', '--custom-profile',
+  '--new-plugin', '--template', '--save-template', '--remove-template',
+  '--show-template', '--examples', '--list-examples', '--timeout',
+  '--tool-timeout', '--max-parallel', '--max-iterations', '--max-runtime',
+  '--max-tool-calls', '--rollback', '--snapshots', '--list-plugins',
+  '--list-profiles', '--history', '--history-search', '--resume', '--rerun',
+  '--help', '--watch-pattern', '--watch-debounce', '--watch-max',
+  '--watch-cooldown', '--task', '--summary', '--config-path', '--doctor',
+  '--setup', '--cheatsheet', '--completion-bash', '--completion-zsh',
+  '--completion-fish', '--port', '--format', '--output', '--no-tui',
+  '--no-memory', '--no-cache', '--no-timeout', '--no-prompt-pause',
+  '--clear-memory', '--save-log', '--calibrate', '--plan', '--think',
+  '--json', '--local-model', '--local-port', '--version', '-v', '--help',
+  '--world', '--unrestricted',
+  // Documented in --help; the test asserts this list cannot fall behind it.
+  '--dir', '--history-stats', '--resume-work', '--parallel', '--list-templates',
+  '--template-search', '--timestamp', '--compact', '--watch', '--benchmark',
+  '--benchmark-compare', '--benchmark-json', '--benchmark-iterations',
+  '--benchmark-save', '--continue', '--no-interactive', '--history-clear',
+  '--config', '--prompt-pause', '--audio-sync', '--audio-async',
+  '--parallel-tools', '--no-parallel-tools', '--completion-install',
+  '--diagnostics', '--man', '--man-install',
+  '--auto', '--copy', '--ollama-url', '--ollama-api-key',
+]);
+
+/**
+ * The closest known flag to a typo, for a "did you mean" hint.
+ *
+ * Deliberately simple: same first three characters, or within two edits. A
+ * wrong suggestion is noise; no suggestion is a missed hint.
+ *
+ * @param {string[]} flags
+ * @returns {string[]}
+ */
+function closestFlags(flags) {
+  const out = [];
+
+  for (const flag of flags) {
+    let best = null;
+    let bestScore = Infinity;
+
+    for (const known of KNOWN_FLAGS) {
+      if (!known.startsWith('--')) continue;
+
+      const a = flag.slice(2);
+      const b = known.slice(2);
+      if (a === b) continue;
+
+      // Same first letter, or it is not a plausible typo of this flag —
+      // "--modle" is a transposition of "--model", not of "--role".
+      if (!a || !b || a[0] !== b[0]) continue;
+
+      // Cheap edit distance, bounded: enough to catch a transposition.
+      const distance = levenshtein(a, b);
+      if (distance < bestScore && distance <= 2) {
+        bestScore = distance;
+        best = known;
+      }
+    }
+
+    if (best) out.push(best);
+  }
+
+  return [...new Set(out)];
+}
+
+/** Bounded Levenshtein distance between two short strings. */
+function levenshtein(a, b) {
+  if (Math.abs(a.length - b.length) > 3) return Infinity;
+
+  const rows = [];
+  for (let i = 0; i <= a.length; i++) rows.push([i]);
+  for (let j = 0; j <= b.length; j++) rows[0][j] = j;
+
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      rows[i][j] = Math.min(
+        rows[i - 1][j] + 1,
+        rows[i][j - 1] + 1,
+        rows[i - 1][j - 1] + cost
+      );
+    }
+  }
+
+  return rows[a.length][b.length];
+}
+
 function parseArgs(argv) {
   const args = argv.slice(2);
   const opts = {
+    _unknown    : [],   // flags we did not recognise; reported, never silent
     task        : null,
     interactive : false,
     debug       : false,
@@ -327,33 +432,6 @@ function parseArgs(argv) {
           // Every documented example uses `=`, so the flag was silently ignored
           // and the run used whatever config held.
           opts.model = a.split('=')[1];
-        } else if (a && a.startsWith('--') && a.includes('=') && !a.startsWith('--no-')) {
-          // Every documented `--flag=<value>` should work, not only the handful
-          // with a bespoke branch. Unknown --flag=value pairs are ignored rather
-          // than becoming the task text.
-          const [flag, ...rest] = a.split('=');
-          const value = rest.join('=');
-          const EQUALS_FLAGS = {
-            '--save-template': 'saveTemplate',
-            '--show-template': 'showTemplate',
-            '--timeout': 'timeout',
-            '--task': 'task',
-            '--tool-timeout': 'toolTimeout',
-            '--max-iterations': 'maxIterations',
-            '--max-runtime': 'maxRuntime',
-            '--max-tool-calls': 'maxToolCalls',
-            '--rollback': 'rollback',
-            '--custom-profile': 'customProfile',
-            '--launch-assets': 'launchAssets',
-            '--max-parallel': 'maxParallel',
-            '--template': 'template',
-            '--remove-template': 'removeTemplate',
-            '--new-plugin': 'newPlugin',
-            '--session': 'session',
-            '--model-url': 'modelUrl',
-            '--api-key': 'apiKey',
-          };
-          if (EQUALS_FLAGS[flag]) opts[EQUALS_FLAGS[flag]] = value;
         } else if (a && a.startsWith('--diagnose=')) {
           opts.diagnose = a.split('=')[1];
         } else if (a && a.startsWith('--port=')) {
@@ -410,9 +488,52 @@ function parseArgs(argv) {
           opts.maxParallel = a.split('=')[1];
         } else if (a && a.startsWith('--test-model=')) {
           opts.testModel = a.split('=')[1];
+        } else if (a && a.startsWith('--') && a.includes('=') && !a.startsWith('--no-')) {
+          // Every documented `--flag=<value>` should work, not only the handful
+          // with a bespoke branch. Unknown --flag=value pairs are ignored rather
+          // than becoming the task text.
+          const [flag, ...rest] = a.split('=');
+          const value = rest.join('=');
+          const EQUALS_FLAGS = {
+            '--save-template': 'saveTemplate',
+            '--show-template': 'showTemplate',
+            '--timeout': 'timeout',
+            '--task': 'task',
+            '--tool-timeout': 'toolTimeout',
+            '--max-iterations': 'maxIterations',
+            '--max-runtime': 'maxRuntime',
+            '--max-tool-calls': 'maxToolCalls',
+            '--rollback': 'rollback',
+            '--custom-profile': 'customProfile',
+            '--launch-assets': 'launchAssets',
+            '--max-parallel': 'maxParallel',
+            '--template': 'template',
+            '--remove-template': 'removeTemplate',
+            '--new-plugin': 'newPlugin',
+            '--session': 'session',
+            '--model-url': 'modelUrl',
+            '--api-key': 'apiKey',
+          };
+          if (EQUALS_FLAGS[flag]) {
+            opts[EQUALS_FLAGS[flag]] = value;
+          } else if (!KNOWN_FLAGS.has(flag)) {
+            // An unrecognised --flag=value: record it rather than absorbing it.
+            opts._unknown.push(flag);
+          }
+        } else if (a && a.startsWith('-') && !a.startsWith('--') && a.length > 2
+                   && !a.startsWith('-v')) {
+          // A short flag we do not know (a typo like -x).
+          opts._unknown.push(a);
+        } else if (a && a.startsWith('--')) {
+          // A long flag we do not know. Silently ignoring these is how
+          // `--model=gemini` looked like it worked while the run used whatever
+          // the config held; a typo should be visible, not absorbed.
+          opts._unknown.push(a.split('=')[0]);
         } else if (a && !a.startsWith('-')) {
-          opts.task = args.slice(i).join(' ');
-          i = args.length;
+          // Accumulate only the non-flag words. `forge-agent "do the thing"
+          // --model=gemini` used to set the task to "do the thing
+          // --model=gemini" and never parse the flag.
+          opts.task = opts.task ? `${opts.task} ${a}` : a;
         }
     }
     i++;
@@ -923,6 +1044,21 @@ async function startInteractiveMode(agent, config) {
 
 async function main() {
   const args = parseArgs(process.argv);
+
+  // ── Unrecognised flags ────────────────────────────────────────────────────
+  // Report them instead of ignoring them. `--model=gemini` was silently dropped
+  // for as long as it was, and a typo should cost a line of output, not an hour
+  // of debugging a run that used the wrong model.
+  if (Array.isArray(args._unknown) && args._unknown.length > 0) {
+    const names = [...new Set(args._unknown)];
+    logger.warn(`Ignoring unrecognised flag${names.length === 1 ? '' : 's'}: ${names.join(', ')}`);
+
+    const suggestion = closestFlags(names);
+    if (suggestion.length > 0) {
+      logger.dim(`  Did you mean: ${suggestion.join(', ')}?`);
+    }
+    logger.dim('  Run forge-agent --help for the full list.');
+  }
 
   // ── Instance listing (Item 6) ──────────────────────────────────────────────
   // ── Dashboard: a local web view of everything Forge is doing ─────────────
@@ -2171,4 +2307,11 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { };
+module.exports = {
+  parseArgs,
+  applyFlagsToConfig,
+  // Exported so the parser can be tested directly: a flag that is silently
+  // dropped is indistinguishable from one that works until a user reports it.
+  KNOWN_FLAGS,
+  closestFlags,
+};
