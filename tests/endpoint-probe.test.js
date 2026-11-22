@@ -155,3 +155,83 @@ describe('formatProbe', () => {
     expect(() => formatProbe({})).not.toThrow();
   });
 });
+
+// ─────────────────────────────────────────────
+//  A local proxy may speak either dialect
+//
+//  A proxy in front of a remote server is a legitimate pattern — to bypass
+//  network restrictions, to terminate auth, to fix CORS. It may forward the
+//  OpenAI API (/v1/*) or Ollama's (/api/*), and the adapter choice depends on
+//  which, so the probe reports the dialect instead of assuming one.
+// ─────────────────────────────────────────────
+
+describe('dialect detection', () => {
+  test('reports the OpenAI dialect when /v1/models answers', async () => {
+    const { server, url } = await startServer({
+      '/v1/models': (req, res) => {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ data: [{ id: 'deepseek-r1' }] }));
+      },
+      '/v1/chat/completions': (req, res) => {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ choices: [{ message: { content: 'OK' } }] }));
+      },
+    });
+
+    try {
+      const report = await probeEndpoint(url, { timeoutMs: 5000 });
+      expect(report.dialect).toBe('openai');
+    } finally {
+      server.close();
+    }
+  });
+
+  test('reports the Ollama dialect when only /api/tags answers', async () => {
+    const { server, url } = await startServer({
+      '/api/tags': (req, res) => {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ models: [{ name: 'deepseek-r1:latest' }] }));
+      },
+    });
+
+    try {
+      const report = await probeEndpoint(url, { timeoutMs: 5000 });
+      expect(report.dialect).toBe('ollama');
+      expect(report.modelsSeen).toContain('deepseek-r1:latest');
+      expect(report.verdict).toMatch(/Ollama dialect/);
+      expect(report.verdict).toMatch(/--model=ollama/);
+    } finally {
+      server.close();
+    }
+  });
+
+  test('reports both paths when neither dialect answers', async () => {
+    const { server, url } = await startServer({
+      '/nothing': (req, res) => { res.writeHead(200); res.end('{}'); },
+    });
+
+    try {
+      const report = await probeEndpoint(url, { timeoutMs: 3000 });
+      expect(report.ok).toBe(false);
+      expect(report.verdict).toMatch(/\/v1\/models returned 404/);
+      expect(report.verdict).toMatch(/\/api\/tags returned 404/);
+    } finally {
+      server.close();
+    }
+  });
+
+  test('the rendered report names the dialect', () => {
+    const out = formatProbe({
+      url: 'http://localhost:11434',
+      models: { ok: false, status: 404, ms: 5, body: '', error: null },
+      ollamaTags: { ok: true, status: 200, ms: 6, body: '{}', error: null },
+      dialect: 'ollama',
+      modelsSeen: ['deepseek-r1:latest'],
+      ok: false,
+      verdict: 'speaks the Ollama dialect, not OpenAI',
+    });
+
+    expect(out).toContain('dialect');
+    expect(out).toContain('Ollama (/api/*)');
+  });
+});

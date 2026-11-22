@@ -119,17 +119,43 @@ async function probeEndpoint(baseUrl, opts = {}) {
   const root = String(baseUrl).replace(/\/+$/, '');
   const headers = baseHeaders(opts.apiKey);
 
-  // ── 1. Does the tunnel answer at all, and which models does it list? ─────
+  // ── 1. Does the endpoint answer, and in which dialect? ──────────────────
+  //
+  // A local proxy in front of a remote server may speak OpenAI (/v1/*) or
+  // Ollama (/api/*). Both are legitimate, and the adapter choice depends on
+  // which — so the dialect is part of the answer, not an assumption.
   const modelsRes = await request(`${root}/v1/models`, { headers, timeoutMs: opts.timeoutMs });
   report.models = modelsRes;
 
   if (!modelsRes.ok) {
+    // Try the Ollama dialect before concluding anything.
+    const tagsRes = await request(`${root}/api/tags`, { headers, timeoutMs: opts.timeoutMs });
+    report.ollamaTags = tagsRes;
+
+    if (tagsRes.ok) {
+      report.dialect = 'ollama';
+      try {
+        const parsed = JSON.parse(tagsRes.body);
+        report.modelsSeen = Array.isArray(parsed.models)
+          ? parsed.models.map((m) => m && (m.name || m.model)).filter(Boolean)
+          : [];
+      } catch (_) { /* leave the list empty */ }
+
+      report.verdict =
+        'speaks the Ollama dialect, not OpenAI (/api/tags works, /v1/models does not). ' +
+        'Use --model=ollama with OLLAMA_BASE_URL, or add a /v1 passthrough to the proxy.';
+      return report;
+    }
+
     report.verdict = modelsRes.error
       ? `endpoint unreachable: ${modelsRes.error}`
       : `GET /v1/models returned ${modelsRes.status}` +
-        (modelsRes.body.includes('ngrok') ? ' (ngrok interstitial — the skip header did not take)' : '');
+        (modelsRes.body.includes('ngrok') ? ' (ngrok interstitial — the skip header did not take)' : '') +
+        ` and GET /api/tags returned ${tagsRes.status}`;
     return report;
   }
+
+  report.dialect = 'openai';
 
   try {
     const parsed = JSON.parse(modelsRes.body);
@@ -218,6 +244,7 @@ function formatProbe(report) {
     lines.push(`  completion ${c.ok ? `200 in ${c.ms} ms` : c.error ? `failed: ${c.error}` : `HTTP ${c.status}`}`);
   }
 
+  if (r.dialect) lines.push(`  dialect    ${r.dialect === 'ollama' ? 'Ollama (/api/*)' : 'OpenAI (/v1/*)'}`);
   if (r.model) lines.push(`  model      ${r.model}`);
   if (r.reply) lines.push(`  reply      ${JSON.stringify(r.reply.slice(0, 80))}`);
 

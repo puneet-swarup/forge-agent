@@ -128,7 +128,9 @@ Versioning: [Semantic Versioning](https://semver.org/)
   come back. An ngrok interstitial, a wrong model name, a missing API key and a
   non-OpenAI server all produce the same opaque failure inside a run; the probe
   names which one it is. The browser adapters have `--diagnose`; the HTTP ones
-  now have this.
+  now have this. It also reports **which dialect** the endpoint speaks —
+  OpenAI (`/v1/*`) or Ollama (`/api/*`) — because a local proxy in front of a
+  remote server may forward either, and the adapter choice depends on it.
 - **`google` is labelled for what it is.** `www.google.com/ai` is a search
   surface, not a chat UI: the adapter types a query and reads results back. The
   display name is now "Google Search (research only)" so selecting it expecting
