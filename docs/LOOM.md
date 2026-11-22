@@ -17,7 +17,8 @@ tested.
 | 3 | Dependency graph (`graph.js`) and the digest compiler (`digest.js`) | **done** |
 | 4 | The stored index: incremental refresh, tombstones, dirty flag, role drift, access rows, `readGraph` | **done** |
 | 5 | Agent-loop integration: the digest in the first message, access recording | **done** — `attach.js`, on by default |
-| — | `recall` / `whats_here` / `related` query tools, portable export | **not started** |
+| 6 | Query tools: `recall` (symbol/file/purpose search) and `whats_here` (one file's symbols, imports, dependents), exposed to the agent | **done** |
+| — | `related`, portable export | **not started** |
 
 Loom is **on by default** since slice 4. Turn it off for a run with `--no-loom`
 (or `LOOM_ENABLED=0`); with it off, every Loom call returns immediately and
@@ -38,6 +39,17 @@ forge-agent --no-loom "add a health endpoint"  # no index, no I/O
    derived, never stored.
 3. `renderDigest()` compiles it to a token budget (default 1200) and the result
    goes into the model's first message.
+
+After that, two tools answer follow-up questions from the same index:
+
+| Tool | Question | Answers with |
+| --- | --- | --- |
+| `recall` | where is this defined, which file handles X | `path:line` for symbols, matched paths, one-line purposes |
+| `whats_here` | what is in this file, who imports it | purpose, symbols with lines, imports, dependents |
+
+Both are agent tools (`src/tools.js`), so the model calls them mid-run instead of
+reading files to find out. With Loom off they return one sentence explaining that,
+rather than failing the call.
 
 The index lives at `<project>/.forge/loom/` and is gitignored — both by Loom
 itself and by the repository's root `.gitignore`.

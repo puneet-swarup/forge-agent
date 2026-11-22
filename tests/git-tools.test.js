@@ -81,8 +81,10 @@ describe('Git tool registration', () => {
     GIT_TOOLS.forEach(name => expect(registered).toContain(name));
   });
 
-  test('total tool count is now 45', () => {
-    expect(Object.keys(TOOLS)).toHaveLength(45);
+  test('the tool count is stable', () => {
+    // Bumped when recall and whats_here were added. The number is a tripwire,
+    // not a target: it exists so a tool cannot disappear unnoticed.
+    expect(Object.keys(TOOLS)).toHaveLength(47);
   });
 
   test('each git tool has description, parameters, execute', () => {

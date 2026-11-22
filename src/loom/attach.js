@@ -149,4 +149,58 @@ function recordAccess(relPath, op, opts = {}) {
   }
 }
 
-module.exports = { buildContextDigest, recordAccess, projectMeta };
+/**
+ * Run a query against the index, opening and closing the store around it.
+ *
+ * Same boundary as the digest: '' / null when Loom is off or anything fails, so
+ * a query tool can never break a run (I1).
+ *
+ * @param {'recall'|'whats_here'} kind
+ * @param {string} arg
+ * @param {object} [opts]
+ * @returns {string} rendered text, or a plain explanation when unavailable
+ */
+function queryIndex(kind, arg, opts = {}) {
+  if (config.LOOM_ENABLED !== true) {
+    return 'The project index is disabled for this run (LOOM_ENABLED=0 or --no-loom).';
+  }
+
+  const root = path.resolve(opts.cwd || config.WORKING_DIR || process.cwd());
+  let loom = null;
+
+  try {
+    // eslint-disable-next-line global-require
+    loom = require('./index');
+    const opened = loom.open({ root });
+    if (!opened || opened.skipped) {
+      return 'The project index is unavailable for this project.';
+    }
+
+    const db = loom.db();
+    if (!db) return 'The project index is unavailable for this project.';
+
+    // eslint-disable-next-line global-require
+    const refresh = require('./refresh');
+    // eslint-disable-next-line global-require
+    const query = require('./query');
+
+    // Keep the index current: a file edited a moment ago must be findable.
+    refresh.refresh({ db, root });
+
+    if (kind === 'recall') {
+      return query.formatRecall(query.recall(db, arg, opts));
+    }
+
+    if (kind === 'whats_here') {
+      return query.formatWhatsHere(query.whatsHere(db, arg, opts), arg);
+    }
+
+    return `Unknown index query: ${kind}`;
+  } catch (err) {
+    return `The project index could not answer that (${(err && err.message) || err}).`;
+  } finally {
+    try { if (loom) loom.close(); } catch (_) { /* closing must never fail a call */ }
+  }
+}
+
+module.exports = { buildContextDigest, recordAccess, projectMeta, queryIndex };

@@ -121,6 +121,17 @@ Versioning: [Semantic Versioning](https://semver.org/)
   page during shutdown is no longer reported as "Unexpected error".
 
 ### Added
+- **Loom query tools: `recall` and `whats_here`.** The index was written and
+  never read — only the digest touched it. Two tools now answer the questions an
+  agent asks right after orientation:
+
+      recall "hashPassword"     → src/auth.js:2  function hashPassword (exported)
+      whats_here src/auth.js    → purpose, symbols, imports, imported by
+
+  Both read the stored index rather than the working tree, and both return one
+  sentence explaining themselves when Loom is off, so a disabled index costs a
+  tool call rather than a run. Matching is exact → prefix → substring →
+  subsequence, a score the model can predict.
 - **Per-model anti-block pause.** The original design waited a random 10-20 s
   before every prompt to avoid being blocked by a cloud provider. That was the
   right idea aimed at the wrong target: a local daemon or a plain HTTP API is not

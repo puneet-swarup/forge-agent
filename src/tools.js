@@ -243,6 +243,78 @@ const TOOLS = {
     },
   },
 
+  // ── Project index (Loom) ────────────────────────────────────────────────────
+  // Two questions the agent asks constantly and used to answer by reading files:
+  // "where is this defined" and "what is in this file". Both read the stored
+  // index, so they cost a table scan rather than a walk of the tree.
+  recall: {
+    description: 'Search the project index for a symbol, file or purpose. ' +
+      'Use this before reading files when you need to find where something is ' +
+      'defined or which file handles a topic. Returns path:line for symbols, ' +
+      'matched paths, and one-line purposes.',
+    parameters: {
+      query: {
+        type: 'string',
+        required: true,
+        description: 'A symbol name, part of a path, or a few words of a purpose',
+      },
+      kind: {
+        type: 'string',
+        required: false,
+        description: 'Restrict to one symbol kind (function, class, const, ...)',
+      },
+      exported_only: {
+        type: 'boolean',
+        required: false,
+        description: 'Only exported symbols',
+      },
+      limit: {
+        type: 'number',
+        required: false,
+        description: 'Maximum results (default 20)',
+      },
+    },
+    async execute({ query, kind, exported_only: exportedOnly, limit }) {
+      if (!query || typeof query !== 'string' || !query.trim()) {
+        throw new Error('recall requires a non-empty query');
+      }
+
+      // eslint-disable-next-line global-require
+      const { queryIndex } = require('./loom/attach');
+      const text = queryIndex('recall', query.trim(), {
+        kind,
+        exportedOnly: exportedOnly === true,
+        limit: Number.isInteger(limit) ? limit : undefined,
+      });
+
+      return { query, result: text };
+    },
+  },
+
+  whats_here: {
+    description: 'Everything the project index knows about one file: its ' +
+      'purpose, symbols with line numbers, its imports, and which files import ' +
+      'it. Use this instead of reading a large file just to learn its shape.',
+    parameters: {
+      path: {
+        type: 'string',
+        required: true,
+        description: 'Project-relative path, e.g. src/agent.js',
+      },
+    },
+    async execute({ path: filePath }) {
+      if (!filePath || typeof filePath !== 'string' || !filePath.trim()) {
+        throw new Error('whats_here requires a path');
+      }
+
+      // eslint-disable-next-line global-require
+      const { queryIndex } = require('./loom/attach');
+      const text = queryIndex('whats_here', filePath.trim());
+
+      return { path: filePath, result: text };
+    },
+  },
+
   // ── File Reading ────────────────────────────────────────────────────────────
   read_file: {
     description: 'Read a file in bounded sections. Returns at most 150 lines per call and provides the exact next start_line when more content is available. Continue by calling read_file with the same path and that start_line.',
