@@ -76,10 +76,26 @@ describe('OllamaAdapter', () => {
  expect(a._getResponseSelectors().length).toBeGreaterThanOrEqual(2);
  });
 
- test('getModelUrl returns the base url by default', () => {
- delete process.env.OLLAMA_BASE_URL;
- expect(makeAdapter().getModelUrl()).toBe('http://localhost:11434');
- });
+  test('getModelUrl returns the bundled chat page, not the API root', () => {
+    // Port 11434 serves plain text ("Ollama is running") — a browser pointed at
+    // it has no composer. A live diagnostic reported "NONE of 3 matched" against
+    // a URL this repository chose itself.
+    delete process.env.OLLAMA_BASE_URL;
+    delete process.env.OLLAMA_UI_URL;
+
+    const url = makeAdapter().getModelUrl();
+    expect(url).toContain('local-ollama-chat.html');
+    expect(url).not.toBe('http://localhost:11434');
+  });
+
+  test('OLLAMA_UI_URL overrides the bundled page', () => {
+    process.env.OLLAMA_UI_URL = 'http://localhost:3000';
+    try {
+      expect(makeAdapter().getModelUrl()).toBe('http://localhost:3000');
+    } finally {
+      delete process.env.OLLAMA_UI_URL;
+    }
+  });
 
  test('probe never throws when the daemon is unreachable', async () => {
  process.env.OLLAMA_BASE_URL = 'http://127.0.0.1:1';

@@ -34,23 +34,29 @@ class OllamaAdapter extends BaseAdapter {
  '[contenteditable="true"]',
  ];
  }
- _getSendSelectors() {
- return [
- 'button[type="submit"]',
- '#send-button',
- 'button:has(svg)',
- ];
+  _getSendSelectors() {
+    // The bundled page's ids are #send-btn and #new-chat-btn. This adapter used
+    // #send-button / #new-chat, so its own UI never matched — a live diagnostic
+    // reported "NONE of 3 matched" against a page this repository ships.
+    return [
+      '#send-btn',
+      'button[type="submit"]',
+      '#send-button',
+      'button:has(svg)',
+    ];
  }
 
  _getStopSelectors() {
  return [
  '#stop-button',
+ '#loading-indicator',
  '[class=stop]',
  ];
  }
 
  _getNewChatSelectors() {
  return [
+ '#new-chat-btn',
  '#new-chat',
  '[class=new-chat]',
  ];
@@ -103,7 +109,12 @@ class OllamaAdapter extends BaseAdapter {
  }
 
  getModelUrl() {
- return this.config.OLLAMA_UI_URL || this.baseUrl;
+   // The API root (default http://localhost:11434) is not a UI: it serves plain
+   // text, so a browser pointed at it has no composer to find. The bundled page
+   // is the UI; it proxies to whatever OLLAMA_BASE_URL names.
+   return process.env.OLLAMA_UI_URL
+     || this.config.OLLAMA_UI_URL
+     || 'file://' + require('path').join(__dirname, '..', 'html', 'local-ollama-chat.html');
  }
 
  async isReady() {

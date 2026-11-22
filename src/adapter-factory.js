@@ -10,10 +10,14 @@ const MODEL_REGISTRY = Object.freeze({
     adapter: './adapters/local-chat-adapter',
   },
 
- ollama: {
- displayName: 'Local Ollama',
- dedicated: true,
- url: 'http://localhost:11434',
+  ollama: {
+    // Port 11434 is Ollama's REST API, not a chat UI — browsing to it returns
+    // plain text, so every selector missed and the run failed with "input not
+    // found". The UI is the bundled page, which proxies to the daemon. Point
+    // OLLAMA_UI_URL at Open WebUI or similar if you prefer a different one.
+    displayName: 'Local Ollama',
+    dedicated: true,
+    url: 'file://' + __dirname + '/html/local-ollama-chat.html',
  aliases: ['ollama', 'local-ollama', 'ollama-local'],
  adapter: './adapters/ollama-adapter',
   },

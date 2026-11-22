@@ -9,6 +9,13 @@ Versioning: [Semantic Versioning](https://semver.org/)
 ## [Unreleased]
 
 ### Fixed
+- **`--model=ollama` pointed at the Ollama API, not a chat UI.** Port 11434
+  serves plain text ("Ollama is running"), so a browser navigated there has no
+  composer and every selector missed — the run failed with "input not found"
+  against a URL this repository chose itself. It now drives the bundled chat page
+  (which proxies to the daemon); `OLLAMA_UI_URL` overrides it for Open WebUI or
+  similar. The adapter's selectors were also wrong for its own page — `#send-btn`
+  and `#new-chat-btn`, not `#send-button` and `#new-chat`.
 - **Qwen's new-chat and stop controls are `<div role="button">`, not buttons.**
   A live diagnostic matched none of the button-only selectors while the control
   was plainly on screen:
