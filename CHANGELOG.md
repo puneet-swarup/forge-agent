@@ -121,6 +121,14 @@ Versioning: [Semantic Versioning](https://semver.org/)
   page during shutdown is no longer reported as "Unexpected error".
 
 ### Added
+- **`--probe=<url>`** — test an OpenAI-compatible endpoint (llama.cpp, vLLM,
+  Ollama, a Colab tunnel) without involving the agent. It reports three things
+  separately, because they fail differently: does the tunnel answer
+  (`GET /v1/models`), which models does it list, and does one tiny completion
+  come back. An ngrok interstitial, a wrong model name, a missing API key and a
+  non-OpenAI server all produce the same opaque failure inside a run; the probe
+  names which one it is. The browser adapters have `--diagnose`; the HTTP ones
+  now have this.
 - **`google` is labelled for what it is.** `www.google.com/ai` is a search
   surface, not a chat UI: the adapter types a query and reads results back. The
   display name is now "Google Search (research only)" so selecting it expecting

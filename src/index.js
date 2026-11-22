@@ -114,7 +114,7 @@ const KNOWN_FLAGS = new Set([
   '--config', '--prompt-pause', '--audio-sync', '--audio-async',
   '--parallel-tools', '--no-parallel-tools', '--completion-install',
   '--diagnostics', '--man', '--man-install',
-  '--auto', '--copy', '--ollama-url', '--ollama-api-key',
+  '--auto', '--copy', '--ollama-url', '--ollama-api-key', '--probe',
 ]);
 
 /**
@@ -300,6 +300,7 @@ function parseArgs(argv) {
       case '--diagnose':    opts.diagnose    = true;    break;
       case '--round-trip':  opts.roundTrip   = true;    break;
       case '--no-loom':     opts.noLoom      = true;    break;
+      case '--probe':       opts.probe       = true;    break;
       case '--port':        opts.port        = args[++i]; break;
       case '--json':        opts.json = true;         break;
       case '-a':
@@ -434,6 +435,8 @@ function parseArgs(argv) {
           opts.model = a.split('=')[1];
         } else if (a && a.startsWith('--diagnose=')) {
           opts.diagnose = a.split('=')[1];
+        } else if (a && a.startsWith('--probe=')) {
+          opts.probe = a.split('=')[1];
         } else if (a && a.startsWith('--port=')) {
           opts.port = a.split('=')[1];
         } else if (a && a.startsWith('--help=')) {
@@ -699,6 +702,8 @@ ${c('1;36', 'DEBUGGING')}
                          send/receive check. Add --headed to watch it.
       --round-trip       With --diagnose: send one message and report the reply
       --no-loom          Disable the project index for this run (on by default)
+      --probe=<url>      Test an OpenAI-compatible endpoint (llama.cpp, vLLM,
+                         Ollama, Colab tunnel): models, then one completion
       --test-model=<n>   Test: deepseek | qwen | chatgpt | gemini | google | sarvam
                          (add --headed to see the window, which Google needs)
 
@@ -1943,6 +1948,26 @@ async function main() {
   }
 
   // ── Model Selector Test ──────────────────────────────────────────────────
+  // ── Endpoint probe: for the HTTP-backed models, which have no UI to look at ──
+  if (args.probe) {
+    const { probeEndpoint, formatProbe } = require('./endpoint-probe');
+    const target = typeof args.probe === 'string' ? args.probe : args.modelUrl;
+
+    if (!target) {
+      console.error('  --probe needs an endpoint: --probe=<url> or --model-url=<url>');
+      process.exit(1);
+    }
+
+    console.log(`\n  Probing ${target}`);
+    const report = await probeEndpoint(target, {
+      apiKey: args.apiKey || process.env.OLLAMA_API_KEY || process.env.SARVAM_API_KEY,
+      model: args.ollamaModel || process.env.OLLAMA_MODEL,
+    });
+
+    console.log(formatProbe(report));
+    process.exit(report.ok ? 0 : 1);
+  }
+
   // ── Selector diagnostics ──────────────────────────────────────────────────
   // Answers "why did it stop working", not just "is it working": every candidate
   // selector with its match count, the real buttons and editables on the page,
