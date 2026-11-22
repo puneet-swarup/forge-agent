@@ -109,7 +109,7 @@ describe('Google in AdapterFactory', () => {
 
  test('getModelUrl and display name are correct', () => {
  expect(getModelUrl('google')).toBe('https://www.google.com');
- expect(getModelDisplayName('google')).toBe('Google');
+ expect(getModelDisplayName('google')).toBe('Google Search (research only)');
  });
 
  test('google is a supported model', () => {

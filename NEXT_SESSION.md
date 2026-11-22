@@ -1,8 +1,7 @@
 # NEXT SESSION — Forge Agent workstreams
 
-**Verified:** 2026-11-22, against `main` @ `9340f07` (PRs #3-#33, 90 commits).
-Supersedes the 2026-11-21 pass: the counts and statuses below were re-run, not
-carried over.
+**Verified:** 2026-11-22, against `main` @ `ba3a991` (93 commits). Supersedes the
+earlier passes: every count and status below was re-run, not carried over.
 **Rule for this file:** implementation and tests are authoritative. A status here
 is only "done" if the evidence column can be re-run and passes. Anything carried
 over from an earlier handoff is marked *(unverified)* until someone checks it.
@@ -10,7 +9,7 @@ over from an earlier handoff is marked *(unverified)* until someone checks it.
 Re-verify everything in one pass:
 
 ```bash
-npm test                                  # suite must be green (2,768 passing / 19 skipped)
+npm test                                  # suite must be green (2,831 passing / 19 skipped)
 npm run typecheck
 node scripts/verify-prompt.js             # the prompt the agent actually sends
 grep -rn "encodeTransportArg" src/transport.js   # T1
@@ -86,7 +85,7 @@ rotation are all on `main`.
 | Task | Workstream | Status | Evidence | Next action |
 | --- | --- | --- | --- | --- |
 | **T1** | Transport | **DONE** | `src/transport.js` exports `encodeTransportArg` / `decodeTransportArg` / `md5hex`; `content_md5`, `is_hex`, `find_md5`, `replace_md5` are in `src/tools.js`; `tests/transport-integrity.test.js` (19) green | none — see limitation below |
-| **T2** | Loom | **PARTIAL — slices 1-3 of 5** | 19 modules in `src/loom/`: storage (`config, paths, hash, ignore, db, migrate, schema`), extractors for 8 languages, `resolve.js`, `graph.js`, `digest.js`; attached to the first message via `attach.js`. **No `refresh.js`, no query path, `LOOM_ENABLED=false`** — the digest is not injected today | slice 4: stored index + incremental refresh, then access tracking so the digest ranks by real reads instead of alphabetical ties |
+| **T2** | Loom | **DONE — on by default** | 21 modules in `src/loom/`, including the stored index (`refresh.js`, 667 lines) and the boundary (`attach.js`). 331 files indexed in ~2s cold / ~250ms warm on this repo; digest ~470 tokens. `LOOM_ENABLED=true`; `--no-loom` disables. 353 Loom tests | `recall` / `whats_here` / `related` query tools are the one unbuilt slice |
 | **T3** | Adapters | **IN PROGRESS — live work started** | 11 adapters (sarvam + sarvam-api added). Live-verified 2026-11-22: **sarvam** READY (input/send/new-chat found, round trip 5.1s), **chatgpt** round trip 4.5s. Gemini send/new-chat fixed. qwen, google, ollama, local-chat still unverified against a live UI | `--diagnose=<model> --round-trip` on qwen and google |
 | **T4** | Plan lifecycle | **DONE** (PR #9 merged) | `src/lifecycle-gate.js` gates the first mutating tool and `TASK_COMPLETE`, bounded by `MAX_PLAN_GATE_ATTEMPTS`; `PLAN_GATE=false` disables it | nothing |
 | **T5** | Cross-platform paths | **DONE (targeted)** | no literal `/tmp` in `src/`; `icacls` hints on win32; `tests/path-portability.test.js` green | extend only if a new path bug appears |
@@ -364,14 +363,12 @@ re-verified is worse than none.
 
 ## What is next, in order
 
-1. **T3 first — finish the adapters.** qwen and google are unverified; google is
-   `www.google.com/ai`, which is a search surface, not a chat UI, and should
-   either be scoped to research or dropped from the model list. Use
-   `--diagnose=<model> --round-trip` for each.
-2. **Loom slice 4** — the stored index and incremental refresh, plus access
-   tracking so the digest ranks by what the agent actually reads and edits.
-   Until then `LOOM_ENABLED` stays false: the digest is real but its hot-file
-   order is alphabetical among ties.
+1. **Live adapter verification for qwen, ollama, local-chat.** Needs a human with
+   a login; `--diagnose=<model> --round-trip` makes each one a two-minute job.
+   `google` is now labelled "research only" — it drives a search surface, not a
+   chat UI, and should stay out of the coding path.
+2. **Loom query tools** — `recall`, `whats_here`, `related`. The index holds the
+   data; nothing queries it yet except the digest.
 2. **T3 live adapter repair** — blocked on a human with a login. The offline
    contract suite is green; the selectors are unverified against the real UIs.
 3. **Coverage uplift** — the gate is 69/61/72/70 against a 70.4/62.7/73.3/71.9

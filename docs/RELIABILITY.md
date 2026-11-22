@@ -389,16 +389,48 @@ completion refused with an open step, the bound reached, and the kill switch.
 Honest list of gaps this release does **not** close. Each one has a test-shaped
 hole; none is hidden behind a passing suite.
 
-3. **The shell guard is a blocklist.** `security.BLOCKED_COMMANDS` is six
-   substrings; `run_command` inherits the full `process.env`. An allowlist with
-   a scrubbed environment is the fix.
-4. **No provenance on untrusted content.** `read_url` output is fed to the model
-   without a "this is data, not instructions" marker.
-5. **Selector drift is untested.** The browser tests drive a mock page built from
-   the adapter's own selectors, so they cannot detect a change in the real UI.
-   Recorded-DOM fixtures are the fix.
-6. **The transport hash depends on the sender.** See §10: the model computing an
-   MD5 for a large file is not something to rely on.
-7. **The CLI is still one large file.** Flags are parsed by a hand-written loop;
-   the new flags follow that pattern deliberately rather than growing a second
-   one.
+**Closed since this list was written** (kept for the record, because a gap that
+silently disappears is as untrustworthy as one that is never admitted):
+
+- ~~The shell guard is a blocklist.~~ `src/shell-policy.js` classifies every
+  command allow / confirm / deny and scrubs the child environment
+  (`tests/shell-policy.test.js`, 55 cases).
+- ~~Selector drift is untested.~~ `--diagnose=<model> --round-trip` now reports
+  every candidate selector's match count, the real DOM, and a live send/receive
+  against the actual UI. It found five real defects in one evening.
+
+**Still open:**
+
+1. **Live adapter coverage is per-model and manual.** Sarvam and ChatGPT were
+   verified against their live UIs on 2026-11-22; `qwen`, `google`, `ollama`,
+   `local-chat` have not been. `--diagnose` makes each one a two-minute job, but
+   it still needs a human with a login — there is no way to check someone else's
+   UI from CI.
+2. **No provenance on untrusted content.** `read_url` output reaches the model
+   without a "this is data, not instructions" marker. The prompt says so
+   globally; per-document framing is not implemented.
+3. **The browser suite only proves the mock.** `tests/integration-browser.test.js`
+   drives a mock chat page. It catches parser and turn-boundary regressions, and
+   it caught two real ones, but it cannot detect a provider changing its DOM.
+   Recorded-DOM fixtures are the fix and need a logged-in capture.
+4. **`stop` selectors are unobservable when idle.** They only exist mid-generation,
+   so no diagnostic can check them from a resting page. If a run ever reads a
+   half-written answer, that is where to look first.
+5. **`src/index.js` is 2,174 lines.** The parser and flag paths are now tested
+   directly; the command handlers (help, doctor, benchmark, watch, parallel) are
+   not, and the file mixes dispatch with implementation.
+
+## How to verify this document
+
+Every invariant above names the test that proves it. Re-run them all:
+
+```bash
+npm test                                   # 2,831 passing, 19 skipped
+npm run typecheck
+node scripts/verify-prompt.js              # the prompt the agent actually sends
+npx jest tests/turn-boundary.test.js tests/adapter-turn-contract.test.js
+npx jest tests/verify-gate.test.js tests/shell-policy.test.js tests/workspace.test.js
+npx jest tests/loom --runInBand            # the index, including failure modes
+```
+
+A claim here without a test is a bug in this document.

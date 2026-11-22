@@ -4,16 +4,27 @@
 > not what the README advertises. Keep it current as the code changes. When code and
 > this document disagree, the code wins; then fix this document.
 >
-> Verified against `main` @ `96fba78` — baseline 79 suites / 1656 tests green.
+> Verified against `main` @ `ba3a991` — 152 suites / 2,831 tests green, 11 adapters,
+> Loom on by default. Sections 11-15 are proposals and evaluations kept for the
+> record; everything above section 10 describes code that exists.
 
 ---
 
 ## 1. What the product is
 
-A CLI that turns free web chat UIs (DeepSeek, Gemini) into an autonomous coding
-agent using Playwright browser automation. There is no API key and no LLM API —
-"the model" is a browser tab the agent types into and scrapes replies from.
-That single fact drives every architectural trade-off in this document.
+A CLI that turns free web chat UIs into an autonomous coding agent using
+Playwright browser automation. There is no API key and no LLM API — "the model"
+is a browser tab the agent types into and scrapes replies from. That single fact
+drives every architectural trade-off in this document.
+
+Eleven adapters ship: `deepseek` (default), `gemini`, `qwen`, `chatgpt`,
+`sarvam` (the Indus chat UI), `sarvam-api` (Sarvam's hosted API — the one adapter
+that is an HTTP client rather than a browser), `google` (a search surface, marked
+research-only), and `local`, `ollama`, `colab` for self-hosted endpoints.
+
+Two systems sit beside the loop: **Loom**, a persistent project index compiled
+into the model's first prompt, and the **dashboard**, a loopback-only web view of
+every agent, session, project and task. Both are described in section 19.
 
 ---
 
@@ -23,7 +34,7 @@ That single fact drives every architectural trade-off in this document.
       src/index.js              CLI entry, flag parsing, mode dispatch
        |-- src/agent.js         THE AGENT LOOP (core)
        |    |-- src/browser.js             Playwright lifecycle wrapper
-       |    |    `-- src/adapters/{base,deepseek,gemini,chatgpt}-adapter.js
+       |    |    `-- src/adapters/{base,*}-adapter.js   (11 adapters)
        |    |          sendMessage()     : type text -> submit
        |    |          waitForResponse() : detect completion -> scrape DOM
        |    |-- src/prompt.js              system prompt + ConversationManager
@@ -31,7 +42,10 @@ That single fact drives every architectural trade-off in this document.
        |    |-- src/tools.js               TOOLS registry + executeTool()
        |    |-- src/parallel-executor.js   tool-batch scheduling
        |    `-- src/permission-store.js + permission-menu.js
-       `-- ~60 support modules (section 9)
+       |-- src/loom/             project index: storage, extractors, graph, digest,
+       |                         refresh, and attach.js (the single boundary)
+       |-- src/dashboard/        loopback web view: state, server, page
+       `-- ~80 support modules (section 9)
 
 Dependency direction: `index -> agent -> {browser, prompt, parser, tools}`.
 Tools never import the agent. `config.js` is a Proxy imported everywhere (section 7).
@@ -609,6 +623,80 @@ mirrors the short form; this table keeps the why and the acceptance test.
    the flag is recommended on.
 
 ---
+
+## 19. Loom — the project index
+
+On by default. `--no-loom` (or `LOOM_ENABLED=0`) returns before any filesystem
+work, per invariant I2.
+
+    src/loom/
+      index.js      open/close/status/stats/db — the store owner and error boundary
+      config.js     LOOM_* parsing; invalid values warn and fall back, never throw
+      paths.js      project-relative normalisation, index location, .gitignore
+      hash.js       sha256 + the mtime/size fast negative
+      ignore.js     hard deny, secret deny, .gitignore matcher
+      db.js         node:sqlite when present, JSON otherwise
+      migrate.js    schema versioning, checksums, access retention
+      extract/      one extractor per language family (js, py, go, rs, sql, md, data)
+      resolve.js    import specifier -> project-relative path, or null
+      graph.js      dependency graph, built from rows; never stored
+      digest.js     graph -> a bounded orientation document
+      refresh.js    the incremental sweep, tombstones, dirty flag, access rows
+      attach.js     THE BOUNDARY: open -> refresh -> readGraph -> renderDigest
+
+Four rules carry the design:
+
+1. **mtime is a fast negative only.** Equal mtime and size means "assume
+   unchanged"; a mismatch is a candidate and the hash decides. `git checkout`,
+   rsync and Docker copies all rewrite mtime without changing bytes.
+2. **The index is derived, never authoritative.** Anything unexpected rebuilds
+   it, reusing existing rows by `rel_path` so file ids — and the access rows
+   pointing at them — survive.
+3. **The graph is rebuilt, not stored.** Edges are always derived by `graph.js`.
+4. **Nothing throws into a caller.** Every exported function is wrapped; a failed
+   refresh costs one run's freshness, never a tool call.
+
+Cost on this repository: 331 files, ~2 s cold, ~250 ms warm, digest ~470 tokens.
+
+## 20. The adapter contract
+
+An adapter supplies selector lists; the base class owns the algorithm. This is a
+template method, and it is the reason the layer no longer drifts:
+
+    base-adapter
+      discoverComposer()        -> _trySelectors(_getInputSelectors())    -> _structuralFallback('input')
+      discoverSendButton()      -> _trySelectors(_getSendSelectors())     -> _structuralFallback('send')
+      discoverLatestResponse()  -> _trySelectors(_getResponseSelectors()) -> _structuralFallback('response')
+      _trySelectors()           -> page.locator() | waitForSelector() | $$
+
+    an adapter overrides ONLY:
+      _getInputSelectors / _getSendSelectors / _getStopSelectors /
+      _getNewChatSelectors / _getResponseSelectors
+      getModelUrl()
+      _structuralFallback(kind)   -- only when the markup offers nothing to select on
+
+Before this, six adapters reimplemented the three discovery methods: 432 lines
+against 55 in the base class, kept in step by hand and not. Two copies had
+diverged badly enough to hand the parser a whole transcript instead of a reply.
+`tests/adapter-template.test.js` now asserts no adapter defines a discovery
+method, and that the three that need a structural hook declare exactly one.
+
+## 21. CLI flag parsing
+
+`parseArgs(argv)` is exported and tested directly (`tests/cli-flags.test.js`).
+Three rules, each learned from a bug:
+
+- **both forms parse.** `--model x` and `--model=x` are equivalent. The `=` form
+  was silently dropped for as long as it was, so every documented example did
+  nothing.
+- **a task does not swallow flags.** `forge-agent "do the thing" --model=gemini`
+  keeps its task and still parses the flag.
+- **an unknown flag is reported**, with a "did you mean" from a bounded edit
+  distance over `KNOWN_FLAGS`. A test asserts that set cannot fall behind either
+  the help text or the parser's switch cases.
+
+Specific `--flag=` handlers run before the generic `--flag=value` table; running
+the generic one first silently swallowed `--diagnose=sarvam`.
 
 ## 16. Maintaining this document
 

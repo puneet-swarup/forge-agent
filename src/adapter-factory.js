@@ -81,7 +81,11 @@ const MODEL_REGISTRY = Object.freeze({
   },
   
   google: {
-	displayName: 'Google',
+    // Not a chat model. www.google.com/ai is a search surface: this adapter
+    // types a query and reads results back. Useful as a research fallback,
+    // wrong for a coding task — so the display name says which it is, because
+    // selecting "Google" expecting an agent is selecting the wrong thing.
+    displayName: 'Google Search (research only)',
     url: 'https://www.google.com',
     aliases: ['google', 'search', 'goog'],
     adapter: './adapters/google-adapter',

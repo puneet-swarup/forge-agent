@@ -101,6 +101,20 @@ Versioning: [Semantic Versioning](https://semver.org/)
   page during shutdown is no longer reported as "Unexpected error".
 
 ### Added
+- **`google` is labelled for what it is.** `www.google.com/ai` is a search
+  surface, not a chat UI: the adapter types a query and reads results back. The
+  display name is now "Google Search (research only)" so selecting it expecting
+  an agent is a visible mistake rather than a confusing run.
+
+### Changed
+- **Coverage gate raised to 72 / 64 / 74 / 73** from 69 / 61 / 72 / 70, matching
+  the measured 73.7 / 66.2 / 75.6 / 75.4. The gate can only ratchet upward.
+- **`ARCHITECTURE.md` re-verified** against the code: eleven adapters, Loom and
+  the dashboard in the layer map, plus new sections on the adapter template
+  method, Loom's four design rules, and the CLI flag contract.
+- **`docs/RELIABILITY.md`** now separates the gaps that closed (shell policy,
+  selector drift) from the five that remain, and names the command that proves
+  each invariant.
 - **Loom is on by default.** Slice 4 landed the stored index: `refresh()` sweeps
   the working tree incrementally (mtime/size as a fast negative, hash as the
   decider), `readGraph()` rebuilds the dependency graph from the rows, and the
