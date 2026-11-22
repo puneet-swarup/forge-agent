@@ -74,40 +74,6 @@ class OllamaAdapter extends BaseAdapter {
  return ['input[type=file]'];
  }
 
- _getSendSelectors() {
- return [
- 'button[type="submit"]',
- '#send-button',
- 'button:has(svg)',
- ];
- }
-
- _getStopSelectors() {
- return [
- '#stop-button',
- '[class=stop]',
- ];
- }
-
- _getNewChatSelectors() {
- return [
- '#new-chat',
- '[class=new-chat]',
- ];
- }
-
- _getResponseSelectors() {
- return [
- '.message.assistant',
- 'div[class*=assistant]',
- 'main',
- ];
- }
-
- _getUploadSelectors() {
- return ['input[type=file]'];
- }
-
  getModelUrl() {
    // The API root (default http://localhost:11434) is not a UI: it serves plain
    // text, so a browser pointed at it has no composer to find. The bundled page

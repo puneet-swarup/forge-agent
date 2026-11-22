@@ -94,3 +94,37 @@ describe('behaviour the refactor must not lose', () => {
     }
   });
 });
+
+// ─────────────────────────────────────────────
+//  No duplicate method definitions
+//
+//  A class body silently accepts two methods with the same name and the last one
+//  wins. That happened here: a patch added fixed selectors while the old ones
+//  remained below them, so the "fix" never took effect and every test passed,
+//  because the tests read the same file the runtime did.
+// ─────────────────────────────────────────────
+
+describe('no adapter defines a method twice', () => {
+  const DIR = path.join(__dirname, '..', 'src', 'adapters');
+
+  for (const file of fs.readdirSync(DIR).filter((f) => f.endsWith('-adapter.js'))) {
+    test(`${file} has no duplicate method names`, () => {
+      const src = fs.readFileSync(path.join(DIR, file), 'utf8');
+
+      // Method definitions at class-member indentation.
+      const names = [...src.matchAll(/^\s{1,4}([a-zA-Z_]\w*)\s*\([^)]*\)\s*\{/gm)]
+        .map((m) => m[1]);
+
+      const seen = new Map();
+      const duplicates = [];
+      for (const name of names) {
+        if (name === 'if' || name === 'for' || name === 'while' || name === 'switch' || name === 'catch') continue;
+        const count = (seen.get(name) || 0) + 1;
+        seen.set(name, count);
+        if (count === 2) duplicates.push(name);
+      }
+
+      expect(duplicates).toEqual([]);
+    });
+  }
+});
