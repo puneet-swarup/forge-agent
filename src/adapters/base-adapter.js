@@ -58,10 +58,25 @@ class BaseAdapter {
    * Adapters can override this when their UI needs custom discovery.
    */
   async discoverComposer(options = {}) {
-    return this._trySelectors(
-      this._getInputSelectors(),
-      options
-    );
+    const found = await this._trySelectors(this._getInputSelectors(), options);
+    if (found) return found;
+    return this._structuralFallback('input');
+  }
+
+  /**
+   * Last-resort discovery when no declared selector matches.
+   *
+   * A template method: the base class owns the algorithm (declared selectors
+   * first, in order, then this), and an adapter overrides only this hook when
+   * its markup offers nothing to select on. Before this existed, six adapters
+   * each reimplemented the whole loop — 432 lines that had to be kept in step
+   * by hand, and were not.
+   *
+   * @param {'input'|'send'|'response'|'stop'|'newChat'} _kind
+   * @returns {Promise<import('playwright').Locator|import('playwright').ElementHandle|null>}
+   */
+  async _structuralFallback(_kind) {
+    return null;
   }
 
   /**
@@ -69,28 +84,9 @@ class BaseAdapter {
    * Returns null when no usable button is found.
    */
   async discoverSendButton() {
-    const selectors = this._getSendSelectors();
-
-    for (const selector of selectors) {
-      try {
-        const elements = await this.page.$$(selector);
-
-        for (let i = elements.length - 1; i >= 0; i--) {
-          const element = elements[i];
-
-          if (
-            await element.isVisible() &&
-            await element.isEnabled()
-          ) {
-            return element;
-          }
-        }
-      } catch (_) {
-        // Try the next selector.
-      }
-    }
-
-    return null;
+    const found = await this._trySelectors(this._getSendSelectors(), { timeout: 3000 });
+    if (found) return found;
+    return this._structuralFallback('send');
   }
 
   /**
@@ -99,29 +95,9 @@ class BaseAdapter {
    * customize DOM discovery without changing the shared response lifecycle.
    */
   async discoverLatestResponse() {
-    const selectors = this._getResponseSelectors();
-
-    for (const selector of selectors) {
-      try {
-        const elements = await this.page.$$(selector);
-
-        for (let i = elements.length - 1; i >= 0; i--) {
-          const element = elements[i];
-
-          if (await element.isVisible()) {
-            const text = await element.innerText().catch(() => '');
-
-            if (text && text.trim()) {
-              return element;
-            }
-          }
-        }
-      } catch (_) {
-        // Try the next selector.
-      }
-    }
-
-    return null;
+    const found = await this._trySelectors(this._getResponseSelectors(), { timeout: 3000 });
+    if (found) return found;
+    return this._structuralFallback('response');
   }
 
   /**
@@ -478,8 +454,36 @@ class BaseAdapter {
       Math.floor(timeout / selectors.length)
     );
 
+    // Three ways to query, in order of preference:
+    //   1. page.locator() — modern Playwright, and what a page-like stub in a
+    //      test is most likely to implement;
+    //   2. page.waitForSelector() — waits for a selector that is about to appear;
+    //   3. page.$$() — last resort.
+    // The adapters used (1) in their own copies, so using it here keeps their
+    // behaviour identical while removing the duplication.
+    const canLocate = typeof this.page.locator === 'function';
+    const canWait   = typeof this.page.waitForSelector === 'function';
+
     for (const selector of selectors) {
       try {
+        if (canLocate) {
+          const locator = this.page.locator(selector).last();
+          const count = await locator.count().catch(() => 0);
+          if (count && (!visible || await locator.isVisible().catch(() => false))) {
+            return locator;
+          }
+          continue;
+        }
+
+        if (!canWait) {
+          const elements = await this.page.$$(selector);
+          for (let i = elements.length - 1; i >= 0; i--) {
+            const el = elements[i];
+            if (!visible || await el.isVisible()) return el;
+          }
+          continue;
+        }
+
         const element = await this.page.waitForSelector(selector, {
           timeout: perSelectorTimeout,
           state: visible ? 'visible' : 'attached',

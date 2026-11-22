@@ -82,55 +82,17 @@ _getInputSelectors() {
     ];
   }
 
-  getModelUrl() {
-    return this.config.SARVAM_URL || 'https://indus.sarvam.ai/indus';
-  }
-
-  // ── Custom discovery (mirrors the other adapters) ──────────────────────
-
-  async discoverComposer() {
-    for (const selector of this._getInputSelectors()) {
+  /**
+   * Indus is built with Tailwind utility classes: no markdown, prose or
+   * assistant class exists anywhere, and the send control is only rendered once
+   * the composer has text. Both fallbacks therefore work from shape, not names.
+   */
+  async _structuralFallback(kind) {
+    if (kind === 'send') {
       try {
-        const locator = this.page.locator(selector).last();
+        const composer = await this.discoverComposer({ timeout: 3000 });
+        if (!composer) return null;
 
-        if (
-          await locator.count() &&
-          await locator.isVisible() &&
-          await locator.isEnabled()
-        ) {
-          return locator;
-        }
-      } catch (_) {
-        // Try next selector.
-      }
-    }
-    return null;
-  }
-
-  async discoverSendButton() {
-    for (const selector of this._getSendSelectors()) {
-      try {
-        const locator = this.page.locator(selector).last();
-
-        if (
-          await locator.count() &&
-          await locator.isVisible() &&
-          await locator.isEnabled()
-        ) {
-          return locator;
-        }
-      } catch (_) {
-        // Try next selector.
-      }
-    }
-
-    // Structural fallback. Indus renders its send control inside the composer
-    // container and only once there is text, so no attribute-based selector can
-    // be relied on. Take the last enabled button that shares a container with
-    // the editor — that is where a send affordance lives in every chat UI.
-    try {
-      const composer = await this.discoverComposer({ timeout: 3000 });
-      if (composer) {
         const container = composer.locator('xpath=ancestor::*[.//button][1]');
         const buttons = container.locator('button:not([disabled])');
         const count = await buttons.count();
@@ -142,84 +104,65 @@ _getInputSelectors() {
             return candidate;
           }
         }
-      }
-    } catch (_) {
-      // Fall through to the Enter key.
-    }
-
-    return null;
-  }
-
-  async discoverLatestResponse() {
-    for (const selector of this._getResponseSelectors()) {
-      try {
-        const locator = this.page.locator(selector).last();
-
-        if (
-          !(await locator.count()) ||
-          !(await locator.isVisible())
-        ) {
-          continue;
-        }
-
-        const text = await locator.innerText().catch(() => '');
-
-        if (text && text.trim()) {
-          return locator;
-        }
       } catch (_) {
-        // Try next selector.
+        // Fall through to the Enter key.
       }
+      return null;
     }
 
-    // Structural fallback. With no semantic class names, the transcript is best
-    // identified by shape: the largest visible block of text that is not the
-    // composer and not the sidebar. This is what makes the adapter work when the
-    // utility classes change, which they do.
-    try {
-      const handle = await this.page.evaluateHandle(() => {
-        const visible = (el) => {
-          const style = window.getComputedStyle(el);
-          return style.display !== 'none' && style.visibility !== 'hidden' &&
-            style.opacity !== '0' && el.getClientRects().length > 0;
-        };
+    if (kind === 'response') {
+      try {
+        const handle = await this.page.evaluateHandle(() => {
+          const visible = (el) => {
+            const style = window.getComputedStyle(el);
+            return style.display !== 'none' && style.visibility !== 'hidden' &&
+              style.opacity !== '0' && el.getClientRects().length > 0;
+          };
 
-        let best = null;
-        let bestLen = 0;
+          let best = null;
+          let bestLen = 0;
 
-        for (const el of document.querySelectorAll('section, main, article, div[class*="flex-col"]')) {
-          if (!visible(el)) continue;
-          if (el.closest('[contenteditable="true"]')) continue;
-          // The sidebar and the nav chrome carry long text too; skip anything
-          // that looks like navigation.
-          const text = (el.innerText || '').trim();
-          if (text.length < 20) continue;
-          if (/^(New chat|Connectors|Skills|Agents|Scheduled tasks|Knowledge base)\b/.test(text)) continue;
+          for (const el of document.querySelectorAll('section, main, article, div[class*="flex-col"]')) {
+            if (!visible(el)) continue;
+            if (el.closest('[contenteditable="true"]')) continue;
 
-          if (text.length > bestLen) { bestLen = text.length; best = el; }
-        }
+            const text = (el.innerText || '').trim();
+            if (text.length < 20) continue;
+            if (/^(New chat|Connectors|Skills|Agents|Scheduled tasks|Knowledge base)\b/.test(text)) continue;
 
-        return best;
-      });
+            if (text.length > bestLen) { bestLen = text.length; best = el; }
+          }
 
-      const element = handle.asElement();
-      if (element) {
-        // The largest block is the transcript, not the reply: it also holds the
-        // user's message, the timestamp and the disclaimer. Descend to the last
-        // message, or the parser sees prose where it expects a tool call.
+          return best;
+        });
+
+        const element = handle.asElement();
+        if (!element) return null;
+
+        // The largest block is the transcript, not the reply: descend to the
+        // last message, or the parser sees prose where it expects a tool call.
         const leaf = await this._lastLeafWithin(element);
         const text = (await leaf.innerText().catch(() => '')).trim();
         if (text) {
           logger.debug('[Sarvam] Response taken from the last leaf of the transcript');
           return leaf;
         }
+      } catch (_) {
+        // Fall through to null.
       }
-    } catch (_) {
-      // Fall through to null.
     }
 
     return null;
   }
+
+  getModelUrl() {
+    return this.config.SARVAM_URL || 'https://indus.sarvam.ai/indus';
+  }
+
+  // ── Custom discovery (mirrors the other adapters) ──────────────────────
+
+
+
 
   // ── Generation detection ────────────────────────────────────────────────
 

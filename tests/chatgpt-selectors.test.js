@@ -34,7 +34,7 @@ describe('ChatGPT selectors', () => {
   test('response detection has a structural fallback', () => {
     const src = require('fs').readFileSync(
       require('path').join(__dirname, '..', 'src', 'adapters', 'chatgpt-adapter.js'), 'utf8');
-    expect(src).toContain('Response container found structurally');
+    expect(src).toContain('_structuralFallback');
   });
 
   test('send works only with text in the composer, which the probe now does', () => {

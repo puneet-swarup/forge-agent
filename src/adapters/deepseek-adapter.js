@@ -80,67 +80,8 @@ class DeepSeekAdapter extends BaseAdapter {
 
   // ── Custom discovery (mirrors the other adapters) ──────────────────────
 
-  async discoverComposer() {
-    for (const selector of this._getInputSelectors()) {
-      try {
-        const locator = this.page.locator(selector).last();
 
-        if (
-          await locator.count() &&
-          await locator.isVisible() &&
-          await locator.isEnabled()
-        ) {
-          return locator;
-        }
-      } catch (_) {
-        // Try next selector.
-      }
-    }
 
-    return null;
-  }
-
-  async discoverSendButton() {
-    for (const selector of this._getSendSelectors()) {
-      try {
-        const locator = this.page.locator(selector).last();
-
-        if (
-          await locator.count() &&
-          await locator.isVisible() &&
-          await locator.isEnabled()
-        ) {
-          return locator;
-        }
-      } catch (_) {
-        // Try next selector.
-      }
-    }
-
-    return null;
-  }
-
-  async discoverLatestResponse() {
-    for (const selector of this._getResponseSelectors()) {
-      try {
-        const locator = this.page.locator(selector).last();
-
-        if (!(await locator.count()) || !(await locator.isVisible())) {
-          continue;
-        }
-
-        const text = await locator.innerText().catch(() => '');
-
-        if (text && text.trim()) {
-          return locator;
-        }
-      } catch (_) {
-        // Try next selector.
-      }
-    }
-
-    return null;
-  }
 
   // ── Generation detection ────────────────────────────────────────────────
 

@@ -79,64 +79,28 @@ class GeminiAdapter extends BaseAdapter {
     ];
   }
 
-  getModelUrl() {
-    return this.config.GEMINI_URL || 'https://gemini.google.com/app';
-  }
+  /**
+   * Gemini's send control sits beside the composer and has drifted more than
+   * once. When no declared selector matches, take the last enabled button that
+   * shares the composer's container — pressing Enter instead cannot distinguish
+   * "send" from "newline" in a composer that accepts both.
+   */
+  async _structuralFallback(kind) {
+    if (kind !== 'send') return null;
 
-  async discoverComposer() {
-    for (const selector of this._getInputSelectors()) {
-      try {
-        const locator = this.page.locator(selector).last();
-
-        if (
-          await locator.count() &&
-          await locator.isVisible() &&
-          await locator.isEnabled()
-        ) {
-          return locator;
-        }
-      } catch (_) {
-        // Try the next selector.
-      }
-    }
-
-    return null;
-  }
-
-  async discoverSendButton() {
-    for (const selector of this._getSendSelectors()) {
-      try {
-        const locator = this.page.locator(selector).last();
-
-        if (
-          await locator.count() &&
-          await locator.isVisible() &&
-          await locator.isEnabled()
-        ) {
-          return locator;
-        }
-      } catch (_) {
-        // Try the next selector.
-      }
-    }
-
-    // Structural fallback: Gemini renders the send control immediately after
-    // the composer. If every named selector has drifted, the button that sits
-    // beside the input is still the right one — and pressing Enter would lose
-    // the distinction between "send" and "newline".
     try {
-      const composer = await this.discoverComposer();
-      if (composer) {
-        const container = composer.locator('xpath=ancestor::*[.//button][1]');
-        const buttons = container.locator('button');
-        const count = await buttons.count();
+      const composer = await this.discoverComposer({ timeout: 3000 });
+      if (!composer) return null;
 
-        for (let i = count - 1; i >= 0; i--) {
-          const candidate = buttons.nth(i);
-          if (await candidate.isVisible() && await candidate.isEnabled()) {
-            logger.debug('[Gemini] Send button found structurally (no selector matched)');
-            return candidate;
-          }
+      const container = composer.locator('xpath=ancestor::*[.//button][1]');
+      const buttons = container.locator('button:not([disabled])');
+      const count = await buttons.count();
+
+      for (let i = count - 1; i >= 0; i--) {
+        const candidate = buttons.nth(i);
+        if (await candidate.isVisible()) {
+          logger.debug('[Gemini] Send button found structurally (no selector matched)');
+          return candidate;
         }
       }
     } catch (_) {
@@ -146,27 +110,12 @@ class GeminiAdapter extends BaseAdapter {
     return null;
   }
 
-  async discoverLatestResponse() {
-    for (const selector of this._getResponseSelectors()) {
-      try {
-        const locator = this.page.locator(selector).last();
-
-        if (!(await locator.count()) || !(await locator.isVisible())) {
-          continue;
-        }
-
-        const text = await locator.innerText().catch(() => '');
-
-        if (text && text.trim()) {
-          return locator;
-        }
-      } catch (_) {
-        // Try the next selector.
-      }
-    }
-
-    return null;
+  getModelUrl() {
+    return this.config.GEMINI_URL || 'https://gemini.google.com/app';
   }
+
+
+
 
   async getGenerationState() {
     return await this.page.evaluate(() => {

@@ -74,119 +74,20 @@ class ChatGPTAdapter extends BaseAdapter {
     ];
   }
 
-  getModelUrl() {
-    return this.config.CHATGPT_URL || 'https://chatgpt.com/';
-  }
+  /**
+   * ChatGPT's class names are hashed and change between builds. The transcript
+   * container is a container, not the reply: descend to the last message inside
+   * it, or the parser receives "You said: … ChatGPT said: …" and reads it as
+   * prose.
+   */
+  async _structuralFallback(kind) {
+    if (kind !== 'response') return null;
 
-  async discoverComposer() {
-    for (const selector of this._getInputSelectors()) {
-      try {
-        const locator = this.page.locator(selector).last();
-
-        if (
-          await locator.count() &&
-          await locator.isVisible() &&
-          await locator.isEnabled()
-        ) {
-          return locator;
-        }
-      } catch (_) {
-        // Continue to the next selector.
-      }
-    }
-
-    return null;
-  }
-
-  async discoverSendButton() {
-    for (const selector of this._getSendSelectors()) {
-      try {
-        const locator = this.page.locator(selector).last();
-
-        if (
-          await locator.count() &&
-          await locator.isVisible() &&
-          await locator.isEnabled()
-        ) {
-          return locator;
-        }
-      } catch (_) {
-        // Continue to the next selector.
-      }
-    }
-
-    return null;
-  }
-
-  async discoverLatestResponse() {
-  for (const selector of this._getResponseSelectors()) {
-    try {
-      const locator = this.page.locator(selector).last();
-
-      if (
-        !(await locator.count()) ||
-        !(await locator.isVisible())
-      ) {
-        continue;
-      }
-
-      const text = await locator.innerText().catch(() => '');
-
-      if (text && text.trim()) {
-        return locator;
-      }
-    } catch (_) {
-      // Try the next selector.
-    }
-  }
-
-  return null;
-
-    // Structural fallback: the transcript is the largest visible text block that
-    // is not the composer and not the sidebar. ChatGPT's class names are hashed
-    // and change; shape does not.
-    try {
-      const handle = await this.page.evaluateHandle(() => {
-        const visible = (el) => {
-          const style = window.getComputedStyle(el);
-          return style.display !== 'none' && style.visibility !== 'hidden' &&
-            style.opacity !== '0' && el.getClientRects().length > 0;
-        };
-
-        let best = null;
-        let bestLen = 0;
-
-        for (const el of document.querySelectorAll('main, section, article, div')) {
-          if (!visible(el)) continue;
-          if (el.closest('[contenteditable="true"]')) continue;
-          if (el.closest('nav')) continue;
-
-          const text = (el.innerText || '').trim();
-          if (text.length < 20) continue;
-          if (/^(ChatGPT|New chat|Images|Scheduled|Library|Plugins|Explore)\b/.test(text) && text.length < 200) continue;
-
-          if (text.length > bestLen) { bestLen = text.length; best = el; }
-        }
-
-        return best;
-      });
-
-      const element = handle.asElement();
-      if (element) {
-        logger.debug('[ChatGPT] Response container found structurally (no selector matched)');
-        return element;
-      }
-    } catch (_) {
-      // Fall through to null.
-    }
-
-    return null;
-  
-    // Transcript containers: descend to the last message inside them.
     for (const selector of ['.thread-scroll-container', '[role="region"].thread-scroll-container', 'main']) {
       try {
         const container = this.page.locator(selector).last();
-        if (!(await container.count()) || !(await container.isVisible().catch(() => false))) continue;
+        if (!(await container.count())) continue;
+        if (!(await container.isVisible().catch(() => false))) continue;
 
         const leaf = await this._lastLeafWithin(container);
         const text = (await leaf.innerText().catch(() => '')).trim();
@@ -201,6 +102,13 @@ class ChatGPTAdapter extends BaseAdapter {
 
     return null;
   }
+
+  getModelUrl() {
+    return this.config.CHATGPT_URL || 'https://chatgpt.com/';
+  }
+
+
+
 
 async getGenerationState() {
   return await this.page.evaluate(() => {
