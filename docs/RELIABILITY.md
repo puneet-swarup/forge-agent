@@ -406,8 +406,9 @@ silently disappears is as untrustworthy as one that is never admitted):
    `.qwen-markdown` and the send class confirmed). `ollama` was misconfigured
    rather than unverified: it pointed at port 11434, which is Ollama's REST API
    and serves plain text, so no selector could ever match. It now drives the
-   bundled chat page. Not yet verified: `local-chat`, and `google` — which is
-   research-only by design. `--diagnose`
+   bundled chat page, and `OLLAMA_UI_URL` remains the way to point it at a
+   remote UI (a Colab tunnel, Open WebUI). Not yet verified: `local-chat`, and
+   `google` — which is research-only by design. `--diagnose`
    makes each one a two-minute job, but it still needs a human with a login;
    there is no way to check someone else's UI from CI.
 2. **No provenance on untrusted content.** `read_url` output reaches the model

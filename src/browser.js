@@ -109,7 +109,18 @@ class ForgeBrowser {
     // Initialize model adapter
     this.adapter = getAdapter(config.MODEL, this.page, config);
 
-    await this._navigate(getModelUrl(config.MODEL));
+    // Ask the adapter where its UI is, not the factory.
+    //
+    // These disagreed: the factory returned the endpoint (for ollama,
+    // http://localhost:11434 — the REST API, which serves plain text), while the
+    // adapter's getModelUrl() honoured OLLAMA_UI_URL and the health check
+    // expected that instead. The run navigated to one URL and was then told it
+    // was on the wrong page. One source of truth: the adapter.
+    const targetUrl = this.adapter && typeof this.adapter.getModelUrl === 'function'
+      ? this.adapter.getModelUrl()
+      : getModelUrl(config.MODEL);
+
+    await this._navigate(targetUrl);
 
     // Run full session health check — handles login re-auth automatically
     await runHealthCheckWithReAuth(this.page, this.adapter, config, async () => {

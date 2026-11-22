@@ -16,6 +16,12 @@ Versioning: [Semantic Versioning](https://semver.org/)
   (which proxies to the daemon); `OLLAMA_UI_URL` overrides it for Open WebUI or
   similar. The adapter's selectors were also wrong for its own page — `#send-btn`
   and `#new-chat-btn`, not `#send-button` and `#new-chat`.
+- **One source of truth for a model's URL.** `browser.js` navigated using the
+  adapter *factory's* URL while the health check and `newChat()` used
+  `adapter.getModelUrl()`. For `ollama` those disagreed — the factory said
+  `http://localhost:11434` (the REST API) and the adapter honoured
+  `OLLAMA_UI_URL` — so a run navigated to one page and was then told it was on
+  the wrong one. Navigation now asks the adapter, with the factory as fallback.
 - **Qwen's new-chat and stop controls are `<div role="button">`, not buttons.**
   A live diagnostic matched none of the button-only selectors while the control
   was plainly on screen:
