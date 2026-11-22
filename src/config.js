@@ -109,6 +109,13 @@ const DEFAULTS = {
   PROMPT_PAUSE           : false,
   PROMPT_PAUSE_MIN_MS    : 10_000,
   PROMPT_PAUSE_MAX_MS    : 20_000,
+  // Per-model override, in seconds: { chatgpt: 2, deepseek: 15 }. Takes
+  // precedence over the global range and needs no PROMPT_PAUSE.
+  PROMPT_PAUSE_BY_MODEL  : {},
+  // Models that are a local process or a plain HTTP API. A pause before every
+  // prompt is pointless against them: nothing is throttling you, and the only
+  // cost is time. Overridable if you disagree.
+  PROMPT_PAUSE_SKIP      : ['local', 'ollama', 'colab', 'sarvam-api'],
   // Loom project index (src/loom_specs.md). ON by default since slice 4: the
   // stored index and incremental refresh are in place, so the digest ranks by
   // real reads instead of alphabetical ties. LOOM_ENABLED=0 (or --no-loom) makes
@@ -319,6 +326,9 @@ function validateConfigValue(key, value) {
     // deepseek, so a command that named one model drove another. Asking the
     // factory means adding an adapter can never leave a stale whitelist behind.
     MODEL             : v => isKnownModel(v),
+    PROMPT_PAUSE_BY_MODEL: v => v && typeof v === 'object' && !Array.isArray(v)
+      && Object.values(v).every((n) => typeof n === 'number' && n >= 0 && n <= 600),
+    PROMPT_PAUSE_SKIP : v => Array.isArray(v) && v.every((m) => typeof m === 'string'),
     OLLAMA_BASE_URL   : v => typeof v === 'string',
     OLLAMA_API_KEY    : v => typeof v === 'string',
     OLLAMA_MODEL      : v => typeof v === 'string' && v.length > 0,

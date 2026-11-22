@@ -121,6 +121,20 @@ Versioning: [Semantic Versioning](https://semver.org/)
   page during shutdown is no longer reported as "Unexpected error".
 
 ### Added
+- **Per-model anti-block pause.** The original design waited a random 10-20 s
+  before every prompt to avoid being blocked by a cloud provider. That was the
+  right idea aimed at the wrong target: a local daemon or a plain HTTP API is not
+  going to block anyone, and 15 s per step costs 15 minutes on a 60-step task.
+
+      --pause=15              wait 15 s before each prompt, for this model
+      --pause=deepseek:15     set one model by name
+      --pause=chatgpt:2       and another
+      --no-pause              no pause at all
+      --prompt-pause          the old blanket 10-20 s for every model
+
+  `local`, `ollama`, `colab` and `sarvam-api` never pause unless named explicitly
+  (`PROMPT_PAUSE_SKIP`). The policy lives in `resolvePromptPause()`, a pure
+  function, so it is tested without a browser or a clock.
 - **`--probe=<url>`** — test an OpenAI-compatible endpoint (llama.cpp, vLLM,
   Ollama, a Colab tunnel) without involving the agent. It reports three things
   separately, because they fail differently: does the tunnel answer

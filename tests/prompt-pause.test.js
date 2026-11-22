@@ -1,91 +1,119 @@
-// tests/prompt-pause.test.js - anti-block prompt pause (PROMPT_PAUSE)
+// tests/prompt-pause.test.js — the anti-block pause, per model.
+//
+// The original design was a blanket 10-20 s wait before every prompt, to avoid
+// being blocked by a cloud provider. That is the right idea aimed at the wrong
+// target: a local daemon and a plain HTTP API are not going to block anyone, and
+// 15 s per step costs 15 minutes on a 60-step task.
+//
+// The policy is now per model, and pure — testable without a browser or a clock.
 'use strict';
 
-const config = require('../src/config');
-const ForgeBrowser = require('../src/browser');
+const { resolvePromptPause } = require('../src/browser');
 
-describe('prompt pause (anti-block)', () => {
-  let saved;
+const base = {
+  PROMPT_PAUSE: false,
+  PROMPT_PAUSE_MIN_MS: 10_000,
+  PROMPT_PAUSE_MAX_MS: 20_000,
+  PROMPT_PAUSE_BY_MODEL: {},
+  PROMPT_PAUSE_SKIP: ['local', 'ollama', 'colab', 'sarvam-api'],
+};
 
-  beforeEach(() => {
-    saved = {
-      PROMPT_PAUSE: config.PROMPT_PAUSE,
-      PROMPT_PAUSE_MIN_MS: config.PROMPT_PAUSE_MIN_MS,
-      PROMPT_PAUSE_MAX_MS: config.PROMPT_PAUSE_MAX_MS,
+describe('per-model pause', () => {
+  test('an explicit figure wins over everything else', () => {
+    const cfg = { ...base, PROMPT_PAUSE_BY_MODEL: { chatgpt: 2, deepseek: 15 } };
+    expect(resolvePromptPause('chatgpt', cfg)).toBe(2000);
+    expect(resolvePromptPause('deepseek', cfg)).toBe(15000);
+  });
+
+  test('the two models can differ, which is the point', () => {
+    const cfg = { ...base, PROMPT_PAUSE_BY_MODEL: { chatgpt: 2, deepseek: 15 } };
+    expect(resolvePromptPause('chatgpt', cfg)).not.toBe(resolvePromptPause('deepseek', cfg));
+  });
+
+  test('a model with no entry and no global pause does not wait', () => {
+    expect(resolvePromptPause('gemini', { ...base, PROMPT_PAUSE_BY_MODEL: { deepseek: 15 } })).toBe(0);
+  });
+
+  test('model names are case-insensitive', () => {
+    const cfg = { ...base, PROMPT_PAUSE_BY_MODEL: { deepseek: 15 } };
+    expect(resolvePromptPause('DeepSeek', cfg)).toBe(15000);
+  });
+
+  test('zero is respected as "no pause", not treated as unset', () => {
+    const cfg = { ...base, PROMPT_PAUSE: true, PROMPT_PAUSE_BY_MODEL: { deepseek: 0 } };
+    expect(resolvePromptPause('deepseek', cfg)).toBe(0);
+  });
+});
+
+describe('local and HTTP models never pause by default', () => {
+  for (const model of ['local', 'ollama', 'colab', 'sarvam-api']) {
+    test(`${model} skips the pause even when one is configured`, () => {
+      const cfg = {
+        ...base,
+        PROMPT_PAUSE: true,
+        PROMPT_PAUSE_BY_MODEL: { [model]: 15 },
+      };
+      expect(resolvePromptPause(model, cfg)).toBe(0);
+    });
+  }
+
+  test('an HTTP model can still be forced to pause by removing it from the skip list', () => {
+    const cfg = {
+      ...base,
+      PROMPT_PAUSE_SKIP: [],
+      PROMPT_PAUSE_BY_MODEL: { ollama: 3 },
     };
-    jest.useFakeTimers();
+    expect(resolvePromptPause('ollama', cfg)).toBe(3000);
+  });
+});
+
+describe('the blanket pause still works', () => {
+  test('PROMPT_PAUSE produces a value inside the configured range', () => {
+    const cfg = { ...base, PROMPT_PAUSE: true };
+    for (const r of [0, 0.5, 0.999]) {
+      const ms = resolvePromptPause('deepseek', cfg, () => r);
+      expect(ms).toBeGreaterThanOrEqual(10_000);
+      expect(ms).toBeLessThanOrEqual(20_000);
+    }
   });
 
-  afterEach(() => {
-    jest.useRealTimers();
-    Object.assign(config, saved);
+  test('off by default, so a run is not taxed', () => {
+    expect(resolvePromptPause('deepseek', base)).toBe(0);
   });
 
-  // Changed in 2.2.0: the fixed pause is opt-in. Paying 10-20 s before every
-  // prompt cost minutes per task and did nothing for real throttling, which is
-  // now handled reactively (src/throttle.js, tests/throttle.test.js).
-  test('config default: OFF, with the 10s-20s bounds kept for opt-in', () => {
-    expect(saved.PROMPT_PAUSE).toBe(false);
-    expect(saved.PROMPT_PAUSE_MIN_MS).toBe(10000);
-    expect(saved.PROMPT_PAUSE_MAX_MS).toBe(20000);
+  test('a malformed range falls back rather than producing NaN', () => {
+    const cfg = { ...base, PROMPT_PAUSE: true, PROMPT_PAUSE_MIN_MS: 'x', PROMPT_PAUSE_MAX_MS: null };
+    const ms = resolvePromptPause('deepseek', cfg, () => 0);
+    expect(Number.isFinite(ms)).toBe(true);
+    expect(ms).toBe(10_000);
+  });
+});
+
+describe('the CLI exposes it', () => {
+  const { parseArgs } = require('../src/index');
+  const parse = (...argv) => parseArgs(['node', 'forge-agent', ...argv]);
+
+  test('--pause=<sec> sets the selected model', () => {
+    expect(parse('--pause=15').pauseSeconds).toBe(15);
   });
 
-  test('enabling it restores the pause', async () => {
-    const b = new ForgeBrowser();
-    config.PROMPT_PAUSE = true;
-    await b._promptPause();                 // first prompt: never pauses
-    expect(jest.getTimerCount()).toBe(0);
-
-    b._promptPause();                       // second prompt: schedules one
-    expect(jest.getTimerCount()).toBe(1);
+  test('--pause=<model>:<sec> sets one model by name', () => {
+    expect(parse('--pause=deepseek:15').pauseByModel).toEqual({ deepseek: 15 });
+    expect(parse('--pause=chatgpt:2').pauseByModel).toEqual({ chatgpt: 2 });
   });
 
-  test('first prompt does NOT pause', async () => {
-    const b = new ForgeBrowser();
-    config.PROMPT_PAUSE = true;
-    const p = b._promptPause();
-    // Resolves immediately (no timer scheduled).
-    await expect(p).resolves.toBeUndefined();
-    expect(jest.getTimerCount()).toBe(0);
+  test('two per-model pauses accumulate', () => {
+    const args = parse('--pause=deepseek:15', '--pause=chatgpt:2');
+    expect(args.pauseByModel).toEqual({ deepseek: 15, chatgpt: 2 });
   });
 
-  test('second prompt pauses within [MIN,MAX]', async () => {
-    const b = new ForgeBrowser();
-    config.PROMPT_PAUSE = true;
-    config.PROMPT_PAUSE_MIN_MS = 10000;
-    config.PROMPT_PAUSE_MAX_MS = 20000;
-
-    await b._promptPause(); // first -> no pause
-    expect(jest.getTimerCount()).toBe(0);
-
-    let resolved = false;
-    const p = b._promptPause().then(() => { resolved = true; });
-    expect(jest.getTimerCount()).toBe(1);
-    expect(resolved).toBe(false);
-
-    jest.runAllTimers();
-    await p;
-    expect(resolved).toBe(true);
+  test('--no-pause is a flag', () => {
+    expect(parse('--no-pause').noPause).toBe(true);
   });
 
-  test('disabled: PROMPT_PAUSE=false means no timer on any prompt', async () => {
-    const b = new ForgeBrowser();
-    config.PROMPT_PAUSE = false;
-    await b._promptPause(); // 1
-    await b._promptPause(); // 2
-    await b._promptPause(); // 3
-    expect(jest.getTimerCount()).toBe(0);
-  });
-
-  test('bad bounds fall back to 10s-20s (never negative/zero)', async () => {
-    const b = new ForgeBrowser();
-    config.PROMPT_PAUSE = true;
-    config.PROMPT_PAUSE_MIN_MS = -5;
-    config.PROMPT_PAUSE_MAX_MS = 'oops';
-    await b._promptPause(); // first
-    const p = b._promptPause(); // second -> must schedule a positive timer
-    expect(jest.getTimerCount()).toBe(1);
-    jest.runAllTimers();
-    await p;
+  test('a non-numeric pause is rejected rather than silently ignored', () => {
+    const src = require('fs').readFileSync(
+      require('path').join(__dirname, '..', 'src', 'index.js'), 'utf8');
+    expect(src).toContain('--pause needs a number of seconds');
   });
 });

@@ -8,6 +8,48 @@ const logger       = require('./logger');
 const { getAdapter, getModelUrl } = require('./adapter-factory');
 const { runHealthCheckWithReAuth } = require('./health');
 
+/**
+ * How long to wait before the next prompt to this model, in milliseconds.
+ *
+ * Three sources, in order:
+ *   1. PROMPT_PAUSE_BY_MODEL[model]  — an explicit per-model figure, in seconds
+ *   2. PROMPT_PAUSE + the global range — the old blanket behaviour
+ *   3. nothing
+ *
+ * A model in PROMPT_PAUSE_SKIP never waits: a local daemon or an HTTP API is not
+ * going to block us, so a pause there is pure delay.
+ *
+ * Pure, so the policy can be tested without a browser or a clock.
+ *
+ * @param {string} model
+ * @param {object} [cfg]
+ * @param {() => number} [random]
+ * @returns {number} milliseconds; 0 for no pause
+ */
+function resolvePromptPause(model, cfg = config, random = Math.random) {
+  const name = String(model || '').toLowerCase();
+
+  const skip = Array.isArray(cfg.PROMPT_PAUSE_SKIP) ? cfg.PROMPT_PAUSE_SKIP : [];
+  if (skip.map((m) => String(m).toLowerCase()).includes(name)) return 0;
+
+  const byModel = cfg.PROMPT_PAUSE_BY_MODEL || {};
+  const explicit = byModel[name];
+  if (typeof explicit === 'number' && Number.isFinite(explicit)) {
+    // A single figure is used as-is; the anti-block jitter only matters for a
+    // range, and an explicit value should mean what it says.
+    return Math.max(0, Math.round(explicit * 1000));
+  }
+
+  if (!cfg.PROMPT_PAUSE) return 0;
+
+  const min = Number(cfg.PROMPT_PAUSE_MIN_MS);
+  const max = Number(cfg.PROMPT_PAUSE_MAX_MS);
+  const lo = Number.isFinite(min) && min > 0 ? min : 10000;
+  const hi = Number.isFinite(max) && max >= lo ? max : 20000;
+
+  return lo + Math.floor(random() * (hi - lo + 1));
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 //  Launch-argument builder
 // ─────────────────────────────────────────────────────────────────────────────
@@ -223,15 +265,14 @@ class ForgeBrowser {
   async _promptPause() {
     this._sendCount = (this._sendCount || 0) + 1;
     if (this._sendCount === 1) return; // no pause before the first prompt
-    // Opt-in since 2.2.0: a fixed pause before every prompt is a tax on every
-    // run and does nothing for real throttling (see src/throttle.js).
-    if (!config.PROMPT_PAUSE) return;
-    const min = Number(config.PROMPT_PAUSE_MIN_MS);
-    const max = Number(config.PROMPT_PAUSE_MAX_MS);
-    const lo = Number.isFinite(min) && min > 0 ? min : 10000;
-    const hi = Number.isFinite(max) && max >= lo ? max : 20000;
-    const waitMs = lo + Math.floor(Math.random() * (hi - lo + 1));
-    logger.dim("  Pausing " + (waitMs / 1000).toFixed(1) + "s before next prompt (anti-block)");
+
+    const waitMs = resolvePromptPause(config.MODEL, config);
+
+    // 0 means "no pause for this model" — a local daemon or a plain HTTP API is
+    // not throttling us, so the only cost would be time.
+    if (!waitMs) return;
+
+    logger.dim(`  Pausing ${(waitMs / 1000).toFixed(1)}s before next prompt (${config.MODEL})`);
     await new Promise(function (r) { setTimeout(r, waitMs); });
   }
 
@@ -335,3 +376,5 @@ class ForgeBrowser {
 ForgeBrowser.buildLaunchOptions = buildLaunchOptions;
 
 module.exports = ForgeBrowser;
+// The pause policy, exported so it can be tested without a browser or a clock.
+module.exports.resolvePromptPause = resolvePromptPause;

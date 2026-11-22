@@ -115,6 +115,7 @@ const KNOWN_FLAGS = new Set([
   '--parallel-tools', '--no-parallel-tools', '--completion-install',
   '--diagnostics', '--man', '--man-install',
   '--auto', '--copy', '--ollama-url', '--ollama-api-key', '--probe',
+  '--pause', '--no-pause',
 ]);
 
 /**
@@ -301,6 +302,7 @@ function parseArgs(argv) {
       case '--round-trip':  opts.roundTrip   = true;    break;
       case '--no-loom':     opts.noLoom      = true;    break;
       case '--probe':       opts.probe       = true;    break;
+      case '--no-pause':    opts.noPause     = true;    break;
       case '--port':        opts.port        = args[++i]; break;
       case '--json':        opts.json = true;         break;
       case '-a':
@@ -435,6 +437,19 @@ function parseArgs(argv) {
           opts.model = a.split('=')[1];
         } else if (a && a.startsWith('--diagnose=')) {
           opts.diagnose = a.split('=')[1];
+        } else if (a && a.startsWith('--pause=')) {
+          // --pause=15        -> 15s before each prompt, for the selected model
+          // --pause=deepseek:15  -> 15s for deepseek, whichever model is selected
+          const value = a.slice('--pause='.length);
+          const colon = value.lastIndexOf(':');
+
+          if (colon > 0) {
+            const model = value.slice(0, colon).toLowerCase();
+            const seconds = Number(value.slice(colon + 1));
+            opts.pauseByModel = { ...(opts.pauseByModel || {}), [model]: seconds };
+          } else {
+            opts.pauseSeconds = Number(value);
+          }
         } else if (a && a.startsWith('--probe=')) {
           opts.probe = a.split('=')[1];
         } else if (a && a.startsWith('--port=')) {
@@ -702,6 +717,10 @@ ${c('1;36', 'DEBUGGING')}
                          send/receive check. Add --headed to watch it.
       --round-trip       With --diagnose: send one message and report the reply
       --no-loom          Disable the project index for this run (on by default)
+      --pause=<sec>      Wait this long before each prompt, for the selected model
+      --pause=<m>:<sec>  Per-model, e.g. --pause=deepseek:15 --pause=chatgpt:2
+      --no-pause         No anti-block pause at all
+      --prompt-pause     Use the blanket 10-20s pause for every model
       --probe=<url>      Test an OpenAI-compatible endpoint (llama.cpp, vLLM,
                          Ollama, Colab tunnel): models, then one completion
       --test-model=<n>   Test: deepseek | qwen | chatgpt | gemini | google | sarvam
@@ -760,6 +779,28 @@ ${c('1;36', 'MORE INFO')}
 
 function applyFlagsToConfig(args, config) {
   // Model
+  // ── Anti-block pause ──────────────────────────────────────────────────────
+  // Per-model, in seconds: --pause=15 sets it for the selected model,
+  // --pause=deepseek:15 sets it for one model by name. Local and HTTP models
+  // never pause unless named explicitly (PROMPT_PAUSE_SKIP).
+  if (args.noPause) {
+    config.PROMPT_PAUSE = false;
+    config.PROMPT_PAUSE_BY_MODEL = {};
+  } else if (args.pauseSeconds !== undefined || args.pauseByModel) {
+    const byModel = { ...(config.PROMPT_PAUSE_BY_MODEL || {}), ...(args.pauseByModel || {}) };
+
+    if (args.pauseSeconds !== undefined) {
+      const seconds = Number(args.pauseSeconds);
+      if (!Number.isFinite(seconds) || seconds < 0) {
+        console.error('  --pause needs a number of seconds, e.g. --pause=15');
+        process.exit(1);
+      }
+      byModel[String(args.model || config.MODEL).toLowerCase()] = seconds;
+    }
+
+    config.PROMPT_PAUSE_BY_MODEL = byModel;
+  }
+
   // Loom switch. On by default; --no-loom turns it off for a run.
   if (args.noLoom) {
     config.LOOM_ENABLED = false;
