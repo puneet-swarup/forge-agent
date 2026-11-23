@@ -679,7 +679,42 @@ diverged badly enough to hand the parser a whole transcript instead of a reply.
 `tests/adapter-template.test.js` now asserts no adapter defines a discovery
 method, and that the three that need a structural hook declare exactly one.
 
-## 21. CLI flag parsing
+## 21. The transport contract
+
+The loop depends on four methods and a declaration of capabilities — not on a
+browser, and not on a DOM.
+
+```
+send(text)              hand the prompt over
+awaitReply(opts)        the reply, or a throw
+newChat()               fresh conversation
+isGenerating()          is a reply still arriving
+capabilities            { stop, stream, freshChat, observable, uploads }
+```
+
+Two implementations, chosen by the model's `kind` in the registry:
+
+| kind | transport | how awaitReply is fulfilled |
+| --- | --- | --- |
+| `browser` | `BrowserChatTransport` | scrape a page: composer, send button, response container, completion heuristics |
+| `http` | `HttpChatTransport` | one POST to `/v1/chat/completions` |
+
+The point of the split: `local` and `colab` used to launch Chromium, serve a
+bundled HTML page and scrape it — with selectors written for elements this
+repository owns — in order to make one HTTP call. `HttpChatTransport` does the
+call in 246 lines and needs no browser at all, so those models are now testable
+without the browser job.
+
+Selectors, structural fallbacks and completion detection stay where they were:
+inside the browser transport. An adapter supplies selector lists and, where its
+markup offers nothing to select on, one `_structuralFallback(kind)` hook.
+
+`capabilities` is where the two kinds are allowed to differ, stated rather than
+assumed: an endpoint has no page to watch (`observable: false`) and can abort a
+request (`stop: true`); a scraped UI is the reverse. Pretending they are the same
+is how an interface starts lying.
+
+## 22. CLI flag parsing
 
 `parseArgs(argv)` is exported and tested directly (`tests/cli-flags.test.js`).
 Three rules, each learned from a bug:

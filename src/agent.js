@@ -50,6 +50,7 @@ const { describeStep }             = require('./step-summary');
 class ForgeAgent {
   constructor(options = {}) {
     this.browser      = new ForgeBrowser();
+    this._transport   = null;   // set by run(); see the transport getter
     this.conversation = new ConversationManager();
     this.memory       = new MemoryStore();
     this.history      = new HistoryStore();
@@ -99,7 +100,24 @@ class ForgeAgent {
       logger.dim(`  Memory: ${context.completedTasks.length} past task(s) loaded`);
     }
 
-    await this.browser.launch();
+    // The registry declares a category per model, and transport-factory turns it
+    // into a transport. An HTTP model never launches a browser: it was starting
+    // Chromium, serving a bundled page and scraping it to make one HTTP call.
+    const { createTransport, needsBrowser } = require('./transport-factory');
+
+    this.transport = createTransport({
+      model: config.MODEL,
+      config,
+      browser: this.browser,
+    });
+
+    this._needsBrowser = needsBrowser(config.MODEL, config);
+
+    if (this._needsBrowser) {
+      await this.browser.launch();
+    } else {
+      logger.dim(`  ${config.MODEL}: endpoint transport, no browser`);
+    }
 
     // Let the read_file tool reach the live adapter for opt-in upload
     // (ARCHITECTURE.md §11). No-op unless READ_FILE_UPLOAD is enabled.
@@ -109,7 +127,7 @@ class ForgeAgent {
       printDockerInfo();
     }
 
-    await this.browser.newChat();
+    await this.transport.newChat();
 
     // Subscribe to config changes to update TUI status bar
     const { onConfigChange } = require('./config');
@@ -136,7 +154,10 @@ class ForgeAgent {
     if (typeof this._sessionCtxUpdate  === 'function') this._sessionCtxUpdate();
     if (typeof this._sessionCtxVerify  === 'function') this._sessionCtxVerify();
     if (typeof this._sessionCtxDestroy === 'function') this._sessionCtxDestroy();
-    await this.browser.close();
+    if (this._needsBrowser !== false) await this.browser.close();
+    if (this.transport && typeof this.transport.close === 'function') {
+      try { await this.transport.close(); } catch (_) { /* closing must never fail */ }
+    }
   }
 
   // -- Session context helpers --
@@ -276,7 +297,7 @@ class ForgeAgent {
   async _rotateChat(task, progress, reason) {
     logger.warn(`Restarting chat — ${reason}`);
 
-    await this.browser.newChat();
+    await this.transport.newChat();
     await sleep(2_000);
 
     const message = this.conversation.buildResumeMessage({
@@ -296,7 +317,7 @@ class ForgeAgent {
     // history now, so the array cannot grow without bound across rotations.
     this.conversation.resetTo(message);
 
-    await this.browser.sendMessage(message);
+    await this.transport.send(message);
     this._turnsSinceRotation = 0;
     logger.dim('  Contract re-sent: system prompt + plan + progress');
   }
@@ -447,6 +468,31 @@ class ForgeAgent {
    * Run a task to completion.
    * Returns the final response string, or a partial summary on timeout.
    */
+  /**
+   * The transport this run talks through.
+   *
+   * Created by run() from the model's category. If something reaches for it
+   * before that — a test driving the loop directly, a caller that set `browser`
+   * by hand — it falls back to the browser transport, which is the default
+   * category. That keeps the class usable without the full startup path without
+   * pretending an HTTP model is a browser.
+   */
+  get transport() {
+    if (!this._transport) {
+      if (!this.browser) {
+        throw new Error('agent has neither a transport nor a browser');
+      }
+      // eslint-disable-next-line global-require
+      const { BrowserChatTransport } = require('./browser-transport');
+      this._transport = new BrowserChatTransport({ browser: this.browser, model: config.MODEL });
+    }
+    return this._transport;
+  }
+
+  set transport(value) {
+    this._transport = value;
+  }
+
   async run(task, templateName = null) {
     if (this.commandRouter && this.commandRouter.isCommand(task)) {
       const result = await this.commandRouter.execute(task);
@@ -544,7 +590,7 @@ class ForgeAgent {
         );
 
         try {
-          await this.browser.sendMessage(firstMsg);
+          await this.transport.send(firstMsg);
 
           // A plan is an optimisation, not a requirement. Without a bound, a
           // plan response that is never detected leaves the run sitting at
@@ -552,7 +598,7 @@ class ForgeAgent {
           // response timeout — which reads as a hang, and did.
           const planTimeoutMs = config.PLAN_TIMEOUT_MS || 90_000;
           const planResponse = await Promise.race([
-            this.browser.waitForResponse(),
+            this.transport.awaitReply(),
             new Promise((_, reject) => {
               const timer = setTimeout(
                 () => reject(new Error(`no plan response within ${Math.round(planTimeoutMs / 1000)}s`)),
@@ -575,16 +621,16 @@ class ForgeAgent {
             const feedback = this.conversation.addToolResult('PLANNER', planContext, false);
 
             logger.info('Starting execution based on plan...');
-            await this.browser.sendMessage(feedback);
+            await this.transport.send(feedback);
           } else {
             logger.warn('Could not parse plan. Proceeding with normal execution.');
             const nudge = this.conversation.addToolResult('SYSTEM', 'Please proceed with the task normally.', false);
-            await this.browser.sendMessage(nudge);
+            await this.transport.send(nudge);
           }
         } catch (err) {
           logger.warn(`Planning failed: ${err.message}. Proceeding without plan.`);
           const recovery = this.conversation.addToolResult('SYSTEM', 'Planning failed. Please proceed with the task normally.', true);
-          await this.browser.sendMessage(recovery);
+          await this.transport.send(recovery);
         }
       } else {
         const firstMsg = this.conversation.buildFirstMessage(
@@ -600,7 +646,7 @@ class ForgeAgent {
         logger.info('Sending task to ' + config.MODEL + '...');
 
         try {
-          await this.browser.sendMessage(firstMsg);
+          await this.transport.send(firstMsg);
         } catch (err) {
           this._running = false;
           throw err;
@@ -642,7 +688,7 @@ class ForgeAgent {
         // ── Wait for response ──────────────────────────────────────────────
         let rawResponse;
         try {
-          rawResponse = await this.browser.waitForResponse();
+          rawResponse = await this.transport.awaitReply();
         } catch (err) {
           logger.warn(`Response failed: ${err.message}`);
           progress.recordError(err.message);
@@ -712,7 +758,7 @@ class ForgeAgent {
               'No response received. Please continue with the next step.',
               true
             );
-            await this.browser.sendMessage(nudge);
+            await this.transport.send(nudge);
           }
           step++;
           continue;
@@ -760,7 +806,7 @@ class ForgeAgent {
             'The provider rate-limited that request. Continue with the next step.',
             true
           );
-          await this.browser.sendMessage(retry);
+          await this.transport.send(retry);
           step++;
           continue;
         }
@@ -816,7 +862,7 @@ class ForgeAgent {
 
             logger.warn(`Tool call in a non-canonical format (${verdict.strategy}). Asking for <tool_call>.`);
             const correction = this.conversation.addToolResult('SYSTEM', verdict.message, true);
-            await this.browser.sendMessage(correction);
+            await this.transport.send(correction);
             continue;
           }
 
@@ -910,7 +956,7 @@ class ForgeAgent {
                   `Consider using a different tool or a different strategy.`,
                   true
                 );
-                await this.browser.sendMessage(skipMsg);
+                await this.transport.send(skipMsg);
                 step++;
                 continue;
               } else if (choice === 'n') {
@@ -933,7 +979,7 @@ class ForgeAgent {
           if (_planRefusal) {
             progress.recordError('plan gate: no FORGE_PLAN.md');
             const gateMsg = this.conversation.addToolResult('SYSTEM', _planRefusal, true);
-            await this.browser.sendMessage(gateMsg);
+            await this.transport.send(gateMsg);
             step++;
             continue;
           }
@@ -965,7 +1011,7 @@ class ForgeAgent {
                   `Permission denied by user. Do not retry the exact same action — try a different approach or continue with other parts of the task.`,
                   true
                 );
-                await this.browser.sendMessage(denialMsg);
+                await this.transport.send(denialMsg);
                 step++;
                 continue;
               }
@@ -1037,7 +1083,7 @@ class ForgeAgent {
             this.conversation.compress({ keepRecent: config.CONTEXT_KEEP_RECENT });
           }
 
-          await this.browser.sendMessage(feedbackMsg);
+          await this.transport.send(feedbackMsg);
           step++;
           continue;
         }
@@ -1066,7 +1112,7 @@ class ForgeAgent {
             'Reply with a single <tool_call> block using an exact tool name.',
             true
           );
-          await this.browser.sendMessage(repair);
+          await this.transport.send(repair);
           step++;
           continue;
         }
@@ -1081,7 +1127,7 @@ class ForgeAgent {
             `Parse error: ${parsed.message}\n\nPlease try again with valid JSON in your tool call.`,
             true
           );
-          await this.browser.sendMessage(recovery);
+          await this.transport.send(recovery);
           step++;
           continue;
         }
@@ -1122,7 +1168,7 @@ class ForgeAgent {
                 ].join('\n'),
                 true
               );
-              await this.browser.sendMessage(feedback);
+              await this.transport.send(feedback);
               step++;
               continue;
             }
@@ -1137,7 +1183,7 @@ class ForgeAgent {
           if (_planEnd) {
             progress.recordError('plan gate: plan still open');
             const gateMsg = this.conversation.addToolResult('SYSTEM', _planEnd, true);
-            await this.browser.sendMessage(gateMsg);
+            await this.transport.send(gateMsg);
             step++;
             continue;
           }
@@ -1160,7 +1206,7 @@ class ForgeAgent {
               '<tool_call>\n{"tool": "TOOL_NAME", "args": {}}\n</tool_call>',
               true
             );
-            await this.browser.sendMessage(retry);
+            await this.transport.send(retry);
             step++;
             continue;
           }
@@ -1296,7 +1342,7 @@ class ForgeAgent {
           true
         );
 
-        await this.browser.sendMessage(correctionMsg);
+        await this.transport.send(correctionMsg);
         step++;
         continue;
       }
@@ -1319,8 +1365,8 @@ class ForgeAgent {
       const { buildPlanningPrompt, parsePlan } = require('./planner');
       const planPrompt = buildPlanningPrompt(task);
       logger.dim('  📋 Generating execution plan...');
-      await this.browser.sendMessage(planPrompt);
-      const planResponse = await this.browser.waitForResponse();
+      await this.transport.send(planPrompt);
+      const planResponse = await this.transport.awaitReply();
       const plan = parsePlan(planResponse);
       return plan;
     } catch (e) {
@@ -1372,7 +1418,7 @@ class ForgeAgent {
   async _runToolBatch(calls, progress) {
     if (!Array.isArray(calls) || calls.length === 0) {
       const emptyMsg = this.conversation.addToolResult('SYSTEM', 'Empty tool batch received. Please emit one or more tool calls.', true);
-      await this.browser.sendMessage(emptyMsg);
+      await this.transport.send(emptyMsg);
       return { stop: false };
     }
 
@@ -1384,7 +1430,7 @@ class ForgeAgent {
       if (refusal) {
         progress.recordError('plan gate: no FORGE_PLAN.md');
         const gateMsg = this.conversation.addToolResult('SYSTEM', refusal, true);
-        await this.browser.sendMessage(gateMsg);
+        await this.transport.send(gateMsg);
         return { stop: false };
       }
     }
@@ -1413,7 +1459,7 @@ class ForgeAgent {
           'Permission denied by user for a tool in the batch. Do not retry the exact same action - try a different approach or continue with other parts of the task.',
           true
         );
-        await this.browser.sendMessage(denialMsg);
+        await this.transport.send(denialMsg);
         return { stop: false, denied: true };
       }
       this.permissionStore.record(category, decision === 'once' ? null : decision);
@@ -1435,7 +1481,7 @@ class ForgeAgent {
     } catch (err) {
       logger.warn('Batch execution failed: ' + err.message);
       const recovery = this.conversation.addToolResult('SYSTEM', 'Batch execution failed: ' + err.message + '. Please retry with individual tool calls.', true);
-      await this.browser.sendMessage(recovery);
+      await this.transport.send(recovery);
       return { stop: false };
     }
 
@@ -1471,7 +1517,7 @@ class ForgeAgent {
       this.conversation.compress({ keepRecent: config.CONTEXT_KEEP_RECENT });
     }
 
-    await this.browser.sendMessage(combined);
+    await this.transport.send(combined);
     return { stop: false };
   }
 

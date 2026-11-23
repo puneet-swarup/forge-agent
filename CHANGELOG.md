@@ -121,6 +121,13 @@ Versioning: [Semantic Versioning](https://semver.org/)
   page during shutdown is no longer reported as "Unexpected error".
 
 ### Added
+- **The transport contract, and a browserless path for endpoint models.** The loop
+  now depends on four methods — `send`, `awaitReply`, `newChat`, `isGenerating` —
+  plus declared `capabilities`, instead of reaching into a browser 30 times.
+  Models declare a `kind`: `browser` (scrape a page you do not control) or `http`
+  (one POST). `local` and `colab` were launching Chromium, serving a bundled HTML
+  page and scraping it to make one HTTP call; they now use `HttpChatTransport`
+  and never start a browser.
 - **Loom query tools: `recall` and `whats_here`.** The index was written and
   never read — only the digest touched it. Two tools now answer the questions an
   agent asks right after orientation:
