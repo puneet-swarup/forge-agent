@@ -43,6 +43,23 @@ treating "I can build this" as a reason to keep it.
 A plan is also the only place "how will this be verified" gets answered before
 the code exists, rather than after.
 
+### Before removing anything, state what it was for
+
+If the answer is "I don't know", the removal does not happen — it becomes a
+question instead.
+
+This is not caution for its own sake. `local-chat-adapter` was 418 lines that
+launched a browser, served a bundled page and scraped it. Measured by cost it
+looked like ceremony, and it was removed on that basis. It was a reverse proxy
+that answered CORS preflight, set the ngrok skip header, and kept a bearer token
+off the page — things Node does not need and a browser client cannot do without.
+The measurement was of cost; the question was of value, and they are different
+questions.
+
+The tell: I could describe what the code did and not why it existed. Cost is
+easy to measure, which is exactly why it gets measured instead of the harder
+question.
+
 ## Coordination rule — one writer at a time
 
 Two workers share this repo: the **lead agent** (interactive, merges) and the
