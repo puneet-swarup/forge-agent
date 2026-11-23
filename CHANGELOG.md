@@ -121,6 +121,18 @@ Versioning: [Semantic Versioning](https://semver.org/)
   page during shutdown is no longer reported as "Unexpected error".
 
 ### Added
+- **`--with-ui` — the local chat page and its reverse proxy, back and decoupled.**
+  `local` and `colab` no longer launch a browser, which also removed something
+  that was not the agent's to remove: a same-origin page at
+  `http://127.0.0.1:1337` and a proxy that answers CORS preflight, sets the ngrok
+  skip header, and carries a bearer token upstream so it never has to live in a
+  page. That existed for a reason — a browser talking to a remote endpoint hits
+  problems Node does not — and it is now its own module, started on request:
+
+      forge-agent --with-ui                 serve on 1337
+      forge-agent --with-ui=8080            serve on 8080
+
+  The agent still talks HTTP directly; the page is for you.
 - **The transport contract, and a browserless path for endpoint models.** The loop
   now depends on four methods — `send`, `awaitReply`, `newChat`, `isGenerating` —
   plus declared `capabilities`, instead of reaching into a browser 30 times.

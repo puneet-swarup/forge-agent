@@ -115,7 +115,7 @@ const KNOWN_FLAGS = new Set([
   '--parallel-tools', '--no-parallel-tools', '--completion-install',
   '--diagnostics', '--man', '--man-install',
   '--auto', '--copy', '--ollama-url', '--ollama-api-key', '--probe',
-  '--pause', '--no-pause',
+  '--pause', '--no-pause', '--with-ui',
 ]);
 
 /**
@@ -303,6 +303,7 @@ function parseArgs(argv) {
       case '--no-loom':     opts.noLoom      = true;    break;
       case '--probe':       opts.probe       = true;    break;
       case '--no-pause':    opts.noPause     = true;    break;
+      case '--with-ui':     opts.withUi      = true;    break;
       case '--port':        opts.port        = args[++i]; break;
       case '--json':        opts.json = true;         break;
       case '-a':
@@ -450,6 +451,8 @@ function parseArgs(argv) {
           } else {
             opts.pauseSeconds = Number(value);
           }
+        } else if (a && a.startsWith('--with-ui=')) {
+          opts.withUi = a.split('=')[1];
         } else if (a && a.startsWith('--probe=')) {
           opts.probe = a.split('=')[1];
         } else if (a && a.startsWith('--port=')) {
@@ -720,6 +723,8 @@ ${c('1;36', 'DEBUGGING')}
       --pause=<sec>      Wait this long before each prompt, for the selected model
       --pause=<m>:<sec>  Per-model, e.g. --pause=deepseek:15 --pause=chatgpt:2
       --no-pause         No anti-block pause at all
+      --with-ui[=<port>] Serve the local chat page + reverse proxy (CORS, auth,
+                         ngrok header) at http://127.0.0.1:1337 for your own use
       --prompt-pause     Use the blanket 10-20s pause for every model
       --probe=<url>      Test an OpenAI-compatible endpoint (llama.cpp, vLLM,
                          Ollama, Colab tunnel): models, then one completion
@@ -1989,6 +1994,41 @@ async function main() {
   }
 
   // ── Model Selector Test ──────────────────────────────────────────────────
+  // ── The local chat page and its reverse proxy ────────────────────────────
+  // Not needed by the agent (Node has no CORS), needed by you: a same-origin
+  // page that reaches a remote endpoint through a proxy which sets the ngrok
+  // skip header, carries the bearer token, and answers preflight.
+  if (args.withUi) {
+    const { startLocalChatServer } = require('./local-chat-server');
+    const port = Number.isInteger(Number(args.withUi)) ? Number(args.withUi) : undefined;
+
+    try {
+      const ui = await startLocalChatServer({
+        port,
+        upstream: args.modelUrl || config.OLLAMA_BASE_URL,
+        apiKey: args.apiKey || config.OLLAMA_API_KEY,
+        model: config.OLLAMA_MODEL,
+      });
+
+      logger.info(`Local chat UI: ${ui.url}`);
+      logger.dim(`  proxying to ${ui.upstream || '(no upstream configured)'}`);
+      logger.dim('  Ctrl+C to stop.');
+
+      // Serve until interrupted. A task, if one was given, is run by the normal
+      // path after this block returns; the page stays up for the whole run.
+      await new Promise((resolve) => {
+        process.once('SIGINT', resolve);
+        process.once('SIGTERM', resolve);
+      });
+
+      await ui.close();
+      process.exit(0);
+    } catch (err) {
+      console.error(`  Could not start the local chat UI: ${err.message}`);
+      process.exit(1);
+    }
+  }
+
   // ── Endpoint probe: for the HTTP-backed models, which have no UI to look at ──
   if (args.probe) {
     const { probeEndpoint, formatProbe } = require('./endpoint-probe');
