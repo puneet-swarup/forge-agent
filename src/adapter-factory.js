@@ -12,6 +12,9 @@ const MODEL_REGISTRY = Object.freeze({
     // 11434 is Ollama's REST API — browsing to it returns plain text, so every
     // selector would miss.
     displayName: 'Local model',
+    // kind decides which transport serves this model: 'http' talks to an
+    // endpoint, 'browser' scrapes a page it does not control.
+    kind: 'http',
     dedicated: true,
     url: 'file://' + __dirname + '/html/local-ollama-chat.html',
     aliases: ['local', 'local-chat', 'ollama', 'llama', 'llamacpp', 'local-ollama'],
@@ -20,6 +23,7 @@ const MODEL_REGISTRY = Object.freeze({
 
   colab: {
     displayName: 'Colab / Remote Tunnel',
+    kind: 'http',
     dedicated: true,
     // No default endpoint, deliberately. This used to be a personal ngrok
     // tunnel URL, which meant any user who ran `--model=colab` without
@@ -175,9 +179,14 @@ function getModelInfo(modelName) {
   return {
     name: canonicalName,
     displayName: definition.displayName,
+    // 'http' — talks to an endpoint; 'browser' — scrapes a page it does not
+    // control. Defaults to 'browser' because scraping is the demanding case:
+    // a model that has not declared itself HTTP must not be assumed to be.
+    kind: definition.kind === 'http' ? 'http' : 'browser',
     url: definition.url,
     aliases: [...definition.aliases],
- dedicated: definition.dedicated === true,
+    dedicated: definition.dedicated === true,
+    adapter: definition.adapter,
   };
 }
 
