@@ -94,8 +94,6 @@ jobs:
           TEST_PATH: ${{ inputs.test_path }}
           TIMEOUT_S: ${{ inputs.test_path && '300' || '1500' }}
           JEST_SUBSET: ${{ inputs.test_path && '1' || '' }}
-        env:
-          CI: 'true'
 
       - name: Upload test log (always)
         if: always()

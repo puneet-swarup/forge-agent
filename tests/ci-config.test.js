@@ -63,6 +63,18 @@ describe('ci.yml', () => {
     expect(ci).toMatch(/name: Upload test log \(always\)[\s\S]{0,120}if: always\(\)/);
   });
 
+  test('the workflow is valid YAML', () => {
+    // A duplicated key makes GitHub reject the whole file and every job fails
+    // before it starts — "This run likely failed because of a workflow file
+    // issue" — which looks like a CI failure and is a typo.
+    const yaml = require('js-yaml');
+    expect(() => yaml.load(ci)).not.toThrow();
+  });
+
+  test('the workflow keeps its name', () => {
+    expect(ci).toMatch(/^name: CI$/m);
+  });
+
   test('a new push cancels the previous run', () => {
     expect(ci).toMatch(/cancel-in-progress:\s*true/);
   });
