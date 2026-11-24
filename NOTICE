@@ -1,0 +1,11 @@
+Forge Agent
+Copyright 2026 Puneet Swarup
+
+This product includes software originally developed as "forge-agent" by
+Omar Azam (https://github.com/Omar-Azam/forge-agent), which is licensed
+under the MIT License. That upstream code, and any portion derived from it,
+remains under the MIT License — see LICENSE-MIT-UPSTREAM.
+
+Additions and modifications made in this repository are licensed under the
+PolyForm Noncommercial License 1.0.0 — see LICENSE. Commercial use of those
+portions requires a licence: puneetswarup@gmail.com

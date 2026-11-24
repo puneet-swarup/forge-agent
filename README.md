@@ -217,9 +217,10 @@ other gates are `npm run typecheck` (clean) and `node scripts/verify-prompt.js`
 
 ## Credits
 
-MIT licensed — see [LICENSE](LICENSE). Forge Agent was originally created by
+Licensed under [PolyForm Noncommercial 1.0.0](LICENSE) — commercial use requires a licence, write to puneetswarup@gmail.com. Forge Agent was originally created by
 [Omar Azam](https://github.com/Omar-Azam/forge-agent) and this repository began
-as a fork of that project. It has since been substantially extended here: the
+as a fork of that project; those upstream portions remain under MIT (see
+[LICENSE-MIT-UPSTREAM](LICENSE-MIT-UPSTREAM) and [NOTICE](NOTICE)). It has since been substantially extended here: the
 reliability pass described in [docs/RELIABILITY.md](docs/RELIABILITY.md), the
 Loom project index (in progress), session isolation and resume, the agent
 supervisor, and the CI/CD pipeline.
