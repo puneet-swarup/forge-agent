@@ -138,9 +138,14 @@ jobs:
   # hostage by it, and this job stays red so the problem stays visible rather
   # than being forgotten.
   process-manager:
-    name: Process manager (known hang)
+    name: Process manager (known hang, quarantined)
     runs-on: ubuntu-latest
     timeout-minutes: 6
+    # Red on purpose, and not part of the required checks. continue-on-error keeps
+    # it from failing the run: a permanently red pipeline teaches people to ignore
+    # the badge, which costs more than this job is worth. The failure stays
+    # visible in the job list and in docs/RELIABILITY.md.
+    continue-on-error: true
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5

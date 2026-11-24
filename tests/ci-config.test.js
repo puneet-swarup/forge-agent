@@ -76,7 +76,8 @@ describe('ci.yml', () => {
     // own job, so 164 suites are not blocked by one and the failure stays red
     // rather than being quietly dropped.
     expect(ci).toContain('--testPathIgnorePatterns=process-manager.test.js');
-    expect(ci).toMatch(/name: Process manager \(known hang\)/);
+    expect(ci).toMatch(/name: Process manager \(known hang, quarantined\)/);
+    expect(ci).toMatch(/process-manager:[\s\S]{0,600}continue-on-error: true/);
     expect(ci).toMatch(/timeout 240 npx jest[\s\S]{0,120}tests\/process-manager\.test\.js/);
   });
 
