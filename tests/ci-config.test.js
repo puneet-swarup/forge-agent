@@ -71,6 +71,15 @@ describe('ci.yml', () => {
     expect(() => yaml.load(ci)).not.toThrow();
   });
 
+  test('the suite that hangs in CI is isolated, not deleted', () => {
+    // It passes locally and hangs in CI; until the cause is known it runs in its
+    // own job, so 164 suites are not blocked by one and the failure stays red
+    // rather than being quietly dropped.
+    expect(ci).toContain('--testPathIgnorePatterns=process-manager.test.js');
+    expect(ci).toMatch(/name: Process manager \(known hang\)/);
+    expect(ci).toMatch(/timeout 240 npx jest[\s\S]{0,120}tests\/process-manager\.test\.js/);
+  });
+
   test('a killed test run fails the step, not passes it', () => {
     // `timeout … | tee` returns tee's status, so a hang killed at the limit
     // reported success. pipefail is the difference between CI telling the truth

@@ -89,6 +89,7 @@ jobs:
           set -o pipefail
           timeout ${TIMEOUT_S} npx jest --coverage --runInBand --verbose \
             ${TEST_PATH} \
+            --testPathIgnorePatterns=process-manager.test.js \
             --reporters=default \
             --reporters=./scripts/jest-suite-reporter.js \
             2>&1 | tee jest-output.log
@@ -128,6 +129,52 @@ jobs:
             console.log('Coverage — ' + line);
             fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, '### Coverage\n\n' + line + '\n');
           "
+
+  # -- The process-manager suite, on its own --
+  #
+  # It hangs in CI — before its first test, in isolation, on every Node version —
+  # and passes locally in 8.7 s, alone and in the same suite order. The cause is
+  # not yet known. Until it is, it runs here: the other 164 suites are not held
+  # hostage by it, and this job stays red so the problem stays visible rather
+  # than being forgotten.
+  process-manager:
+    name: Process manager (known hang)
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+        env:
+          SKIP_PLAYWRIGHT_INSTALL: '1'
+
+      - name: Run the process-manager suite
+        run: |
+          set -o pipefail
+          timeout 240 npx jest --runInBand --verbose \
+            tests/process-manager.test.js \
+            --reporters=default \
+            --reporters=./scripts/jest-suite-reporter.js \
+            2>&1 | tee jest-pm.log
+        env:
+          CI: 'true'
+
+      - name: Upload log (always)
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: jest-log-process-manager
+          path: jest-pm.log
+          retention-days: 7
+          if-no-files-found: warn
 
   # -- Integration: real headless Chromium against a local mock chat page --
   integration:
