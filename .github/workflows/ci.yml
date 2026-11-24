@@ -65,10 +65,22 @@ jobs:
       - name: Check for syntax errors
         run: npm run check:syntax:all
 
+      # `tee` so the log survives cancellation: a cancelled job publishes no
+      # logs, and a suite that stalls leaves nothing to read. The file is
+      # uploaded below with `if: always()`.
       - name: Run test suite with coverage
-        run: npm run test:coverage
+        run: npx jest --coverage --runInBand --verbose 2>&1 | tee jest-output.log
         env:
           CI: 'true'
+
+      - name: Upload test log (always)
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: jest-log-node-${{ matrix.node-version }}
+          path: jest-output.log
+          retention-days: 7
+          if-no-files-found: warn
 
       - name: Upload coverage report
         if: matrix.node-version == 20    # upload once
