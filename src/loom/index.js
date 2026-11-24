@@ -109,9 +109,34 @@ function open(opts = {}) {
     paths.ensureGitignore(loc.dir);
 
     const file = paths.dbFile(loc.dir);
-    let db = openStore(file, counters, opts.forceJson === true);
 
-    let migration = migrate.apply(db, { projectId: loc.projectId, forgeVersion: opts.forgeVersion });
+    // Two backends: `node:sqlite` when the runtime provides a usable one, and a
+    // JSON store that always works. db.js falls back when the module is missing,
+    // but a runtime can also provide it and then fail on PRAGMA, on the schema,
+    // or on a statement — and until now that disabled Loom for the whole run,
+    // silently, because attach.js turns a skipped store into an empty digest.
+    //
+    // So the fallback happens here too: if the sqlite store cannot be opened and
+    // migrated, the run gets the JSON store rather than nothing.
+    let db;
+    let migration;
+
+    try {
+      db = openStore(file, counters, opts.forceJson === true);
+      migration = migrate.apply(db, { projectId: loc.projectId, forgeVersion: opts.forgeVersion });
+    } catch (err) {
+      // Only a caller that already asked for JSON is out of options. `db` being
+      // undefined is the ordinary case here — openStore threw — and is exactly
+      // what the fallback is for.
+      if (opts.forceJson === true) throw err;
+
+      log.warn(`sqlite store unusable (${err.message}); using the JSON store`);
+      try { if (db) db.close(); } catch (_) { /* already gone */ }
+      quarantine(file);
+
+      db = openStore(file, counters, true);
+      migration = migrate.apply(db, { projectId: loc.projectId, forgeVersion: opts.forgeVersion });
+    }
     if (migration.rebuilt) {
       counters.dbRebuilds += 1;
       log.warn(`${migration.reason}; rebuilding the index`);

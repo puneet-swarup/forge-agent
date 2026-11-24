@@ -137,3 +137,42 @@ describe('failure never reaches the run (I1)', () => {
     }
   });
 });
+
+// ─────────────────────────────────────────────
+//  A store that fails to open must not disable Loom
+//
+//  db.js falls back to JSON when `node:sqlite` is missing. A runtime can also
+//  provide it and then fail on a PRAGMA, on the schema, or on a statement — and
+//  that used to disable Loom for the whole run, silently, because attach.js turns
+//  a skipped store into an empty digest. CI on Node 22 and 24 showed it as a
+//  digest assertion failing with "".
+// ─────────────────────────────────────────────
+
+describe('the store falls back rather than giving up', () => {
+  test('a failing sqlite store is replaced by the JSON store', () => {
+    const dir = tempProject();
+    const loom = require('../../src/loom/index');
+    const dbmod = require('../../src/loom/db');
+    const original = dbmod.open;
+    let calls = 0;
+
+    try {
+      // Fail the first open, succeed afterwards — the shape of a runtime whose
+      // sqlite module exists but cannot serve this schema.
+      dbmod.open = (file, opts) => {
+        calls += 1;
+        if (calls === 1) throw new Error('PRAGMA failed');
+        return original(file, opts);
+      };
+
+      const opened = loom.open({ root: dir });
+      expect(opened.skipped).toBe(false);
+      expect(calls).toBeGreaterThan(1);
+      expect(loom.db()).toBeTruthy();
+    } finally {
+      dbmod.open = original;
+      try { loom.close(); } catch (_) { /* ignore */ }
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }, 30000);
+});
