@@ -52,7 +52,15 @@ describe('ci.yml', () => {
   });
 
   test('runs the suite with coverage, so the threshold is enforced', () => {
-    expect(ci).toContain('npm run test:coverage');
+    // Spelled out rather than via `npm run test:coverage` so the log can be
+    // teed to a file — a cancelled job publishes no logs, and a stall leaves
+    // nothing to read.
+    expect(ci).toMatch(/npx jest --coverage --runInBand/);
+  });
+
+  test('the test log survives cancellation', () => {
+    expect(ci).toContain('tee jest-output.log');
+    expect(ci).toMatch(/name: Upload test log \(always\)[\s\S]{0,120}if: always\(\)/);
   });
 
   test('a new push cancels the previous run', () => {
