@@ -82,13 +82,15 @@ jobs:
         # minutes and still uploads its log, instead of twenty with nothing.
         # Coverage thresholds are skipped on a narrowed run: a subset cannot meet
         # a whole-project number, and failing on that would hide the real result.
-        run: >-
+        run: |
+          set -o pipefail   # without this, `| tee` returns tee's status and a
+                            # killed test run looks like a success
           timeout ${TIMEOUT_S}
-          npx jest --coverage --runInBand --verbose
-          ${TEST_PATH}
-          --reporters=default
-          --reporters=./scripts/jest-suite-reporter.js
-          2>&1 | tee jest-output.log
+          npx jest --coverage --runInBand --verbose \
+            ${TEST_PATH} \
+            --reporters=default \
+            --reporters=./scripts/jest-suite-reporter.js \
+            2>&1 | tee jest-output.log
         env:
           CI: 'true'
           TEST_PATH: ${{ inputs.test_path }}

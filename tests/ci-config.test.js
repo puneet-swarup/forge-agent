@@ -71,6 +71,13 @@ describe('ci.yml', () => {
     expect(() => yaml.load(ci)).not.toThrow();
   });
 
+  test('a killed test run fails the step, not passes it', () => {
+    // `timeout … | tee` returns tee's status, so a hang killed at the limit
+    // reported success. pipefail is the difference between CI telling the truth
+    // and CI hiding a hang.
+    expect(ci).toContain('set -o pipefail');
+  });
+
   test('the workflow keeps its name', () => {
     expect(ci).toMatch(/^name: CI$/m);
   });
