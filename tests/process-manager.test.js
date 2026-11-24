@@ -40,11 +40,15 @@ async function waitFor(predicate, { timeoutMs = 5000, intervalMs = 25, label = '
 // ─────────────────────────────────────────────
 
 afterEach(async () => {
-  // Stop and remove all processes after each test
+  // Stop and remove all processes after each test.
+  //
+  // killTree, not child.kill(): with `shell: true` the PID belongs to `sh`, and
+  // signalling it leaves the real command running. Those survivors accumulate
+  // and hold the pipes open, so the jest process never exits — which is what
+  // stalled CI for 19 minutes with no output.
+  const { killTree } = require('../src/process-manager');
   for (const [name, entry] of REGISTRY.entries()) {
-    if (entry.process) {
-      try { entry.process.kill('SIGKILL'); } catch {}
-    }
+    if (entry.process) killTree(entry.process, 'SIGKILL');
   }
   REGISTRY.clear();
   // Small delay to let processes die

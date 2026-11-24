@@ -124,7 +124,7 @@ function startProcess(name, command, opts = {}) {
     }
     // Stop existing before replacing
     if (existing.process) {
-      try { existing.process.kill('SIGTERM'); } catch {}
+      killTree(existing.process, 'SIGTERM');
     }
   }
 
@@ -144,12 +144,19 @@ function startProcess(name, command, opts = {}) {
   REGISTRY.set(name, entry);
 
   // Spawn using shell so npm scripts, pipes, etc. work
+  // detached puts the child in its own process group.
+  //
+  // Without it, `shell: true` means the PID here is the shell, not the command:
+  // killing it leaves the real process running. Those survivors accumulate — 17
+  // of them in one session — and because they hold the stdout/stderr pipes open,
+  // the parent that spawned them never exits. That is what stalled CI for 19
+  // minutes with no output: the tests had finished, the process had not.
   const child = spawn(command, [], {
     cwd,
     shell : true,
     env   : entry.env,
     stdio : ['ignore', 'pipe', 'pipe'],
-    detached: false,
+    detached: true,
   });
 
   entry.process = child;
@@ -209,6 +216,36 @@ function startProcess(name, command, opts = {}) {
  * @param {string} signal   - Signal to send (default: SIGTERM)
  * @returns {StopResult}
  */
+/**
+ * Kill a spawned process and everything it started.
+ *
+ * `shell: true` spawns `sh -c "<command>"`, so the recorded PID belongs to the
+ * shell. Sending a signal to it leaves the command running as an orphan. Because
+ * the child was spawned detached, it leads its own process group — so the group
+ * id is that PID, and `-pid` reaches the shell and the command together.
+ *
+ * @param {import('child_process').ChildProcess} child
+ * @param {string} [signal]
+ * @returns {boolean} whether anything was signalled
+ */
+function killTree(child, signal = 'SIGKILL') {
+  if (!child || !child.pid) return false;
+
+  try {
+    // Negative pid = the whole group.
+    process.kill(-child.pid, signal);
+    return true;
+  } catch (_) {
+    // No group (already gone, or the platform has none) — fall back to the PID.
+    try {
+      child.kill(signal);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+}
+
 function stopProcess(name, signal = 'SIGTERM') {
   const entry = REGISTRY.get(name);
 
@@ -221,7 +258,7 @@ function stopProcess(name, signal = 'SIGTERM') {
   }
 
   try {
-    entry.process.kill(signal);
+    killTree(entry.process, signal);
     entry.status = 'stopped';
     return { stopped: true, name, pid: entry.pid, message: `Sent ${signal} to "${name}" (PID ${entry.pid})` };
   } catch (err) {
@@ -375,6 +412,7 @@ function formatProcessLogs(name, logs, status) {
 }
 
 module.exports = {
+  killTree,
   startProcess,
   stopProcess,
   getProcessStatus,
