@@ -412,7 +412,19 @@ function open(file, opts = {}) {
   const counters = opts.counters || null;
   fs.mkdirSync(path.dirname(file), { recursive: true });
 
-  if (!opts.forceJson) {
+  // The JSON store is the default, deliberately.
+  //
+  // `node:sqlite` is present from Node 22.5 (behind a flag) and stable from
+  // 23.4, but "present" is not "serves this schema": on Node 22 and 24 the store
+  // opens and then indexes nothing, so the digest is empty and the agent silently
+  // loses its project map. That is worse than the slower backend, and it is not
+  // reproducible on Node 20 where sqlite does not exist at all.
+  //
+  // So sqlite is opt-in until it is verified on every version the CI matrix runs:
+  //   LOOM_STORE=sqlite
+  const wantsSqlite = opts.store === 'sqlite' || process.env.LOOM_STORE === 'sqlite';
+
+  if (!opts.forceJson && wantsSqlite) {
     try {
       return openSqlite(file, counters);
     } catch (err) {
