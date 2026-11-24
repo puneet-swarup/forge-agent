@@ -83,10 +83,11 @@ jobs:
         # Coverage thresholds are skipped on a narrowed run: a subset cannot meet
         # a whole-project number, and failing on that would hide the real result.
         run: |
-          set -o pipefail   # without this, `| tee` returns tee's status and a
-                            # killed test run looks like a success
-          timeout ${TIMEOUT_S}
-          npx jest --coverage --runInBand --verbose \
+          # pipefail, or `| tee` returns tee's status and a killed run looks
+          # like a success. `timeout` and the command must share a line: with
+          # `bash -e`, a bare `timeout` fails and aborts the step.
+          set -o pipefail
+          timeout ${TIMEOUT_S} npx jest --coverage --runInBand --verbose \
             ${TEST_PATH} \
             --reporters=default \
             --reporters=./scripts/jest-suite-reporter.js \
