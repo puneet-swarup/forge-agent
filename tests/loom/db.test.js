@@ -193,12 +193,34 @@ describe('loom/db driver selection', () => {
     db.close();
   });
 
-  it('uses SQLite when the runtime provides it', () => {
+  it('uses SQLite when asked for, if the runtime provides it', () => {
     if (!HAS_SQLITE) return;
-    const db = dbmod.open(storeFile);
-    expect(db.kind).toBe('sqlite');
-    expect(typeof db.fts).toBe('boolean');
-    db.close();
+    // Opt-in since the JSON store became the default: on Node 22 and 24 the
+    // sqlite store opened and then indexed nothing, and only Node 20 — which has
+    // no sqlite at all — was green in CI.
+    const previous = process.env.LOOM_STORE;
+    process.env.LOOM_STORE = 'sqlite';
+    try {
+      const db = dbmod.open(storeFile);
+      expect(db.kind).toBe('sqlite');
+      expect(typeof db.fts).toBe('boolean');
+      db.close();
+    } finally {
+      if (previous === undefined) delete process.env.LOOM_STORE;
+      else process.env.LOOM_STORE = previous;
+    }
+  });
+
+  it('defaults to JSON even when the runtime provides sqlite', () => {
+    const previous = process.env.LOOM_STORE;
+    delete process.env.LOOM_STORE;
+    try {
+      const db = dbmod.open(storeFile);
+      expect(db.kind).toBe('json');
+      db.close();
+    } finally {
+      if (previous !== undefined) process.env.LOOM_STORE = previous;
+    }
   });
 
   it('creates the directory that holds the store', () => {
